@@ -1,0 +1,8 @@
+{
+  "release": {
+    "version": "156.0.8078.80",
+    "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/win64/chrome-win64.zip",
+    "sha256": "16edb57d6107bf1c48a7c149b8d78b155fe614410093796dd72441fd6640540f"
+  },
+  "reason": "Pinned 2026-10-30: initial archive provenance relies on TLS to the official Chrome for Testing bucket; size matched Content-Length (208152768), SHA-256 computed locally pins subsequent downloads. Version and win64 URL match Stable in https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json (metadata timestamp 2026-10-29T22:14:17.810Z)."
+}

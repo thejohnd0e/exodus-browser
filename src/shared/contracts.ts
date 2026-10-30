@@ -1,0 +1,36 @@
+import type { Fingerprint } from './fingerprint';
+export type ProxyInput = { kind: 'http'|'https'|'socks5'; host: string; port: number; username?: string; password?: string };
+export type ProxyPublic = Omit<ProxyInput,'password'> & {hasPassword:boolean};
+export type SavedProxyInput = ProxyInput & {name:string};
+export type SavedProxy = ProxyPublic & {id:string;name:string;createdAt:string;updatedAt:string;profileIds:string[]};
+export type ProfileInput = {name:string;note:string;startUrls:string[];languages:string[];proxyId:string|null;fingerprint?:Fingerprint};
+export type Profile = Omit<ProfileInput,'fingerprint'> & {fingerprint:Fingerprint;id:string;proxy:SavedProxy|null;createdAt:string;updatedAt:string};
+export type LaunchInput = Omit<ProfileInput,'proxyId'|'fingerprint'> & {fingerprint:Fingerprint;proxy:ProxyInput|null;proxyVersion:string|null};
+export type ProfileState = 'stopped'|'starting'|'running'|'stopping'|'error'|'blocked';
+export type CookieOperationResult = {count:number;fileName:string};
+export type CookieFormat = 'json'|'netscape';
+export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:string}};
+export type EngineStatus = {state:'missing'|'ready'|'unsupported';version?:string;source?:'downloaded'|'external'};
+export interface ProfileApi {
+  list():Promise<Result<Profile[]>>;
+  create(input:ProfileInput):Promise<Result<Profile>>;
+  update(id:string,input:ProfileInput):Promise<Result<Profile>>;
+  remove(id:string):Promise<Result<void>>;
+  start(id:string):Promise<Result<void>>;
+  stop(id:string):Promise<Result<void>>;
+  states():Promise<Result<Record<string,ProfileState>>>;
+  engineStatus():Promise<Result<EngineStatus>>;
+  installEngine():Promise<Result<void>>;
+  linkEngine():Promise<Result<void>>;
+  backup(id:string):Promise<Result<void>>;
+  restore():Promise<Result<Profile|null>>;
+  checkProxy(id:string):Promise<Result<{ip:string;service:string}|null>>;
+  listProxies():Promise<Result<SavedProxy[]>>;
+  createProxy(input:SavedProxyInput):Promise<Result<SavedProxy>>;
+  updateProxy(id:string,input:SavedProxyInput):Promise<Result<SavedProxy>>;
+  removeProxy(id:string):Promise<Result<void>>;
+  checkSavedProxy(id:string):Promise<Result<{ip:string;service:string}>>;
+  importCookies(id:string):Promise<Result<CookieOperationResult|null>>;
+  exportCookies(id:string,format:CookieFormat):Promise<Result<CookieOperationResult|null>>;
+  runningProxyVersions():Promise<Result<Record<string,string|null>>>;
+}

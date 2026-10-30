@@ -1,0 +1,46 @@
+import {it,expect} from 'vitest';
+import {createDispatcher} from '../../src/main/ipc';
+import {valid} from '../fixtures/profiles';
+it('rejects untrusted frames and malformed arguments before invoking privileged operations',async()=>{
+ let called=0;const dispatch=createDispatcher({start:async()=>{called++;}},(e)=>e==='trusted');
+ expect((await dispatch('untrusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).ok).toBe(false);
+ expect((await dispatch('trusted','start',['../outside'])).ok).toBe(false);
+ expect((await dispatch('trusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a','extra'])).ok).toBe(false);
+ expect(called).toBe(0);
+ expect((await dispatch('trusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).ok).toBe(true);expect(called).toBe(1);
+});
+it('does not echo unknown exceptions, paths or secrets to the renderer',async()=>{
+ const dispatch=createDispatcher({create:async()=>{throw Error('password=secret C:/private');}},()=>true);
+ const result=await dispatch({},'create',[valid]);expect(result.ok).toBe(false);expect(JSON.stringify(result)).not.toContain('secret');expect(JSON.stringify(result)).not.toContain('private');
+});
+it('validates saved proxy operations and rejects writes from untrusted frames',async()=>{
+ let saved=0;const dispatch=createDispatcher({createProxy:async()=>{saved++;return {id:'test'};}},event=>event==='trusted');
+ const input={name:'P',kind:'http',host:'localhost',port:80};
+ expect((await dispatch('untrusted','createProxy',[input])).ok).toBe(false);
+ expect((await dispatch('trusted','createProxy',[{...input,port:0}])).ok).toBe(false);
+ expect((await dispatch('trusted','createProxy',[input])).ok).toBe(true);expect(saved).toBe(1);
+});
+it('explains fingerprint launch failures and invalid fingerprint input',async()=>{
+ const dispatch=createDispatcher({start:async()=>{throw Error('FINGERPRINT_UNAVAILABLE');}},()=>true);
+ const failed=await dispatch({},'start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a']);
+ expect(failed).toMatchObject({ok:false,error:{code:'FINGERPRINT_UNAVAILABLE'}});
+ if(!failed.ok)expect(failed.error.message).toContain('Could not apply the profile fingerprint');
+ const malformed=await dispatch({},'create',[{...valid,fingerprint:{os:'linux'}}]);
+ expect(malformed).toMatchObject({ok:false,error:{code:'INVALID_INPUT'}});
+ if(!malformed.ok)expect(malformed.error.message).toContain('fingerprint');
+});
+
+it('validates cookie operations and explains their errors',async()=>{
+  let calls=0;const dispatch=createDispatcher({importCookies:async()=>{calls++;return {count:1,fileName:'a.json'};},exportCookies:async()=>{calls++;return {count:1,fileName:'a.txt'};}},()=>true);
+  const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
+  expect((await dispatch({},'importCookies',[id])).ok).toBe(true);
+  expect((await dispatch({},'exportCookies',[id,'netscape'])).ok).toBe(true);
+  expect((await dispatch({},'exportCookies',[id,'xml'])).ok).toBe(false);
+  expect((await dispatch({},'importCookies',['../x'])).ok).toBe(false);
+  expect(calls).toBe(2);
+  for(const [code,text] of [['INVALID_COOKIE_FILE','corrupted'],['COOKIES_NOT_PERSISTED','not fully'],['COOKIE_REJECTED_BY_BROWSER','rejected'],['COOKIE_STORE_UNSUPPORTED','not supported'],['COOKIES_SESSION_FAILED','Could not open'],['ENGINE_NOT_READY','engine']] as const){
+    const failing=createDispatcher({importCookies:async()=>{throw Error(code);}},()=>true);
+    const result=await failing({},'importCookies',[id]);
+    expect(result.ok).toBe(false);if(!result.ok){expect(result.error.code).toBe(code);expect(result.error.message).toContain(text);}
+  }
+});

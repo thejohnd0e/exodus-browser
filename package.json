@@ -1,0 +1,43 @@
+{
+  "name": "exodus-browser",
+  "productName": "Exodus Browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "start": "electron .",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run tests/unit",
+    "test:integration": "node scripts/build.mjs && vitest run tests/integration",
+    "verify": "node scripts/verify.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "proxy-chain": "3.0.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@testing-library/react": "16.3.3",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
+    "electron": "45.1.0",
+    "esbuild": "0.28.2",
+    "jsdom": "26.1.0",
+    "playwright": "1.64.1",
+    "typescript": "7.0.2",
+    "vite": "6.4.5",
+    "vitest": "3.2.7"
+  }
+}

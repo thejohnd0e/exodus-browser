@@ -1,0 +1,19 @@
+import {it,expect,vi} from 'vitest';
+import {createCookieOperations} from '../../src/main/cookies/operations';
+const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
+it('opens the dialog, passes the path to the service and returns the file name',async()=>{
+  const importFile=vi.fn(async()=>({count:2,fileName:'a.json'}));
+  const ops=createCookieOperations({cookies:{importFile,exportFile:vi.fn(),closeAll:vi.fn()} as never,showOpen:async()=>({canceled:false,filePaths:['C:\\c\\a.json']}),showSave:vi.fn()});
+  await expect(ops.importCookies(id)).resolves.toEqual({count:2,fileName:'a.json'});
+  expect(importFile).toHaveBeenCalledWith(id,'C:\\c\\a.json');
+});
+it('returns null on cancel and selects the extension for the format',async()=>{
+  const exportFile=vi.fn(async()=>({count:1,fileName:'cookies.txt'}));const showSave=vi.fn(async(o:{defaultPath:string})=>({canceled:false,filePath:o.defaultPath}));
+  const ops=createCookieOperations({cookies:{importFile:vi.fn(),exportFile,closeAll:vi.fn()} as never,showOpen:async()=>({canceled:true,filePaths:[]}),showSave});
+  expect(await ops.importCookies(id)).toBeNull();
+  await ops.exportCookies(id,'netscape');
+  expect(showSave.mock.calls[0][0].defaultPath).toBe('cookies.txt');
+  expect(exportFile).toHaveBeenCalledWith(id,'cookies.txt','netscape');
+  const cancel=createCookieOperations({cookies:{importFile:vi.fn(),exportFile,closeAll:vi.fn()} as never,showOpen:vi.fn(),showSave:async()=>({canceled:true})});
+  expect(await cancel.exportCookies(id,'json')).toBeNull();
+});

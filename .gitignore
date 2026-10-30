@@ -1,0 +1,67 @@
+# Dependencies, builds and caches
+node_modules/
+dist/
+out/
+release/
+.cache/
+*.tsbuildinfo
+engine-cache/
+
+# Test artifacts and logs
+coverage/
+test-results/
+playwright-report/
+blob-report/
+*.log
+*.trace
+
+# Local agent state and editor settings (shared project docs stay tracked)
+.superpowers/
+.claude/
+.opencode/
+.codex/
+.cursor/
+.idea/
+.vscode/
+*.code-workspace
+
+# Environment, credentials and private keys
+.env*
+!.env.example
+.npmrc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Local browser data, cookie exports, backups and downloaded engines
+/profiles/
+/user-data/
+/local-data/
+/backups/
+/engine/
+/cookies.json
+/cookies.txt
+runtime-*.json
+*.sqlite*
+*.db
+*.db-shm
+*.db-wal
+*.zip
+*.7z
+*.exe
+*.msi
+*.dmp
+
+# OS and temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
