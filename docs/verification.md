@@ -81,3 +81,12 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Core documentation and all historical specs/plans were translated rather than deleted or ignored. Numeric-token audits found no missing historical numbers; historical plans retained code-fence and checkbox counts.
 - English-only publication is a permanent `AGENTS.md` policy. Old history is retained locally outside normal branch publication; only the audited English root snapshot is intended for GitHub. Replacing reachable history does not guarantee deletion of GitHub's cached or otherwise retained unreachable objects.
 - The user supplied `ico/` assets for inspection only. They are not integrated into the application or included in this publication snapshot.
+
+## Supplied artwork integration (2026-10-31, subsequent local work)
+
+- The user subsequently requested integration before any GitHub repository recreation. Source PNG/SVG artwork in `ico/` was not redrawn or modified. Runtime uses the provided square PNG for the native window/favicon and the provided PNG wordmark in the sidebar; the SVG wordmark's font dependency is avoided.
+- RED: the native-window unit check failed on its missing icon argument; the UI check failed on the missing accessible wordmark image; the real Electron asset check failed on the missing wordmark before implementation.
+- GREEN: `npm run verify` PASS (147/147 unit across 26 files, typecheck, production build); `npm run test:integration` PASS (38/38 across 9 files).
+- The integration test compares bundled wordmark, favicon, and native-icon bytes with the supplied sources, verifies local `file:` image URLs, decodes the PNG with Electron `nativeImage`, and checks that the sidebar image fits at 1200 px and 940 px viewport widths. The unit check pins the absolute module-relative native icon path and retains renderer security settings.
+- A separate isolated Electron instance was visually inspected with temporary data: the sidebar wordmark is loaded, the old letter badge is absent, and navigation remains visible. The preview was saved outside the repository under the approved OpenCode temporary directory. Real user data was not opened.
+- No installer or executable-resource icon is claimed; the project does not yet package an installer. GitHub recreation and publication remain deferred, as requested.

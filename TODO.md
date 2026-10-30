@@ -46,6 +46,9 @@ Priorities: P0 — blocks a reliable handoff, P1 — important quality/security,
 
 ## P2 — operational quality
 
+- [x] **Integrate the supplied Exodus artwork into the running application.**
+  2026-10-31: PNG native-window icon and favicon; PNG sidebar wordmark replaces the letter badge/text. Original files in `ico/` remain unchanged. Unit/native-options and real Electron asset-loading checks pass, including normal/narrow sidebar widths. `verify` 147/147 and integration 38/38 PASS. This does not cover installer/executable resources or publish the local changes to GitHub.
+
 - [ ] **English-publication review follow-ups (nonblocking).**
   Clarify display-name versus explicit legacy userData wording in README, DECISIONS, and architecture; align documented “Attach Chromium…” labels with the UI's “Link Chromium…”; rename the validation test description that still mentions Russian-name coverage despite its English fixture. Unicode coverage is retained by separate tests. Add a permanent isolated fresh-appData startup regression: independent review already verified the pinned Electron runtime successfully, but existing smoke uses a pre-created override directory.
 

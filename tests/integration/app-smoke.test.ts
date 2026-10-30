@@ -6,7 +6,40 @@ import {join} from 'node:path';
 import Database from 'better-sqlite3';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
+import {fileURLToPath} from 'node:url';
 const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
+it('loads the supplied wordmark, favicon and native icon from the built application',async()=>{
+  const data=mkdtempSync(join(tmpdir(),'exodus-branding-'));
+  const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
+  try{
+    const win=await app.firstWindow();await win.waitForSelector('h1');
+    const wordmark=win.getByRole('img',{name:'Exodus Browser'});
+    expect(await wordmark.count()).toBe(1);
+    await win.waitForFunction(()=>{const image=document.querySelector<HTMLImageElement>('.brand img');return image?.complete&&image.naturalWidth>0;});
+    const wordmarkUrl=await wordmark.getAttribute('src');
+    expect(wordmarkUrl).toBeTruthy();
+    const loadedWordmark=new URL(wordmarkUrl!,win.url());
+    expect(loadedWordmark.protocol).toBe('file:');
+    expect(readFileSync(fileURLToPath(loadedWordmark)).equals(readFileSync(join(process.cwd(),'ico','exodus-wordmark.png')))).toBe(true);
+    const favicon=await win.locator('link[rel="icon"]').getAttribute('href');
+    expect(favicon).toBeTruthy();
+    const faviconUrl=new URL(favicon!,win.url());
+    expect(faviconUrl.protocol).toBe('file:');
+    const source=readFileSync(join(process.cwd(),'ico','exodus-icon.png'));
+    expect(readFileSync(fileURLToPath(faviconUrl)).equals(source)).toBe(true);
+    const nativePath=join(process.cwd(),'dist','assets','exodus-icon.png');
+    expect(readFileSync(nativePath).equals(source)).toBe(true);
+    expect(await app.evaluate(({nativeImage},path)=>nativeImage.createFromPath(path).isEmpty(),nativePath)).toBe(false);
+    for(const width of [1200,940]){
+      await win.setViewportSize({width,height:820});
+      const image=await wordmark.boundingBox(),sidebar=await win.locator('aside').boundingBox();
+      expect(image).not.toBeNull();expect(sidebar).not.toBeNull();
+      expect(image!.width).toBeGreaterThanOrEqual(228);
+      expect(image!.x+image!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
+    }
+  }finally{await app.close();rmSync(data,{recursive:true,force:true});}
+},30000);
+
 it('keeps the fingerprint action opaque and readable without hovering in the profile editor',async()=>{
   const data=mkdtempSync(join(tmpdir(),'local-profiles-button-'));
   const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});

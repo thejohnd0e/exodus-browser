@@ -15,7 +15,9 @@ async function openProfile(){await screen.findByText('Work');fireEvent.click(scr
 it('shows profiles and filters by name without exposing browser data',async()=>{render(<App api={api()}/>);await screen.findByText('Work');fireEvent.change(screen.getByPlaceholderText('Search profiles'),{target:{value:'other'}});expect(screen.queryByText('Work')).toBeNull();expect(screen.getByText(/is not anti-detection/)).toBeTruthy();});
 it('uses English branding and language names while preserving an existing profile locale',async()=>{
  render(<App api={api()}/>);await openProfile();
- expect(screen.getByText('Exodus Browser')).toBeTruthy();
+ const wordmark=screen.getByRole('img',{name:'Exodus Browser'});
+ expect(wordmark.getAttribute('src')).toContain('exodus-wordmark');
+ expect(screen.queryByText('EB')).toBeNull();
  expect(screen.getByRole('button',{name:'Choose language'}).textContent).toContain('Russian (Russia)');
  fireEvent.click(screen.getByRole('button',{name:'Save profile'}));
  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
