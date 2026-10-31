@@ -1,0 +1,59 @@
+Exodus Anti-Detect Browser
+(the Windows application is installed as "Exodus Browser")
+Copyright (C) 2026 thejohnd0e
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 3. No later version applies.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+The complete license text is in the LICENSE file (GNU GPL version 3,
+29 June 2007). Corresponding source code:
+https://github.com/thejohnd0e/exodus-browser
+
+Branding is not licensed
+------------------------
+The names "Exodus Browser" and "Exodus Anti-Detect Browser", the logo and the
+artwork in the ico/ directory are not granted under the GNU GPL. Distributions
+that are modified or published under another identity must use their own name
+and branding.
+
+Third-party components included in this distribution
+----------------------------------------------------
+The application is written in TypeScript/JavaScript and runs on Electron.
+Production dependencies and their licenses:
+
+- Electron 45 (MIT) and its bundled Chromium (BSD-3-Clause and additional
+  third-party notices shipped with the Electron distribution).
+- React 19, React DOM 19 (MIT).
+- better-sqlite3 (MIT).
+- proxy-chain (Apache-2.0). Apache-2.0 is compatible with GPL version 3.
+- maxmind (MIT), ipaddr.js (MIT).
+- yauzl (MIT), yazl (MIT).
+- zod (MIT).
+- Additional transitive packages are distributed under MIT, BSD-3-Clause,
+  Apache-2.0 or 0BSD; all are compatible with GPL version 3. Exact versions and
+  integrity values are pinned in package-lock.json.
+
+Bundled assets and data:
+
+- Country flag SVGs from flag-icons (MIT). Full text:
+  resources/flags/LICENSE.flag-icons.txt
+- IP-to-Country Lite database by DB-IP.com (CC BY 4.0). Attribution, source
+  and checksums: resources/geoip/README.md. The user interface displays
+  "IP geolocation data by DB-IP.com" with a link to https://db-ip.com.
+
+Separate program downloaded by the user
+---------------------------------------
+The managed Chrome for Testing browser is downloaded separately from Google's
+official server at the user's request and is not part of this repository or of
+the Exodus Browser installer. It is covered by its own licenses; nothing in the
+GNU GPL for Exodus Browser changes the terms of that separate program.
+
+No warranty; limitation of liability
+------------------------------------
+This software is provided "as is", without warranty of any kind, to the extent
+permitted by applicable law. See sections 15 and 16 of the GNU GPL version 3.

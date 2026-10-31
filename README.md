@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4?style=flat-square" alt="Windows 10 and 11, x64">
   <img src="https://img.shields.io/badge/Data-stored%20locally-16875d?style=flat-square" alt="Data stored locally">
   <img src="https://img.shields.io/badge/Interface-English%20%2F%20Russian-596579?style=flat-square" alt="English and Russian interface">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-0b7285?style=flat-square" alt="License: GNU GPL version 3"></a>
 </p>
 
 <p align="center">
@@ -180,6 +181,18 @@ Saved proxy passwords are encrypted using Windows protection. **This does not me
 - **Profile blocked after a crash?** Close the remaining profile browser manually, then restart Exodus. The manager does not forcibly kill unrelated processes.
 - **Chrome for Testing banner?** That banner is normal for the managed browser; it is not an installation error.
 - **Found a problem or have a suggestion?** [Open an issue](https://github.com/thejohnd0e/exodus-browser/issues). Include your Exodus version, Windows version, steps to reproduce and a screenshot if useful. Remove passwords, cookie contents and other private information first.
+
+## License
+
+Exodus Browser is **free software** under the **GNU General Public License, version 3 only** (GPL-3.0-only), and is provided **without warranty**.
+
+- You may use it for any purpose, study it, modify it and share it, including commercially.
+- If you distribute the program or a modified version, you must make the corresponding source code available under the same license.
+- The full text is in [LICENSE](LICENSE); third-party components and attribution are listed in [NOTICE](NOTICE).
+
+The names **Exodus Browser** and **Exodus Anti-Detect Browser**, the logo and the artwork in `ico/` are **not licensed for reuse**. Modified or differently published distributions must use their own name and branding.
+
+The managed Chromium build is downloaded separately at your request and keeps its own licenses; it is not part of this repository or the installer.
 
 ## For developers
 

@@ -4,6 +4,17 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### GPL-3.0-only licensing (2026-10-31)
+
+- The repository previously had **no license**, so GitHub reported no license and distribution was legally "all rights reserved". The owner approved `GPL-3.0-only` and reserved the product name, logo and `ico/` artwork.
+- The owner confirmed Dolphin was used only as a source of ideas and observable behaviour and that the code is original, so relicensing is not blocked by third-party proprietary code.
+- `LICENSE` is the canonical text from `https://www.gnu.org/licenses/gpl-3.0.txt` (35,149 bytes, SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`), copied verbatim. The SPDX plain-text copy differs only in whitespace formatting, which confirms document identity. Required structural markers (title, version line, sections 0/15/16, "How to Apply", end marker) were asserted.
+- `package.json` declares `GPL-3.0-only`; `NOTICE` carries the copyright line, warranty disclaimer, brand reservation, third-party attribution and the separate-program note for Chrome for Testing.
+- Dependency licenses were read from installed packages and the production tree: MIT (20), Apache-2.0 (1), BSD-3-Clause (1), 0BSD (1). All are GPLv3-compatible; Apache-2.0 is compatible with GPLv3 but not GPLv2, and nothing here requires GPLv2.
+- README gained a GPL-3.0 badge and a License section; `LICENSE` and `NOTICE` links resolve and are tracked. All remote links and badge endpoints responded successfully.
+- `npm run verify` PASS (349 unit, typecheck, build); `npm run test:integration` PASS (60/60). No application code changed.
+- Not done: NSIS license page (installer UI change, deferred) and per-file SPDX headers. No new release was built.
+
 ### Anti-detect and privacy presentation (2026-10-31)
 
 - On the user's approval, changed the README heading to **Exodus Anti-Detect Browser** and updated GitHub positioning. The Windows application's display name, installer filenames, source behavior, release tags and storage paths remain unchanged.
