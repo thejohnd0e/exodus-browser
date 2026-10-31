@@ -10,7 +10,7 @@
     "dev": "node scripts/dev.mjs",
     "start": "electron .",
     "build": "node scripts/build.mjs",
-    "dist": "npm run build && electron-builder --win nsis",
+    "dist": "node scripts/dist.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests/unit",
     "test:integration": "node scripts/build.mjs && vitest run tests/integration",

@@ -4,7 +4,7 @@ import {it,expect} from 'vitest';
 const packageJson=JSON.parse(readFileSync(new URL('../../package.json',import.meta.url),'utf8')) as Record<string,any>;
 
 it('declares a pinned development-only electron-builder and the dist command',()=>{
-  expect(packageJson.scripts.dist).toBe('npm run build && electron-builder --win nsis');
+  expect(packageJson.scripts.dist).toBe('node scripts/dist.mjs');
   expect(packageJson.devDependencies['electron-builder']).toMatch(/^\d+\.\d+\.\d+$/);
   expect(packageJson.dependencies['electron-builder']).toBeUndefined();
 });

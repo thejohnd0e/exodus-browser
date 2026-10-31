@@ -1,9 +1,11 @@
 import { build } from 'esbuild';
 import { build as viteBuild } from 'vite';
-import { withBuildVersion } from './build-version.mjs';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { resolveBuildInfo, withBuildVersion } from './build-version.mjs';
+import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-await withBuildVersion({root:process.cwd(),run:async info=>{
+const packageVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
+await withBuildVersion({root:process.cwd(),run:async counterInfo=>{
+  const info = resolveBuildInfo({counterInfo, packageVersion, release: process.env.EXODUS_RELEASE === '1'});
  const define={__BUILD_INFO__:JSON.stringify(info)};
  await build({ entryPoints: ['src/main/index.ts'], outfile: 'dist/main.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron', 'better-sqlite3'], sourcemap: true, loader: { '.png': 'file' }, assetNames: 'assets/[name]', define });
  await build({ entryPoints: ['src/preload/index.ts'], outfile: 'dist/preload.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron'], define });

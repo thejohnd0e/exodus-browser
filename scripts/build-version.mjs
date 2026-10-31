@@ -43,6 +43,12 @@ export async function withBuildVersion({root,run}){
   }
 }
 
+export function resolveBuildInfo({counterInfo,packageVersion,release}){
+  if(!release)return counterInfo;
+  if(!/^\d+\.\d+\.\d+$/.test(packageVersion))throw Error('BUILD_VERSION_INVALID');
+  return {version:packageVersion,buildNumber:counterInfo.buildNumber};
+}
+
 export async function recoverBuildVersion({root,buildNumber,confirm}){
   if(!Number.isSafeInteger(buildNumber)||buildNumber<0)throw Error('BUILD_VERSION_SEED_INVALID');
   const local=join(root,'.local');await mkdir(local,{recursive:true});

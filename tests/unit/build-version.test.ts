@@ -2,7 +2,19 @@ import {it,expect} from 'vitest';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {recoverBuildVersion,withBuildVersion} from '../../scripts/build-version.mjs';
+import {recoverBuildVersion,resolveBuildInfo,withBuildVersion} from '../../scripts/build-version.mjs';
+
+it('uses the package version for release builds and the counter otherwise',()=>{
+  const counterInfo={version:'0.1.78',buildNumber:78};
+  expect(resolveBuildInfo({counterInfo,packageVersion:'1.1.78',release:true})).toEqual({version:'1.1.78',buildNumber:78});
+  expect(resolveBuildInfo({counterInfo,packageVersion:'1.1.78',release:false})).toEqual(counterInfo);
+});
+
+it('rejects a release version that is not MAJOR.MINOR.PATCH',()=>{
+  const counterInfo={version:'0.1.78',buildNumber:78};
+  expect(()=>resolveBuildInfo({counterInfo,packageVersion:'1.1',release:true})).toThrow('BUILD_VERSION_INVALID');
+  expect(()=>resolveBuildInfo({counterInfo,packageVersion:'v1.1.78',release:true})).toThrow('BUILD_VERSION_INVALID');
+});
 
 async function buildRoot(){
   const root=await mkdtemp(join(tmpdir(),'exodus-version-'));
