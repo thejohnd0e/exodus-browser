@@ -1,5 +1,6 @@
 import type { Fingerprint } from './fingerprint';
 import type {AppSettings} from './settings';
+import type {UpdateState} from './update';
 export type ProxyInput = { kind: 'http'|'https'|'socks5'; host: string; port: number; username?: string; password?: string };
 export type ProxyPublic = Omit<ProxyInput,'password'> & {hasPassword:boolean;requiresPassword?:boolean};
 export type SavedProxyInput = ProxyInput & {name:string};
@@ -48,6 +49,12 @@ export interface ProfileApi {
   addExtensionFromStore(link:string):Promise<ExtensionResult>;
   updateExtension(id:string):Promise<ExtensionResult>;
   removeExtension(id:string):Promise<Result<void>>;
+  getUpdateState():Promise<Result<UpdateState>>;
+  checkForUpdate():Promise<Result<UpdateState>>;
+  downloadUpdate():Promise<Result<UpdateState>>;
+  cancelUpdate():Promise<Result<void>>;
+  installUpdate():Promise<Result<void>>;
+  onUpdateState(callback:(state:UpdateState)=>void):()=>void;
   onCloseRequested(callback:()=>void):()=>void;
   confirmClose(shouldClose:boolean):Promise<boolean>;
 }

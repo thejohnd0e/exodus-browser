@@ -25,6 +25,8 @@ import {BUILD_INFO} from '../shared/build-info';
 import {SessionStore} from './sessions/store';
 import {AppSettingsService} from './settings/service';
 import {nativeMessage} from '../shared/i18n/messages';
+import {UpdateService} from './update/service';
+import {spawn} from 'node:child_process';
 app.setName('Exodus Browser');
 // Keep the existing data directory independent of the visible product name.
 app.setPath('userData',join(app.getPath('appData'),'Local Profiles'));
@@ -61,6 +63,13 @@ else void app.whenReady().then(async()=>{
    });
     let quitting=false,closing=false;
     const finishShutdown=async()=>{try{await Promise.all([cookies.closeAll(),portable.closeAll()]);await supervisor.shutdown();quitting=true;profiles.close();app.quit();}catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});closing=false;}};
+    const update=new UpdateService({
+      appVersion:BUILD_INFO.version,root,
+      fetch:(url,init)=>net.fetch(url,init as RequestInit),
+      busy:async()=>supervisor.hasActiveWork()||cookies.hasActiveWork()||portable.hasActiveWork(),
+      runInstaller:path=>new Promise<void>((resolve,reject)=>{const child=spawn(path,[],{detached:true,stdio:'ignore'});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});}),
+      onState:state=>{if(!win.isDestroyed())win.webContents.send('app:update-state',state);},
+    });
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
        remove:async id=>{await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
@@ -86,6 +95,8 @@ else void app.whenReady().then(async()=>{
       updateExtension:async extensionId=>{if(extensions.list().find(entry=>entry.id===extensionId)?.source==='store')return extensions.updateFromStore(extensionId);const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.updateFromFolder(extensionId,r.filePaths[0]);},
       addExtensionFromStore:async link=>extensions.addFromStore(link),
       removeExtension:async extensionId=>{await extensions.remove(extensionId);},
+      getUpdateState:async()=>update.state(),checkForUpdate:()=>update.check(),downloadUpdate:()=>update.download(),cancelUpdate:()=>update.cancel(),
+      installUpdate:async()=>{await update.install();await finishShutdown();},
       getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;return value;}
    },event=>isTrustedSender(event as never,win.webContents,ui),()=>currentLanguage);
    for(const method of operations)ipcMain.handle('profiles:'+method,(event,...args)=>dispatcher(event,method,args));

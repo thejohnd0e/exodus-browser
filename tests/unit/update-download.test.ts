@@ -15,7 +15,7 @@ beforeEach(async()=>{dir=await mkdtemp(join(tmpdir(),'exodus-update-'));});
 afterEach(async()=>{await rm(dir,{recursive:true,force:true});});
 
 function bodyResponse(bytes:Buffer,status=200,headers:Record<string,string>={}){
-  return new Response(bytes,{status,headers});
+  return new Response(new Uint8Array(bytes),{status,headers});
 }
 
 function options(overrides:Partial<Parameters<typeof downloadInstaller>[0]>={}){

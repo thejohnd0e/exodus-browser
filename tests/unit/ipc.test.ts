@@ -91,3 +91,13 @@ it('validates persisted application settings through the trusted IPC boundary',a
  expect((await dispatch({},'updateSettings',[{language:'en',unexpected:true}])).ok).toBe(false);
  expect(language).toBe('ru');
 });
+
+it('accepts the update operations only without arguments',async()=>{
+  const names=['getUpdateState','checkForUpdate','downloadUpdate','cancelUpdate','installUpdate'];
+  const dispatch=createDispatcher(Object.fromEntries(names.map(name=>[name,async()=>({state:'idle'})])) as never,(e)=>e==='trusted');
+  for(const name of names){
+    expect((await dispatch('trusted',name,[])).ok).toBe(true);
+    expect((await dispatch('trusted',name,['extra'])).ok).toBe(false);
+  }
+  expect((await dispatch('untrusted','checkForUpdate',[])).ok).toBe(false);
+});

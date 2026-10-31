@@ -7,6 +7,7 @@ import {UpdateService} from '../../src/main/update/service';
 import type {UpdateState} from '../../src/shared/update';
 
 const payload=Buffer.from('new-installer');
+const body=()=>new Uint8Array(payload);
 const digest=createHash('sha256').update(payload).digest('hex');
 const apiUrl='https://api.github.com/repos/thejohnd0e/exodus-browser/releases/latest';
 const base='https://github.com/thejohnd0e/exodus-browser/releases/download/v1.1.78/';
@@ -34,7 +35,7 @@ function service(overrides:Partial<ConstructorParameters<typeof UpdateService>[0
     fetch:async(url:string)=>{
       if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
       if(url===checksumsUrl)return new Response(`${digest}  ExodusBrowser-Setup-1.1.78.exe\n`,{status:200});
-      if(url===installerUrl)return new Response(payload,{status:200});
+      if(url===installerUrl)return new Response(body(),{status:200});
       throw new Error('unexpected '+url);
     },
     busy:async()=>false,

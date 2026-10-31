@@ -20,7 +20,7 @@ function api(overrides:Partial<ProfileApi>={}):ProfileApi{return {
   backup:async()=>({ok:true,value:undefined}),restore:async()=>({ok:true,value:null}),exportProfile:async()=>({ok:true,value:null}),importProfile:async()=>({ok:true,value:null}),
   checkProxy:async()=>({ok:true,value:{ip:'192.0.2.1',countryCode:'US',service:'test'}}),importCookies:async()=>({ok:true,value:null}),exportCookies:async()=>({ok:true,value:null}),clearCookies:async()=>({ok:true,value:null}),
   listExtensions:async()=>({ok:true,value:[entry]}),addExtensionFolder:async()=>({ok:true,value:null}),addExtensionZip:async()=>({ok:true,value:null}),addExtensionFromStore:async()=>({ok:true,value:null}),updateExtension:async()=>({ok:true,value:null}),removeExtension:async()=>({ok:true,value:undefined}),
-  onCloseRequested:()=>()=>undefined,confirmClose:async()=>true,...overrides};
+  getUpdateState:async()=>({ok:true,value:{state:'idle'}}),checkForUpdate:async()=>({ok:true,value:{state:'up-to-date'}}),downloadUpdate:async()=>({ok:true,value:{state:'idle'}}),cancelUpdate:async()=>({ok:true,value:undefined}),installUpdate:async()=>({ok:true,value:undefined}),onUpdateState:()=>()=>undefined,onCloseRequested:()=>()=>undefined,confirmClose:async()=>true,...overrides};
 }
 
 function card(){const article=screen.getAllByRole('article')[0];if(!article)throw Error('card missing');return article;}
