@@ -1,8 +1,7 @@
 import {z} from 'zod';
 import {isNewer,parseVersion} from './version';
+import {isAllowedHost,MAX_INSTALLER_BYTES} from './hosts';
 
-export const MAX_INSTALLER_BYTES=300*1024*1024;
-const RELEASE_HOST='https://github.com/';
 const INSTALLER_PATTERN=/^ExodusBrowser-Setup-(\d+\.\d+\.\d+)\.exe$/;
 
 const assetSchema=z.object({
@@ -22,7 +21,7 @@ export type LatestRelease=
   |{kind:'up-to-date'}
   |{kind:'available';version:string;installer:{name:string;url:string;size:number};checksumsUrl:string};
 
-export function parseLatestRelease(json:unknown,appVersion:string):LatestRelease{
+export function parseLatestRelease(json:unknown,appVersion:string,isAllowedUrl:(url:string)=>boolean=isAllowedHost):LatestRelease{
   const parsed=releaseSchema.safeParse(json);
   if(!parsed.success)throw Error('UPDATE_INVALID_RELEASE');
   const release=parsed.data;
@@ -37,7 +36,7 @@ export function parseLatestRelease(json:unknown,appVersion:string):LatestRelease
   const installer=installers[0];
   if(installer.name!==`ExodusBrowser-Setup-${version}.exe`)throw Error('UPDATE_INVALID_RELEASE');
   for(const asset of [installer,checksums[0]]){
-    if(!asset.browser_download_url.startsWith(RELEASE_HOST))throw Error('UPDATE_INVALID_RELEASE');
+    if(!isAllowedUrl(asset.browser_download_url))throw Error('UPDATE_INVALID_RELEASE');
   }
   return {
     kind:'available',

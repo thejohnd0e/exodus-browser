@@ -14,6 +14,7 @@ export type UpdateServiceOptions={
   appVersion:string;
   root:string;
   apiUrl?:string;
+  isAllowedUrl?:(url:string)=>boolean;
   fetch:(url:string,init:{signal:AbortSignal;redirect:'manual'})=>Promise<Response>;
   busy:()=>Promise<boolean>;
   runInstaller:(path:string)=>Promise<void>;
@@ -37,7 +38,7 @@ export class UpdateService {
     this.set({state:'checking'});
     try{
       const json=await this.fetchMetadata(this.options.apiUrl??UPDATE_API_URL);
-      const release=parseLatestRelease(json,this.options.appVersion);
+      const release=parseLatestRelease(json,this.options.appVersion,this.options.isAllowedUrl);
       if(release.kind==='up-to-date'){
         this.offer=null;
         return this.set({state:'up-to-date'});
@@ -67,6 +68,7 @@ export class UpdateService {
         destinationDir,
         fileName:offer.installer.name,
         fetch:this.options.fetch,
+        isAllowedUrl:this.options.isAllowedUrl,
         signal:controller.signal,
         onProgress:({received,total})=>{this.set({state:'downloading',version:offer.version,received,total});},
       });

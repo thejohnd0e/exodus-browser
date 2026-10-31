@@ -1,7 +1,9 @@
 import {createHash} from 'node:crypto';
 import {mkdir,open,rename,rm} from 'node:fs/promises';
 import {join} from 'node:path';
-import {MAX_INSTALLER_BYTES} from './release';
+import {isAllowedHost,MAX_INSTALLER_BYTES} from './hosts';
+
+export {isAllowedHost} from './hosts';
 
 const MAX_REDIRECTS=5;
 
@@ -16,22 +18,17 @@ export type DownloadOptions={
   fetch:(url:string,init:{signal:AbortSignal;redirect:'manual'})=>Promise<Response>;
   signal:AbortSignal;
   onProgress:(progress:DownloadProgress)=>void;
+  isAllowedUrl?:(url:string)=>boolean;
 };
-
-export function isAllowedHost(url:string):boolean{
-  let parsed:URL;
-  try{parsed=new URL(url);}catch{return false;}
-  if(parsed.protocol!=='https:')return false;
-  return parsed.hostname==='github.com'||parsed.hostname.endsWith('.githubusercontent.com');
-}
 
 export async function downloadInstaller(options:DownloadOptions):Promise<string>{
   const finalPath=join(options.destinationDir,options.fileName);
   const partialPath=`${finalPath}.partial`;
   await mkdir(options.destinationDir,{recursive:true});
-  if(!isAllowedHost(options.url))throw Error('UPDATE_UNTRUSTED_REDIRECT');
+  const allowed=options.isAllowedUrl??isAllowedHost;
+  if(!allowed(options.url))throw Error('UPDATE_UNTRUSTED_REDIRECT');
   if(options.signal.aborted)throw Error('UPDATE_CANCELLED');
-  const response=await fetchAllowed(options);
+  const response=await fetchAllowed(options,allowed);
   const handle=await open(partialPath,'wx').catch(()=>{throw Error('UPDATE_DOWNLOAD_FAILED');});
   let finished=false;
   try{
@@ -70,7 +67,7 @@ export async function downloadInstaller(options:DownloadOptions):Promise<string>
   }
 }
 
-async function fetchAllowed(options:DownloadOptions):Promise<Response>{
+async function fetchAllowed(options:DownloadOptions,allowed:(url:string)=>boolean):Promise<Response>{
   let target=options.url;
   for(let redirects=0;;redirects++){
     const response=await options.fetch(target,{signal:options.signal,redirect:'manual'}).catch(()=>{
@@ -80,7 +77,7 @@ async function fetchAllowed(options:DownloadOptions):Promise<Response>{
       const location=response.headers.get('location');
       if(!location||redirects>=MAX_REDIRECTS)throw Error('UPDATE_DOWNLOAD_FAILED');
       const next=new URL(location,target).toString();
-      if(!isAllowedHost(next))throw Error('UPDATE_UNTRUSTED_REDIRECT');
+      if(!allowed(next))throw Error('UPDATE_UNTRUSTED_REDIRECT');
       target=next;
       continue;
     }
