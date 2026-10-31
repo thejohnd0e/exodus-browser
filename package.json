@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",
+    "ipaddr.js": "2.2.0",
+    "maxmind": "5.0.7",
     "proxy-chain": "3.0.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -34,6 +36,7 @@
     "@types/yazl": "3.3.1",
     "electron": "45.1.0",
     "esbuild": "0.28.2",
+    "flag-icons": "7.6.0",
     "jsdom": "26.1.0",
     "playwright": "1.64.1",
     "typescript": "7.0.2",

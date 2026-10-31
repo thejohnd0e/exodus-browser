@@ -13,6 +13,7 @@ import {BackupService} from './backups/service';
 import {CookieService} from './cookies/service';
 import {createCookieOperations} from './cookies/operations';
 import {checkProxy,IP_CHECK_SERVICE} from './proxy/check';
+import {lookupCountry} from './proxy/country';
 import {createWindow} from './window';
 import {createDispatcher,operations} from './ipc';
 import {isTrustedSender} from './trust';
@@ -62,9 +63,9 @@ else void app.whenReady().then(async()=>{
     },
      backup:async id=>{await supervisor.assertStopped(id);const c=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('backup.warning',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.continue',currentLanguage)],cancelId:0,defaultId:0});if(c.response!==1)return;const result=await dialog.showSaveDialog(win,{defaultPath:'profile-backup.zip',filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});if(result.filePath&&!result.canceled)await backups.create(id,result.filePath);},
      restore:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('backup.restore.title',currentLanguage),properties:['openFile'],filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});return r.canceled?null:backups.restore(r.filePaths[0]);},
-    checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');return {...await checkProxy(input.proxy),service:IP_CHECK_SERVICE};},
+     checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');const {ip}=await checkProxy(input.proxy);return {ip,countryCode:await lookupCountry(ip),service:IP_CHECK_SERVICE};},
     listProxies:async()=>profiles.listProxies(),createProxy:input=>profiles.createProxy(input),updateProxy:(id,input)=>profiles.updateProxy(id,input),removeProxy:id=>profiles.removeProxy(id),
-    checkSavedProxy:async id=>({...await checkProxy(profiles.getProxyInput(id)),service:IP_CHECK_SERVICE}),runningProxyVersions:async()=>supervisor.runningProxyVersions(),
+     checkSavedProxy:async id=>{const {ip}=await checkProxy(profiles.getProxyInput(id));return {ip,countryCode:await lookupCountry(ip),service:IP_CHECK_SERVICE};},runningProxyVersions:async()=>supervisor.runningProxyVersions(),
      importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies,clearCookies:cookieOps.clearCookies,
       getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;return value;}
    },event=>isTrustedSender(event as never,win.webContents,ui),()=>currentLanguage);

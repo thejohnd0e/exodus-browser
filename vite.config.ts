@@ -1,2 +1,2 @@
 import { defineConfig } from 'vite';
-export default defineConfig({ base: './', build: { outDir: 'dist/ui' } });
+export default defineConfig({ base: './', build: { outDir: 'dist/ui', assetsInlineLimit: 0 } });

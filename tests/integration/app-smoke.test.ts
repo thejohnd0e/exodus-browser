@@ -133,13 +133,14 @@ it('opens isolated local app, creates a profile offline, stores proxy secrets wi
 },90000);
 
 it('checks the selected proxy from the UI without a confirmation dialog or background checks',async()=>{
- const data=mkdtempSync(join(tmpdir(),'local-profiles-ip-'));
- const requests:string[]=[];
- const proxy=createServer((req,res)=>{requests.push(req.url??'');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ip:'192.0.2.42'}));});
+  const data=mkdtempSync(join(tmpdir(),'local-profiles-ip-'));
+  const requests:string[]=[];
+  const proxy=createServer((req,res)=>{requests.push(req.url??'');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ip:'8.8.8.8'}));});
  await new Promise<void>(resolve=>proxy.listen(0,'127.0.0.1',resolve));
  const port=(proxy.address() as AddressInfo).port;
- const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
- try{
+  const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
+  try{
+    await app.evaluate(({session})=>{const urls:string[]=[];(globalThis as any).__countryRequests=urls;session.defaultSession.webRequest.onBeforeRequest((details,callback)=>{urls.push(details.url);callback({});});});
    await app.evaluate(({dialog})=>{(globalThis as any).__dialogCalls=0;dialog.showMessageBox=(()=>{(globalThis as any).__dialogCalls++;throw Error('Unexpected confirmation dialog');}) as typeof dialog.showMessageBox;});
    const win=await app.firstWindow();await win.waitForSelector('h1');
    const result=await win.evaluate(async proxyPort=>{const api=(window as any).profileApi;const proxy=await api.createProxy({name:'Loopback',kind:'http',host:'127.0.0.1',port:proxyPort});if(!proxy.ok)throw Error('proxy creation failed');return api.create({name:'IP check',note:'',startUrls:['about:blank'],languages:['ru-RU'],proxyId:proxy.value.id});},port);
@@ -148,11 +149,19 @@ it('checks the selected proxy from the UI without a confirmation dialog or backg
    await card.getByRole('heading',{name:'IP check'}).waitFor({timeout:3000});
    expect(requests).toEqual([]);
    await card.getByRole('button',{name:'Check IP'}).click();
-   await win.getByRole('alert').or(card.getByText('External IP: 192.0.2.42',{exact:true})).waitFor({timeout:5000});
+    await win.getByRole('alert').or(card.getByText('External IP: 8.8.8.8',{exact:true})).waitFor({timeout:5000});
    expect(await app.evaluate(()=>(globalThis as any).__dialogCalls)).toBe(0);
-   await card.getByText('External IP: 192.0.2.42',{exact:true}).waitFor({timeout:5000});
+     await card.getByText('External IP: 8.8.8.8',{exact:true}).waitFor({timeout:5000});
+     const flag=card.getByRole('img',{name:'United States'});await flag.waitFor({timeout:5000});
+    await app.evaluate(({shell})=>{shell.openExternal=(async url=>{(globalThis as any).__countryAttributionUrl=url;}) as typeof shell.openExternal;});
+    await win.getByRole('link',{name:'DB-IP.com'}).click();
+    expect(await app.evaluate(()=>(globalThis as any).__countryAttributionUrl)).toBe('https://db-ip.com/');
+    await win.setViewportSize({width:820,height:800});
+    const flagBox=await flag.boundingBox(),mainBox=await win.locator('main').boundingBox();expect(flagBox).not.toBeNull();expect(mainBox).not.toBeNull();expect(flagBox!.x+flagBox!.width).toBeLessThanOrEqual(mainBox!.x+mainBox!.width);
    await card.getByText(/api\.ipify\.org.*HTTP/).waitFor();
-   expect(requests).toEqual(['http://api.ipify.org/?format=json']);
+    expect(requests).toEqual(['http://api.ipify.org/?format=json']);
+    const remoteRequests=await app.evaluate(()=>(globalThis as any).__countryRequests as string[]);
+    expect(remoteRequests.filter(url=>!url.startsWith('file://')&&!url.startsWith('devtools://')&&!url.startsWith('data:'))).toEqual([]);
    expect(await app.evaluate(()=>(globalThis as any).__dialogCalls)).toBe(0);
    expect(await win.getByRole('alert').count()).toBe(0);
  }finally{

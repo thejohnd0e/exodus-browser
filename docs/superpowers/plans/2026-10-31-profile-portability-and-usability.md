@@ -120,12 +120,12 @@ Shared edits: `src/shared/{contracts,validation}.ts`, `src/main/{index,ipc}.ts`,
 
 **Interfaces:** `lookupCountry(ip:string):Promise<string|null>` returns uppercase ISO 3166-1 alpha-2 only; extend both proxy-check DTOs with `countryCode:string|null`. `CountryFlag({countryCode,language})` uses a locally bundled SVG and `Intl.DisplayNames` for accessible country text, never remote image paths or unvalidated filenames.
 
-- [ ] Write failing tests for known IPv4/IPv6 results using a tiny licensed fixture/injected reader, private/reserved IPs, malformed/missing MMDB, unknown country, invalid country code, and a delayed result following proxy-password-only edit. Unknown country must preserve IP success; IP and country share one result version.
-- [ ] Run `npx vitest run tests/unit/country.test.ts` and existing proxy UI tests; confirm expected failures.
-- [ ] Verify DB-IP Country Lite distribution license, provenance, date, SHA-256, and attribution; select and pin a compatible bounded MMDB reader and licensed local SVG set. Do not fetch data in ordinary builds or startup. Document an explicit maintainer refresh procedure. If distribution rights/provenance cannot be established, stop this increment rather than shipping an unverified asset.
-- [ ] Bundle the dataset as a runtime resource with module-relative path resolution. Perform lookup only on validated checked IPs in main; catch dataset/lookup errors as null. Keep the existing HTTP warning unchanged. Clear/invalidate country and IP together on repeat checks or edits.
-- [ ] Render flags in profile and proxy-library results with accessible localized labels. Test real Electron built-resource loading without source-directory access, narrow width, and zero additional network requests.
-- [ ] Run both full verification commands; expect PASS. Commit: `feat: show offline country flags beside checked proxy IPs`.
+- [x] Write failing tests for known IPv4/IPv6 results using a tiny licensed fixture/injected reader, private/reserved IPs, malformed/missing MMDB, unknown country, invalid country code, and a delayed result following proxy-password-only edit. Unknown country must preserve IP success; IP and country share one result version.
+- [x] Run `npx vitest run tests/unit/country.test.ts` and existing proxy UI tests; confirm expected failures.
+- [x] Verify DB-IP Country Lite distribution license, provenance, date, SHA-256, and attribution; select and pin a compatible bounded MMDB reader and licensed local SVG set. Do not fetch data in ordinary builds or startup. Document an explicit maintainer refresh procedure. If distribution rights/provenance cannot be established, stop this increment rather than shipping an unverified asset.
+- [x] Bundle the dataset as a runtime resource with module-relative path resolution. Perform lookup only on validated checked IPs in main; catch dataset/lookup errors as null. Keep the existing HTTP warning unchanged. Clear/invalidate country and IP together on repeat checks or edits.
+- [x] Render flags in profile and proxy-library results with accessible localized labels. Test real Electron built-resource loading without source-directory access, narrow width, and zero additional network requests.
+- [x] Run both full verification commands; `npm run verify` PASS (196/196 unit, typecheck and production build); `npm run test:integration` PASS (45/45). Commit: `feat: show offline country flags beside checked proxy IPs`.
 
 ### Task 7: Portable archive schema and lossless cookie adapter
 

@@ -62,6 +62,9 @@ Priorities: P0 — blocks a reliable handoff, P1 — important quality/security,
 - [x] **Extend UI regression coverage to proxy-password-only changes.**
   The new shared-directory test changes only the proxy password/version, retains the other profile fields, and checks that the IP is cleared. Included in the current passing `npm run verify`.
 
+- [x] **Show offline country flags for checked proxy IPs.**
+  2026-10-31: DB-IP Country Lite October 2026 (CC BY 4.0; hashes and refresh procedure in `resources/geoip/README.md`), pinned bounded MMDB reader, and locally bundled MIT SVGs. Profile and shared-proxy results show localized country names; lookup failures and non-public IPs leave IP success intact. Attribution is linked and only the canonical URL opens externally. `npm run verify` PASS (196/196 unit); `npm run test:integration` PASS (45/45), including built Electron resource, narrow viewport and no remote GeoIP requests. Manual visual acceptance remains open.
+
 - [ ] **Forced termination policy after `STOP_TIMEOUT`.**
   Allow kill only for a verified profile process tree (PID + executable + user-data-dir + creation time), with a test rejecting an unrelated process.
   Files: `src/main/engines/chromium.ts`, `src/main/runtime/supervisor.ts`.

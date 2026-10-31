@@ -25,12 +25,12 @@ export interface ProfileApi {
   linkEngine():Promise<Result<void>>;
   backup(id:string):Promise<Result<void>>;
   restore():Promise<Result<Profile|null>>;
-  checkProxy(id:string):Promise<Result<{ip:string;service:string}|null>>;
+  checkProxy(id:string):Promise<Result<{ip:string;countryCode:string|null;service:string}|null>>;
   listProxies():Promise<Result<SavedProxy[]>>;
   createProxy(input:SavedProxyInput):Promise<Result<SavedProxy>>;
   updateProxy(id:string,input:SavedProxyInput):Promise<Result<SavedProxy>>;
   removeProxy(id:string):Promise<Result<void>>;
-  checkSavedProxy(id:string):Promise<Result<{ip:string;service:string}>>;
+  checkSavedProxy(id:string):Promise<Result<{ip:string;countryCode:string|null;service:string}>>;
   importCookies(id:string):Promise<Result<CookieOperationResult|null>>;
   exportCookies(id:string,format:CookieFormat):Promise<Result<CookieOperationResult|null>>;
   clearCookies(id:string):Promise<Result<{cleared:true}|null>>;

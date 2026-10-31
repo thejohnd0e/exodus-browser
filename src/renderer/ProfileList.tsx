@@ -2,6 +2,7 @@ import {useState} from 'react';
 import type {CookieFormat,Profile,ProfileState} from '../shared/contracts';
 import type {AppLanguage} from '../shared/settings';
 import {translate} from './i18n/provider';
+import {CountryFlag} from './CountryFlag';
 const labels:Record<ProfileState,string>={stopped:'Stopped',starting:'Starting',running:'Running',stopping:'Stopping',error:'Launch error',blocked:'Blocked'};
 const osLabels:Record<Profile['fingerprint']['os'],string>={windows11:'Windows 11',windows10:'Windows 10',macos:'macOS',linux:'Linux'};
 const modeLabels:Record<string,string>={off:'Off',real:'Real',noise:'Noise',disableUdp:'Disable UDP',altered:'Altered',on:'On'};
@@ -11,7 +12,7 @@ export const fingerprintSummary=(p:Profile,language:AppLanguage='en')=>{
  const timezone=p.fingerprint.timezone.mode==='auto'?t('Auto'):p.fingerprint.timezone.value;
  return {platform:`${platform} · ${t('Canvas')}: ${t(modeLabels[p.fingerprint.canvas])} · ${t('WebGL')}: ${t(modeLabels[p.fingerprint.webgl])}`,timezone:`${t('Time zone')}: ${timezone}`};
 };
-export type ProxyCheckResult={ip:string;version:string};
+export type ProxyCheckResult={ip:string;countryCode:string|null;version:string};
 export const profileCheckVersion=(p:Profile)=>`${p.updatedAt}:${p.proxy?.id??''}:${p.proxy?.updatedAt??''}`;
 function CookieExport({disabled,language,onPick}:{disabled:boolean;language:AppLanguage;onPick:(format:CookieFormat)=>void}){
    const [open,setOpen]=useState(false);
@@ -32,8 +33,9 @@ export function ProfileList({language,profiles,states,proxyResults,runningVersio
      <div className="actions"><button className="primary" disabled={busy||locked||!engineReady} onClick={()=>onAction('start',p.id)}>{t('Launch')}</button><button disabled={busy||state!=='running'} onClick={()=>onAction('stop',p.id)}>{t('Stop')}</button><button disabled={busy||locked} onClick={()=>onEdit(p)}>{t('Edit')}</button><button disabled={busy||locked} onClick={()=>onAction('backup',p.id)}>{t('Backup')}</button><button disabled={busy||locked} onClick={()=>onImportCookies(p.id)}>{t('Import cookies…')}</button><CookieExport disabled={busy||locked} language={language} onPick={format=>onExportCookies(p.id,format)}/><button disabled={busy||locked} onClick={()=>onClearCookies(p.id)}>{t('Clear cookies…')}</button><button disabled={busy||!p.proxy} aria-describedby={p.proxy?'proxy-disclosure-'+p.id:undefined} onClick={()=>onAction('checkProxy',p.id)}>{t('Check IP')}</button><button className="danger" disabled={busy||locked} onClick={()=>onAction('remove',p.id)}>{t('Delete')}</button></div>
     {cookieResults[p.id]?.version===p.updatedAt&&<p className="cookie-result" role="status">{cookieResults[p.id]!.kind==='clear'?t('Cookies cleared. Other site data was kept.'):t(cookieResults[p.id]!.kind==='import'?'cookies.imported':'cookies.exported',{count:cookieResults[p.id]!.count,fileName:cookieResults[p.id]!.fileName})}</p>}
    {p.proxy&&<div className="proxy-check">
-     <p className="proxy-disclosure" id={'proxy-disclosure-'+p.id}>{t('api.ipify.org will see the proxy IP. The HTTP response may be spoofed.')}</p>
-     {result?.version===profileCheckVersion(p)&&<p className="proxy-result" role="status">{t('External IP: {{ip}}',{ip:result.ip})}</p>}
+      <p className="proxy-disclosure" id={'proxy-disclosure-'+p.id}>{t('api.ipify.org will see the proxy IP. The HTTP response may be spoofed.')}</p>
+      {result?.version===profileCheckVersion(p)&&<p className="proxy-result proxy-result-line" role="status"><span>{t('External IP: {{ip}}',{ip:result.ip})}</span><CountryFlag countryCode={result.countryCode} language={language}/></p>}
+      <small className="proxy-attribution">{t('IP geolocation data by')} <a href="https://db-ip.com/" target="_blank" rel="noreferrer">DB-IP.com</a></small>
      {Object.hasOwn(runningVersions,p.id)&&runningVersions[p.id]!==`${p.proxy.id}:${p.proxy.updatedAt}`&&<p className="warning">{t('Checking the saved proxy. The running browser uses its previous settings until restarted.')}</p>}
    </div>}
     {state==='blocked'&&<p className="warning">{t('Close the remaining browser manually and restart the manager.')}</p>}
