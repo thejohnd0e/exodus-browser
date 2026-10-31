@@ -26,6 +26,7 @@ import {SessionStore} from './sessions/store';
 import {AppSettingsService} from './settings/service';
 import {nativeMessage} from '../shared/i18n/messages';
 import {UpdateService} from './update/service';
+import {createNetFetch} from './update/net-fetch';
 import {spawn} from 'node:child_process';
 app.setName('Exodus Browser');
 // Keep the existing data directory independent of the visible product name.
@@ -65,7 +66,7 @@ else void app.whenReady().then(async()=>{
     const finishShutdown=async()=>{try{await Promise.all([cookies.closeAll(),portable.closeAll()]);await supervisor.shutdown();quitting=true;profiles.close();app.quit();}catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});closing=false;}};
     const update=new UpdateService({
       appVersion:BUILD_INFO.version,root,
-      fetch:(url,init)=>net.fetch(url,init as RequestInit),
+      fetch:createNetFetch(net as unknown as Parameters<typeof createNetFetch>[0]),
       busy:async()=>supervisor.hasActiveWork()||cookies.hasActiveWork()||portable.hasActiveWork(),
       runInstaller:path=>new Promise<void>((resolve,reject)=>{const child=spawn(path,[],{detached:true,stdio:'ignore'});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});}),
       onState:state=>{if(!win.isDestroyed())win.webContents.send('app:update-state',state);},
