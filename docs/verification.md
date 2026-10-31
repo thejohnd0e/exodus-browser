@@ -173,4 +173,12 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Published `v1.1.79` with `ExodusBrowser-Setup-1.1.79.exe` (135,268,836 bytes) and `SHA256SUMS`; the broken `v1.1.78` release and tag were deleted at the user's request. Unauthenticated `releases/latest` returns `v1.1.79`.
 - Live update check from version 1.1.78 (temporary test, not committed): the service reported `available` for 1.1.79, downloaded the installer and matched SHA-256 `3a68ac410808530f353ea0ca2ee268306e2e222ee15493f27fb8daa54cbeb2ad`.
 
+## Release 1.1.80 (2026-10-31)
+
+- The update status moved from a truncated inline label in the sidebar footer into a panel above the footer. Measured in Electron: content 198 px inside a 260 px panel with no clipping.
+- `npm run verify` PASS (338 unit); `npm run test:integration` PASS (57/57); `npm run dist` PASS with "Packaged application verified: version 1.1.80, app.asar intact".
+- Published `v1.1.80` with `ExodusBrowser-Setup-1.1.80.exe` (135,268,551 bytes) and `SHA256SUMS`; SHA-256 `bd451858b464af0da28af1ac26e8bce541d293154a6c93e180f31bdf5d6852fe`. Unauthenticated `releases/latest` returns `v1.1.80`.
+- Live update check from version 1.1.79 (temporary test, not committed): `available` → downloaded → checksum matched.
+
+
 
