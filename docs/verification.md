@@ -4,6 +4,14 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### Release cleanup (2026-10-31)
+
+- Requested by the owner: keep a single current release and remove the earlier update builds. Deleted the GitHub releases **and tags** v1.1.79–v1.1.84; deleted the same tags locally. v1.1.85 remains.
+- Release notes for v1.1.85 were rewritten first to be self-contained, so removing 1.1.84 did not remove the explanation of the update-transport fix or the manual-install path for 1.1.78–1.1.81.
+- Verified afterwards: one release remains (`v1.1.85`, latest, non-draft, non-prerelease); the only remote tag is `v1.1.85`; `releases/latest` returns v1.1.85 with both assets; the remote asset is 135,268,906 bytes and `SHA256SUMS` is present.
+- Re-ran the disposable real-Electron updater with the production transport after the cleanup: `available` → downloaded → `ready` in 4.99 seconds, SHA-256 `a1d99a33150e2e47bbd737860567cd8dfc789b8fc20810bbd4ffcc4bc825ed24` matched. Updating from older installed versions is therefore unaffected by the removal.
+- Irreversible consequences accepted by the owner: old download URLs no longer resolve and old tags are gone from the repository. Verification history and checksums stay in this file; local installers for 1.1.78–1.1.85 remain in the ignored `dist-install/` directory. Storage dropped from roughly 947 MB to 135 MB.
+
 ### README screenshot (2026-10-31)
 
 - Added `docs/images/main-window.png` (1280×792, 78 KB) to the README, with a caption stating that the profiles are examples.
