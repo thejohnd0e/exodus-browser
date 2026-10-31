@@ -18,7 +18,7 @@ export const languagesSchema=z.array(localeSchema).length(1,'Specify exactly one
 export const historicalLanguagesSchema=z.array(localeSchema).min(1).max(20).refine(l=>new Set(l).size===l.length,'Languages must not repeat');
 export function normalizeStoredLanguages(value:unknown):[string]{return [historicalLanguagesSchema.parse(value)[0]];}
 const profileFields={name,note:z.string().max(4000),startUrls:z.array(safeUrl).max(20)};
-export const profileSchema=z.object({...profileFields,languages:languagesSchema,proxyId:z.uuid().nullable(),fingerprint:fingerprintSchema.default(()=>DEFAULT_FINGERPRINT)}).strict();
+export const profileSchema=z.object({...profileFields,languages:languagesSchema,proxyId:z.uuid().nullable(),fingerprint:fingerprintSchema.default(()=>DEFAULT_FINGERPRINT),restoreLastSession:z.boolean().default(false),fingerprintSeed:z.number().int().min(0).max(0xffffffff).optional()}).strict();
 export const legacyProfileSchema=z.object({...profileFields,language:localeSchema,proxy:proxySchema.nullable()}).strict();
 export const legacyStoredSchema=z.object({...profileFields,id:z.uuid(),language:localeSchema,proxy:z.object({...publicProxyFields,hasPassword:z.boolean()}).strict().nullable(),createdAt:z.string(),updatedAt:z.string()}).strict();
 export const parseSavedProxyInput=(value:unknown)=>savedProxySchema.parse(value);

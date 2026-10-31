@@ -20,4 +20,10 @@ describe('profile validation', () => {
     expect(() => parseProfileInput({...valid,executable:'bad'})).toThrow();
     expect(() => parseProfileId('../outside')).toThrow();
   });
+  it('validates optional restore preference and uint32 fingerprint seed',()=>{
+    expect(parseProfileInput({...valid,restoreLastSession:true,fingerprintSeed:0xffffffff}).fingerprintSeed).toBe(0xffffffff);
+    expect(()=>parseProfileInput({...valid,fingerprintSeed:-1})).toThrow();
+    expect(()=>parseProfileInput({...valid,fingerprintSeed:0x100000000})).toThrow();
+    expect(()=>parseProfileInput({...valid,fingerprintSeed:1.5})).toThrow();
+  });
 });

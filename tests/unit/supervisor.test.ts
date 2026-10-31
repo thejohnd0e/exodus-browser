@@ -6,6 +6,7 @@ import {ProfileService} from '../../src/main/profiles/service';
 import {tempRoot,testSecrets,valid,cleanup} from '../fixtures/profiles';
 import {DEFAULT_FINGERPRINT} from '../../src/shared/fingerprint';
 import type {BrowserEngineAdapter} from '../../src/main/engines/types';
+import {SessionStore} from '../../src/main/sessions/store';
 function fixture(){const ends:Array<()=>void>=[];let launches=0;
   const engine:BrowserEngineAdapter={capabilities:{fingerprints:false},validate:async()=>{},launch:async()=>{launches++;let finish!:()=>void;const exit=new Promise<{code:number|null;signal:string|null}>(r=>{finish=()=>r({code:0,signal:null});});ends.push(finish);return {pid:100+launches,executable:'fixture.exe',startedAt:new Date().toISOString(),exit,stop:async()=>finish()};}};
   return {engine,launches:()=>launches,exit:(i=0)=>ends[i]()};}
@@ -50,4 +51,24 @@ it('passes the stored fingerprint to the engine',async()=>{
  const engine:BrowserEngineAdapter={capabilities:{fingerprints:true},validate:async()=>{},launch:async input=>{seen.push(input.fingerprint);let finish!:()=>void;const exit=new Promise<{code:number|null;signal:string|null}>(r=>{finish=()=>r({code:0,signal:null});});await Promise.resolve();return {pid:1,executable:'fixture.exe',startedAt:new Date().toISOString(),exit,stop:async()=>finish()};}};
  const s=new Supervisor(profiles,engine,{probe:async()=>[]});
  try{const fingerprint={...DEFAULT_FINGERPRINT,canvas:'noise' as const,timezone:{mode:'manual' as const,value:'Europe/Paris'}};const a=await profiles.create({...valid,fingerprint});await s.start(a.id);expect(seen[0]).toEqual(fingerprint);await s.stop(a.id);}finally{profiles.close();cleanup(root);}
+});
+
+it('uses saved tab URLs only when session restore is enabled and passes the stable fingerprint seed',async()=>{
+ const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const sessions=new SessionStore(root);const inputs:Array<any>=[];
+ const engine:BrowserEngineAdapter={capabilities:{fingerprints:true},validate:async()=>{},launch:async input=>{
+  inputs.push(input);let finish!:()=>void;const exit=new Promise<{code:number|null;signal:string|null}>(resolve=>{finish=()=>resolve({code:0,signal:null});});
+  return {pid:1,executable:'fixture.exe',startedAt:new Date().toISOString(),exit,stop:async()=>finish()};
+ }};
+ const supervisor=new Supervisor(profiles,engine,{probe:async()=>[],sessions});
+ try{
+  const profile=await profiles.create({...valid,restoreLastSession:true});
+  await sessions.write(profile.id,{version:1,urls:['https://saved.example/','https://second.example/'],updatedAt:new Date().toISOString()});
+  await supervisor.start(profile.id);
+  expect(inputs[0].startUrls).toEqual(['https://saved.example/','https://second.example/']);
+  expect(inputs[0].fingerprintSeed).toBe(profile.fingerprintSeed);
+  await supervisor.stop(profile.id);
+  const fallback=await profiles.create({...valid,restoreLastSession:true});await supervisor.start(fallback.id);
+  expect(inputs[1].startUrls).toEqual(valid.startUrls);
+  await supervisor.stop(fallback.id);
+ }finally{profiles.close();cleanup(root);}
 });

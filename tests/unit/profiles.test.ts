@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { ProfileService } from '../../src/main/profiles/service';
 import { DEFAULT_FINGERPRINT } from '../../src/shared/fingerprint';
 import { profilePath } from '../../src/main/profiles/paths';
+import {seedFor} from '../../src/main/engines/fingerprint';
 import {valid,tempRoot,testSecrets,cleanup} from '../fixtures/profiles';
 it('persists profiles, isolates paths and never writes plaintext proxy password',async()=>{
   const root=tempRoot();const secrets=testSecrets();let s=new ProfileService(root,secrets);
@@ -67,5 +68,35 @@ it('persists fingerprint updates and exposes them to the launch input',async()=>
   expect(updated.fingerprint).toEqual(fingerprint);
   expect(Date.parse(updated.updatedAt)).toBeGreaterThan(Date.parse(p.updatedAt));
   expect(s.getLaunchInput(p.id).fingerprint).toEqual(fingerprint);
+ }finally{s.close();cleanup(root);}
+});
+
+it('defaults session restore off and assigns a stable profile fingerprint seed',async()=>{
+ const root=tempRoot();let s=new ProfileService(root,testSecrets());
+ try{
+  const p=await s.create(valid);
+  expect(p.restoreLastSession).toBe(false);
+  expect(p.fingerprintSeed).toBeGreaterThanOrEqual(0);
+  expect(p.fingerprintSeed).toBeLessThanOrEqual(0xffffffff);
+  expect(s.getLaunchInput(p.id).fingerprintSeed).toBe(p.fingerprintSeed);
+  s.close();s=new ProfileService(root,testSecrets());
+  expect(s.get(p.id).fingerprintSeed).toBe(p.fingerprintSeed);
+  const updated=await s.update(p.id,{...valid,restoreLastSession:true});
+  expect(updated.restoreLastSession).toBe(true);
+  expect(updated.fingerprintSeed).toBe(p.fingerprintSeed);
+ }finally{s.close();cleanup(root);}
+});
+
+it('derives the existing deterministic fingerprint seed for a historical record without rewriting it',async()=>{
+ const root=tempRoot();const s=new ProfileService(root,testSecrets());
+ try{
+  const p=await s.create(valid);const db=new Database(join(root,'profiles.sqlite'));
+  const row=db.prepare('SELECT data FROM profiles WHERE id=?').get(p.id) as {data:string};
+  const stored=JSON.parse(row.data);delete stored.fingerprintSeed;delete stored.restoreLastSession;
+  const legacyJson=JSON.stringify(stored);db.prepare('UPDATE profiles SET data=? WHERE id=?').run(legacyJson,p.id);db.close();
+  expect(s.get(p.id).fingerprintSeed).toBe(seedFor(p.id));
+  expect(s.get(p.id).restoreLastSession).toBe(false);
+  const verify=new Database(join(root,'profiles.sqlite'));
+  expect((verify.prepare('SELECT data FROM profiles WHERE id=?').get(p.id) as {data:string}).data).toBe(legacyJson);verify.close();
  }finally{s.close();cleanup(root);}
 });

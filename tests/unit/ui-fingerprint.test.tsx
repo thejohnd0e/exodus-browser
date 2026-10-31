@@ -8,7 +8,7 @@ import {DEFAULT_FINGERPRINT,type Fingerprint} from '../../src/shared/fingerprint
 import type {Profile} from '../../src/shared/contracts';
 afterEach(cleanup);
 const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
-const profile:Profile={id,name:'Work',note:'',languages:['ru-RU'],startUrls:['about:blank'],proxyId:null,proxy:null,fingerprint:DEFAULT_FINGERPRINT,createdAt:'now',updatedAt:'now'};
+const profile:Profile={id,name:'Work',note:'',languages:['ru-RU'],startUrls:['about:blank'],proxyId:null,proxy:null,fingerprint:DEFAULT_FINGERPRINT,restoreLastSession:false,fingerprintSeed:1,createdAt:'now',updatedAt:'now'};
 const group=(name:string)=>screen.getByRole('group',{name});
 function Harness({chromeVersion='156.0.8078.80',onChange}:{chromeVersion?:string|null;onChange?:(next:Fingerprint)=>void}){
   const [value,setValue]=useState(DEFAULT_FINGERPRINT);

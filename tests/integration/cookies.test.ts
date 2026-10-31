@@ -11,6 +11,7 @@ import {Supervisor} from '../../src/main/runtime/supervisor';
 import {ChromiumAdapter} from '../../src/main/engines/chromium';
 import type {BrowserEngineAdapter} from '../../src/main/engines/types';
 import {DEFAULT_FINGERPRINT} from '../../src/shared/fingerprint';
+import {SessionStore} from '../../src/main/sessions/store';
 import {tempRoot,testSecrets,valid,cleanup} from '../fixtures/profiles';
 
 const base=join(process.env.LOCALAPPDATA??'','ms-playwright');
@@ -37,10 +38,10 @@ it('imports and exports cookies in a headless session without network requests',
   const requests:string[]=[];
   const server=createServer((req,res)=>{requests.push(req.url??'');res.end('x');});
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
-  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const sessions=new SessionStore(root);
   const service=new CookieService(profiles,{withStopped:async(_id,fn)=>fn()},{resolveExecutable:async()=>exe},{probe:async()=>[]});
   try{
-    const p=await profiles.create(valid);const input=join(root,'in.json');await writeFile(input,cookieFile('127.0.0.1'));
+    const p=await profiles.create(valid);const saved={version:1 as const,urls:['https://saved.example/'],updatedAt:new Date().toISOString()};await sessions.write(p.id,saved);const input=join(root,'in.json');await writeFile(input,cookieFile('127.0.0.1'));
     await expect(service.importFile(p.id,input)).resolves.toEqual({count:2,fileName:'in.json'});
     const json=join(root,'out.json');await expect(service.exportFile(p.id,json,'json')).resolves.toEqual({count:2,fileName:'out.json'});
     const exported=JSON.parse(await readFile(json,'utf8')) as Array<{name:string;httpOnly:boolean}>;
@@ -48,6 +49,7 @@ it('imports and exports cookies in a headless session without network requests',
     expect(exported.find(cookie=>cookie.name==='sid')?.httpOnly).toBe(true);
     const txt=join(root,'out.txt');await service.exportFile(p.id,txt,'netscape');
     expect(await readFile(txt,'utf8')).toContain('#HttpOnly_127.0.0.1');
+    expect(await sessions.read(p.id)).toEqual(saved);
     const p2=await profiles.create(valid);
     await expect(service.importFile(p2.id,json)).resolves.toMatchObject({count:2});
     await expect(service.importFile(p2.id,txt)).resolves.toMatchObject({count:2});

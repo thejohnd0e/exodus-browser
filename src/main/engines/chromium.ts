@@ -10,6 +10,7 @@ import {fingerprintArgs,seedFor} from './fingerprint';
 import {CdpClient} from '../cdp/client';
 import {waitForDevtools} from './devtools';
 import {installFingerprint} from '../cdp/fingerprint';
+import {SessionTracker} from '../sessions/tracker';
 export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerprint??DEFAULT_FINGERPRINT;return [
   '--user-data-dir='+input.userDataDir,'--lang='+input.languages[0],'--no-first-run','--no-default-browser-check','--remote-debugging-port=0',
   ...(input.proxyUrl?['--proxy-server='+input.proxyUrl,'--proxy-bypass-list=<-loopback>']:[]),
@@ -50,23 +51,33 @@ export class ChromiumAdapter implements BrowserEngineAdapter {
     const executable=await this.executable();
     const fingerprint=input.fingerprint??DEFAULT_FINGERPRINT;
     const child=spawn(executable,chromiumArgs({...input,fingerprint}),{shell:false,stdio:['ignore','ignore','pipe'],windowsHide:false});
-    let exited=false;
-    const exit=new Promise<{code:number|null;signal:string|null}>((resolve)=>{child.once('exit',(code,signal)=>{exited=true;resolve({code,signal});});child.once('error',()=>{exited=true;resolve({code:1,signal:null});});});
+    let exited=false;let tracker:SessionTracker|undefined;
+    const exit=new Promise<{code:number|null;signal:string|null}>((resolve)=>{const finish=(result:{code:number|null;signal:string|null})=>{exited=true;void(async()=>{await tracker?.flush(true).catch(()=>undefined);tracker?.dispose();resolve(result);})();};child.once('exit',(code,signal)=>finish({code,signal}));child.once('error',()=>finish({code:1,signal:null}));});
     await new Promise<void>((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
     let client:CdpClient|null=null;
     try{
       const url=await waitForDevtools(child);
       if(!url)throw Error('FINGERPRINT_UNAVAILABLE');
       client=await this.connect(url);
+      if(input.onSessionSnapshot){
+        tracker=new SessionTracker(input.onSessionSnapshot);
+        client.onEvent(message=>tracker?.onEvent(message));
+        await client.send('Target.setDiscoverTargets',{discover:true});
+      }
+      const {targetInfos}=await client.send<{targetInfos:Array<{targetId:string;type:string;url?:string}>}>('Target.getTargets',{});
+      for(const target of targetInfos)tracker?.onEvent({method:'Target.targetCreated',params:{targetInfo:target}});
       let engineUserAgent:string|undefined;
       try{engineUserAgent=(await client.send<{userAgent:string}>('Browser.getVersion',{})).userAgent;}catch{/* hints stay derived from the chosen UA */}
-      const session=await installFingerprint(client,{fingerprint,languages:input.languages,seed:seedFor(input.profileId),engineUserAgent});
+      const session=await installFingerprint(client,{fingerprint,languages:input.languages,seed:input.fingerprintSeed??seedFor(input.profileId),engineUserAgent});
       await session.navigate(input.startUrls);
-    }catch(error){await this.dispose(child,client,exit);throw Error('FINGERPRINT_UNAVAILABLE');}
+    }catch(error){tracker?.dispose();await this.dispose(child,client,exit);throw Error('FINGERPRINT_UNAVAILABLE');}
     const cdp=client;
     const startedAt=new Date().toISOString();
     return {pid:child.pid!,executable,startedAt,exit,stop:async()=>{
       if(exited)return;
+      try{const {targetInfos}=await cdp.send<{targetInfos:Array<{targetId:string;type:string;url?:string}>}>('Target.getTargets',{});tracker?.updateTargets(targetInfos);}catch{/* Keep the latest observed snapshot if CDP is already closing. */}
+      await tracker?.flush();
+      tracker?.dispose();
       try{await cdp.send('Browser.close',{});}catch{await closeMainWindow(executable,child.pid,input.userDataDir).catch(()=>undefined);}
       let timer:ReturnType<typeof setTimeout>|undefined;
       try{await Promise.race([exit,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('STOP_TIMEOUT')),10000);})]);}

@@ -8,7 +8,7 @@ afterEach(cleanup);
 const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
 const proxyId='8c6dbed2-8067-43ec-b5fd-3cb482d965ea';
 const proxy:SavedProxy={id:proxyId,name:'Shared HTTP',kind:'http',host:'proxy.example.com',port:8080,hasPassword:true,createdAt:'now',updatedAt:'now',profileIds:[id]};
-const p:Profile={id,name:'Work',note:'',languages:['ru-RU'],startUrls:['about:blank'],proxyId,proxy,fingerprint:DEFAULT_FINGERPRINT,createdAt:'now',updatedAt:'now'};
+const p:Profile={id,name:'Work',note:'',languages:['ru-RU'],startUrls:['about:blank'],proxyId,proxy,fingerprint:DEFAULT_FINGERPRINT,restoreLastSession:false,fingerprintSeed:123,createdAt:'now',updatedAt:'now'};
 function api(overrides:Partial<ProfileApi>={}):ProfileApi{return {list:async()=>({ok:true,value:[p]}),listProxies:async()=>({ok:true,value:[proxy]}),states:async()=>({ok:true,value:{[id]:'stopped'}}),runningProxyVersions:async()=>({ok:true,value:{}}),engineStatus:async()=>({ok:true,value:{state:'missing'}}),create:async input=>({ok:true,value:{...p,...input}}),update:async(_id,input)=>({ok:true,value:{...p,...input}}),createProxy:async input=>({ok:true,value:{...proxy,...input}}),updateProxy:async()=>({ok:true,value:proxy}),removeProxy:async()=>({ok:true,value:undefined}),checkSavedProxy:async()=>({ok:true,value:{ip:'192.0.2.1',service:'test'}}),remove:async()=>({ok:true,value:undefined}),start:async()=>({ok:true,value:undefined}),stop:async()=>({ok:true,value:undefined}),installEngine:async()=>({ok:true,value:undefined}),linkEngine:async()=>({ok:true,value:undefined}),backup:async()=>({ok:true,value:undefined}),restore:async()=>({ok:true,value:null}),checkProxy:async()=>({ok:true,value:{ip:'192.0.2.1',service:'test'}}),importCookies:async()=>({ok:true,value:null}),exportCookies:async()=>({ok:true,value:null}),...overrides};}
 function card(name='Work'){return screen.getByRole('heading',{name}).closest('article')!;}
 async function openProfile(){await screen.findByText('Work');fireEvent.click(screen.getByRole('button',{name:'Edit'}));}
@@ -50,6 +50,13 @@ it('keeps a profile draft when adding or cancelling a proxy editor and selects a
  fireEvent.click(screen.getByRole('button',{name:'Add proxy'}));fireEvent.click(screen.getByRole('button',{name:'Close proxy editor'}));expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft');
  fireEvent.click(screen.getByRole('button',{name:'Add proxy'}));fireEvent.change(screen.getByLabelText('Proxy name'),{target:{value:'New'}});fireEvent.change(screen.getByLabelText('Proxy address'),{target:{value:'localhost'}});fireEvent.click(screen.getByRole('button',{name:'Save proxy'}));
  await waitFor(()=>expect((screen.getByLabelText('Saved proxy') as HTMLSelectElement).value).toBe(newId));expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft');fireEvent.click(screen.getByRole('button',{name:'Save profile'}));await waitFor(()=>expect(update).toHaveBeenCalled());expect(update.mock.calls[0][1].proxyId).toBe(newId);
+});
+it('saves the per-profile restore-last-session preference',async()=>{
+ const update=vi.fn(api().update);render(<App api={api({update})}/>);await openProfile();
+ fireEvent.click(screen.getByRole('checkbox',{name:'Restore tabs from the previous session'}));
+ fireEvent.click(screen.getByRole('button',{name:'Save profile'}));
+ await waitFor(()=>expect(update).toHaveBeenCalled());
+ expect(update.mock.calls[0][1].restoreLastSession).toBe(true);
 });
 it('edits proxies separately and drops HTTP credentials when switched to SOCKS5',async()=>{
  const updateProxy=vi.fn(api().updateProxy);render(<App api={api({updateProxy})}/>);await screen.findByText('Work');fireEvent.click(screen.getByRole('button',{name:'Proxies'}));fireEvent.click(screen.getByRole('button',{name:'Edit'}));fireEvent.change(screen.getByLabelText('Proxy type'),{target:{value:'socks5'}});fireEvent.click(screen.getByRole('button',{name:'Save proxy'}));await waitFor(()=>expect(updateProxy).toHaveBeenCalled());expect(updateProxy.mock.calls[0][1]).toEqual({name:'Shared HTTP',kind:'socks5',host:'proxy.example.com',port:8080});

@@ -4,6 +4,8 @@ Priorities: P0 — blocks a reliable handoff, P1 — important quality/security,
 
 ## P0 — manual end-to-end verification
 
+- [ ] **Manually verify session restoration in isolated application storage.** Enable it for one profile, open multiple tabs, stop/relaunch and confirm restoration; verify disabled profiles use start pages; create/restore a v4 backup in a separate test root. Do not use real profile data.
+
 - [ ] **Manual end-to-end acceptance of the build with isolated storage.**
   The shared proxy directory and single selectable language are implemented and pass automated tests. Remaining UI scenarios cover two profiles, start/stop, IP checking, and application exit. Use `LOCAL_PROFILES_DATA` from `STATUS.md`; do not touch the real database without approval.
 

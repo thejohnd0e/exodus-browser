@@ -18,6 +18,7 @@ import {createDispatcher,operations} from './ipc';
 import {isTrustedSender} from './trust';
 import releases from './engines/releases.json';
 import {BUILD_INFO} from '../shared/build-info';
+import {SessionStore} from './sessions/store';
 app.setName('Exodus Browser');
 // Keep the existing data directory independent of the visible product name.
 app.setPath('userData',join(app.getPath('appData'),'Local Profiles'));
@@ -30,8 +31,8 @@ else void app.whenReady().then(async()=>{
     const response=await net.fetch(url,{signal:AbortSignal.timeout(180000)});if(!response.ok||!response.body)throw Error('ENGINE_DOWNLOAD_FAILED');
     await pipeline(Readable.fromWeb(response.body as any),createWriteStream(destination,{flags:'wx'}));
   });
-  const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()));await supervisor.recover();
-  const backups=new BackupService(profiles,supervisor);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
+  const sessions=new SessionStore(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions});await supervisor.recover();
+  const backups=new BackupService(profiles,supervisor,undefined,sessions);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
   const cookies=new CookieService(profiles,supervisor,installer);
   const cookieOps=createCookieOperations({
     cookies,
@@ -41,7 +42,7 @@ else void app.whenReady().then(async()=>{
   let quitting=false,closing=false;
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
-    remove:async id=>{const choice=await dialog.showMessageBox(win,{type:'warning',message:'Delete this profile and all its data?',buttons:['Cancel','Delete'],defaultId:0,cancelId:0});if(choice.response===1)await supervisor.withStopped(id,()=>profiles.remove(id));},
+     remove:async id=>{const choice=await dialog.showMessageBox(win,{type:'warning',message:'Delete this profile and all its data?',buttons:['Cancel','Delete'],defaultId:0,cancelId:0});if(choice.response===1)await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
     start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),engineStatus:()=>installer.status(),
     installEngine:async()=>{
       if(!releases.release)throw Error('ENGINE_RELEASE_UNPINNED');
