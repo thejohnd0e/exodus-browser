@@ -6,11 +6,14 @@ import {EngineInstaller} from '../../src/main/engines/installation';
 import {DEFAULT_FINGERPRINT} from '../../src/shared/fingerprint';
 import {tempRoot,cleanup} from '../fixtures/profiles';
 it('keeps Unicode path as one argument and never exposes secrets',()=>{
-  const args=chromiumArgs({profileId:'test',userDataDir:'C:\\Profiles with spaces \u00e9\\a',languages:['ru-RU'],startUrls:['about:blank','https://example.com'],proxyUrl:'http://127.0.0.1:1234',fingerprint:DEFAULT_FINGERPRINT});
+  const args=chromiumArgs({profileId:'test',userDataDir:'C:\\Profiles with spaces \u00e9\\a',languages:['ru-RU'],startUrls:['about:blank','https://example.com'],proxyUrl:'http://127.0.0.1:1234',fingerprint:DEFAULT_FINGERPRINT,extensionDirs:['C:\\Extensions\\a','C:\\Extensions\\b']});
   expect(args).toContain('--user-data-dir=C:\\Profiles with spaces \u00e9\\a');
   expect(args).toContain('--proxy-bypass-list=<-loopback>');
   expect(args.filter(a=>a.startsWith('--remote-debugging-port'))).toEqual(['--remote-debugging-port=0']);
   expect(args.some(a=>a.includes('no-sandbox')||a.includes('remote-debugging-address'))).toBe(false);
+  expect(args).toContain('--disable-extensions-except=C:\\Extensions\\a,C:\\Extensions\\b');
+  expect(args).toContain('--load-extension=C:\\Extensions\\a,C:\\Extensions\\b');
+  expect(args.some(arg=>arg==='--disable-extensions')).toBe(false);
   expect(args.at(-1)).toBe('about:blank');
 });
 it('links an explicitly chosen Chromium, pins its hash and rejects a replaced binary',async()=>{

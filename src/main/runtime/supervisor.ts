@@ -12,8 +12,9 @@ export class Supervisor {
   private state:Record<string,ProfileState>={};private locks=new Set<string>();
   private running=new Map<string,Run>();
   private probe:()=>Promise<ProcessRecord[]>;private bridge:(p:ProxyInput)=>Promise<ProxyLease>;
-  constructor(private profiles:ProfileService,private engine:BrowserEngineAdapter,options:{probe?:()=>Promise<ProcessRecord[]>;bridge?:(p:ProxyInput)=>Promise<ProxyLease>;sessions?:SessionStore}={}){this.probe=options.probe??probeProfileProcesses;this.bridge=options.bridge??openProxyBridge;this.sessions=options.sessions;}
+  constructor(private profiles:ProfileService,private engine:BrowserEngineAdapter,options:{probe?:()=>Promise<ProcessRecord[]>;bridge?:(p:ProxyInput)=>Promise<ProxyLease>;sessions?:SessionStore;extensionDirectory?:(id:string)=>string}={}){this.probe=options.probe??probeProfileProcesses;this.bridge=options.bridge??openProxyBridge;this.sessions=options.sessions;this.extensionDirectory=options.extensionDirectory??(id=>id);}
   private sessions?:SessionStore;
+  private extensionDirectory:(id:string)=>string;
   states(){return {...this.state};}
   runningProxyVersions():Record<string,string|null>{return Object.fromEntries([...this.running].map(([id,run])=>[id,run.proxyVersion]));}
   private journal(id:string){return join(this.profiles.root,'runtime-'+id+'.json');}
@@ -34,7 +35,7 @@ export class Supervisor {
        const p=this.profiles.getLaunchInput(id);await this.engine.validate();if(p.proxy)lease=await this.bridge(p.proxy);
        let startUrls=p.startUrls;
        if(p.restoreLastSession&&this.sessions){const snapshot=await this.sessions.read(id).catch(()=>null);if(snapshot?.urls.length)startUrls=snapshot.urls;}
-       const process=await this.engine.launch({profileId:id,userDataDir:dir,startUrls,languages:p.languages,fingerprint:p.fingerprint,fingerprintSeed:p.fingerprintSeed,proxyUrl:lease?.url,onSessionSnapshot:this.sessions?value=>this.sessions!.write(id,value):undefined});
+       const process=await this.engine.launch({profileId:id,userDataDir:dir,startUrls,languages:p.languages,fingerprint:p.fingerprint,fingerprintSeed:p.fingerprintSeed,proxyUrl:lease?.url,extensionDirs:p.extensionIds.map(extensionId=>this.extensionDirectory(extensionId)),onSessionSnapshot:this.sessions?value=>this.sessions!.write(id,value):undefined});
       const run:Run={process,lease,proxyVersion:p.proxyVersion};this.running.set(id,run);
       void process.exit.then(async result=>{
         if(this.running.get(id)!==run)return;

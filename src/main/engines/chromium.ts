@@ -14,6 +14,7 @@ import {SessionTracker} from '../sessions/tracker';
 export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerprint??DEFAULT_FINGERPRINT;return [
   '--user-data-dir='+input.userDataDir,'--lang='+input.languages[0],'--no-first-run','--no-default-browser-check','--remote-debugging-port=0',
   ...(input.proxyUrl?['--proxy-server='+input.proxyUrl,'--proxy-bypass-list=<-loopback>']:[]),
+  ...(input.extensionDirs?.length?['--disable-extensions-except='+input.extensionDirs.join(','),'--load-extension='+input.extensionDirs.join(',')]:[]),
   ...fingerprintArgs(fingerprint),
   'about:blank'
 ];}
