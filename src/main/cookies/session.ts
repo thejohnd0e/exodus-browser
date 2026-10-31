@@ -26,8 +26,9 @@ export function cookieArgs(userDataDir: string): string[] {
   ];
 }
 
-type CookieCdp = Pick<CdpClient, 'send' | 'close'>;
+export type CookieCdp = Pick<CdpClient, 'send' | 'close'>;
 export interface CookieSession {
+  client:CookieCdp;
   setCookie(cookie: CookieInput): Promise<void>;
   getCookies(): Promise<CookieInput[]>;
   clearCookies():Promise<void>;
@@ -58,6 +59,7 @@ export async function openCookieSession({client, close}: {client: CookieCdp; clo
     }
   };
   return {
+    client,
     async setCookie(cookie) {
       const sessionId = await page();
       const params: Record<string, unknown> = {

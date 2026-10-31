@@ -9,7 +9,8 @@ export function validateEntryPath(name:string){
   if(!p||p.includes('\\')||p.includes(':')||/[\x00-\x1f]/.test(p)||p.split('/').some(s=>!s||s==='.'||s==='..'||/[. ]$/.test(s)||/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(s)))throw Error('UNSAFE_ARCHIVE_PATH');
   return name;
 }
-export async function extractArchive(source:string,destination:string,limits={entries:100000,bytes:20*1024**3}){
+export type ArchiveExtractionLimits={entries:number;bytes:number;fileBytes?:(name:string)=>number|undefined;onEntry?:(name:string,isDirectory:boolean)=>void};
+export async function extractArchive(source:string,destination:string,limits:ArchiveExtractionLimits={entries:100000,bytes:20*1024**3}){
   const zip=await new Promise<yauzl.ZipFile>((resolve,reject)=>yauzl.open(source,{lazyEntries:true,validateEntrySizes:true},(e,z)=>e?reject(e):resolve(z!)));
   let count=0,total=0;const seen=new Set<string>();
   await new Promise<void>((resolve,reject)=>{
@@ -21,14 +22,16 @@ export async function extractArchive(source:string,destination:string,limits={en
       if(++count>limits.entries||seen.has(key))throw Error('ARCHIVE_LIMIT_OR_DUPLICATE');seen.add(key);
       const mode=(entry.externalFileAttributes>>>16)&0xf000;
       if(mode!==0&&mode!==0x8000&&mode!==0x4000)throw Error('ARCHIVE_LINK_OR_SPECIAL');
-      if(entry.generalPurposeBitFlag&1)throw Error('ARCHIVE_ENCRYPTED');
-      const target=join(destination,name);
-      if(name.endsWith('/'))await mkdir(target,{recursive:true});
-      else{
-        if(total+entry.uncompressedSize>limits.bytes)throw Error('ARCHIVE_TOO_LARGE');
-        await mkdir(dirname(target),{recursive:true});
-        const input=await new Promise<NodeJS.ReadableStream>((res,rej)=>zip.openReadStream(entry,(e,s)=>e?rej(e):res(s!)));
-        const meter=new Transform({transform(chunk,_encoding,cb){total+=chunk.length;cb(total>limits.bytes?Error('ARCHIVE_TOO_LARGE'):null,chunk);}});
+       if(entry.generalPurposeBitFlag&1)throw Error('ARCHIVE_ENCRYPTED');
+       const isDirectory=name.endsWith('/');limits.onEntry?.(name,isDirectory);
+       const target=join(destination,name);
+       if(isDirectory)await mkdir(target,{recursive:true});
+       else{
+         const fileLimit=limits.fileBytes?.(name);if(fileLimit!==undefined&&entry.uncompressedSize>fileLimit)throw Error('ARCHIVE_FILE_TOO_LARGE');
+         if(total+entry.uncompressedSize>limits.bytes)throw Error('ARCHIVE_TOO_LARGE');
+         await mkdir(dirname(target),{recursive:true});
+         const input=await new Promise<NodeJS.ReadableStream>((res,rej)=>zip.openReadStream(entry,(e,s)=>e?rej(e):res(s!)));
+         let fileTotal=0;const meter=new Transform({transform(chunk,_encoding,cb){total+=chunk.length;fileTotal+=chunk.length;cb(total>limits.bytes?Error('ARCHIVE_TOO_LARGE'):fileLimit!==undefined&&fileTotal>fileLimit?Error('ARCHIVE_FILE_TOO_LARGE'):null,chunk);}});
         await pipeline(input,meter,createWriteStream(target,{flags:'wx'}));
       }
       if(!failed)zip.readEntry();
