@@ -18,12 +18,10 @@ it('returns null on cancel and selects the extension for the format',async()=>{
   const cancel=createCookieOperations({cookies:{importFile:vi.fn(),exportFile,closeAll:vi.fn()} as never,showOpen:vi.fn(),showSave:async()=>({canceled:true})});
   expect(await cancel.exportCookies(id,'json')).toBeNull();
 });
-it('confirms before clearing and cancellation never starts cookie maintenance',async()=>{
- const clear=vi.fn(async()=>({cleared:true as const}));const ask=vi.fn(async()=>false);
- const cancelled=createCookieOperations({cookies:{importFile:vi.fn(),exportFile:vi.fn(),clear},showOpen:vi.fn(),showSave:vi.fn(),showClearConfirm:ask});
- await expect(cancelled.clearCookies(id)).resolves.toBeNull();expect(clear).not.toHaveBeenCalled();
- const confirmed=createCookieOperations({cookies:{importFile:vi.fn(),exportFile:vi.fn(),clear},showOpen:vi.fn(),showSave:vi.fn(),showClearConfirm:async()=>true});
- await expect(confirmed.clearCookies(id)).resolves.toEqual({cleared:true});expect(clear).toHaveBeenCalledWith(id);
+it('runs cookie clearing only when invoked by the renderer',async()=>{
+ const clear=vi.fn(async()=>({cleared:true as const}));
+ const operations=createCookieOperations({cookies:{importFile:vi.fn(),exportFile:vi.fn(),clear},showOpen:vi.fn(),showSave:vi.fn()});
+ await expect(operations.clearCookies(id)).resolves.toEqual({cleared:true});expect(clear).toHaveBeenCalledWith(id);
 });
 it('localizes open and save dialog labels from the selected application language',async()=>{
  const opened:unknown[]=[];const saved:unknown[]=[];

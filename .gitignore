@@ -17,8 +17,14 @@ blob-report/
 *.log
 *.trace
 
-# Local agent state and editor settings (shared project docs stay tracked)
+# Local agent state and editor settings
 .superpowers/
+# Local working notes and agent instructions (kept on disk, not published)
+/AGENTS.md
+/CLAUDE.md
+/DECISIONS.md
+/STATUS.md
+/TODO.md
 .claude/
 .opencode/
 .codex/

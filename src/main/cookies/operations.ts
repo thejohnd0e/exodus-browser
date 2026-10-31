@@ -13,13 +13,11 @@ export function createCookieOperations({
   cookies,
   showOpen,
   showSave,
-  showClearConfirm,
   language='en',
 }: {
   cookies: Pick<CookieService, 'importFile' | 'exportFile' | 'clear'>;
   showOpen: (options: OpenOptions) => Promise<OpenResult>;
   showSave: (options: SaveOptions) => Promise<SaveResult>;
-  showClearConfirm?:(id:string)=>Promise<boolean>;
   language?:AppLanguage|(()=>AppLanguage);
 }) {
   const currentLanguage=()=>typeof language==='function'?language():language;
@@ -44,7 +42,6 @@ export function createCookieOperations({
       return cookies.exportFile(id, result.filePath, format);
     },
     async clearCookies(id:string):Promise<{cleared:true}|null>{
-      if(!showClearConfirm||!await showClearConfirm(id))return null;
       return cookies.clear(id);
     },
   };

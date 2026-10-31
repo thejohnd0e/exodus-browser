@@ -34,10 +34,14 @@ it('loads the supplied wordmark, favicon and native icon from the built applicat
     expect(await app.evaluate(({nativeImage},path)=>nativeImage.createFromPath(path).isEmpty(),nativePath)).toBe(false);
     for(const width of [1200,940]){
       await win.setViewportSize({width,height:820});
-      const image=await wordmark.boundingBox(),sidebar=await win.locator('aside').boundingBox();
-      expect(image).not.toBeNull();expect(sidebar).not.toBeNull();
-      expect(image!.width).toBeGreaterThanOrEqual(228);
-      expect(image!.x+image!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
+      const image=await wordmark.boundingBox(),viewport=await win.locator('.brand-logo-viewport').boundingBox(),sidebar=await win.locator('aside').boundingBox();
+      expect(image).not.toBeNull();expect(viewport).not.toBeNull();expect(sidebar).not.toBeNull();
+      expect(viewport!.width).toBeGreaterThanOrEqual(250);
+      expect(Math.abs((viewport!.x+viewport!.width/2)-(sidebar!.x+sidebar!.width/2))).toBeLessThanOrEqual(1);
+      expect(viewport!.x+viewport!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
+      expect(image!.width).toBeGreaterThan(viewport!.width);
+      const crop=await wordmark.evaluate(element=>({width:getComputedStyle(element).width,left:getComputedStyle(element).left,top:getComputedStyle(element).top}));
+      expect(crop).toEqual({width:'455px',left:'-32px',top:'-26px'});
       const version=await win.locator('.build-version').boundingBox();
       expect(version).not.toBeNull();
       expect(version!.x+version!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
@@ -45,25 +49,55 @@ it('loads the supplied wordmark, favicon and native icon from the built applicat
   }finally{await app.close();rmSync(data,{recursive:true,force:true});}
  },30000);
 
+it('renders compact profile controls and keeps the summary responsive in the built Electron app',async()=>{
+ const data=mkdtempSync(join(tmpdir(),'exodus-compact-cards-'));const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
+ try{
+  const win=await app.firstWindow();await win.waitForSelector('h1');
+  const created=await win.evaluate(async()=>await (window as any).profileApi.create({name:'A deliberately long profile name for responsive layout checks',note:'',startUrls:['about:blank'],languages:['en-US'],proxyId:null}));expect(created.ok).toBe(true);
+  const card=win.locator('article').filter({has:win.getByRole('heading',{name:'A deliberately long profile name for responsive layout checks'})});await card.waitFor();
+  expect(await win.locator('.summary-row').count()).toBe(1);expect(await win.locator('.stats').count()).toBe(0);expect(await card.getByRole('button',{name:'Launch'}).isVisible()).toBe(true);expect(await card.getByRole('button',{name:'Stop'}).isVisible()).toBe(true);expect(await card.getByRole('button',{name:'Edit'}).count()).toBe(0);
+  const collapsed=await card.boundingBox();await card.getByRole('button',{name:'Settings'}).click();await card.getByRole('button',{name:'Edit'}).waitFor();const expanded=await card.boundingBox();expect(expanded!.height).toBeGreaterThan(collapsed!.height);
+  for(const width of [1188,940]){await win.setViewportSize({width,height:813});expect(await win.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);const cardBox=await card.boundingBox(),actions=await card.locator('.profile-primary-actions').boundingBox();expect(cardBox).not.toBeNull();expect(actions).not.toBeNull();expect(actions!.x+actions!.width).toBeLessThanOrEqual(cardBox!.x+cardBox!.width+1);}
+  await win.getByRole('button',{name:'Interface language'}).click();await win.getByRole('button',{name:ru['language.ru']}).click();await win.getByRole('button',{name:ru['Hide settings']}).waitFor();expect(await win.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+ }finally{await app.close();rmSync(data,{recursive:true,force:true});}
+},30000);
+
 it('persists the Russian interface, localizes confirmation dialogs and makes no remote locale requests',async()=>{
  const data=mkdtempSync(join(tmpdir(),'exodus-language-e2e-'));const launch=()=>electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});let app=await launch();
  try{
   await app.evaluate(({session})=>{const urls:string[]=[];(globalThis as any).__localeRequests=urls;session.defaultSession.webRequest.onBeforeRequest((details,callback)=>{urls.push(details.url);callback({});});});
   const win=await app.firstWindow();await win.waitForSelector('h1');
-  await win.getByLabel('Interface language').selectOption('ru');await win.getByRole('heading',{name:ru['Browser profiles']}).waitFor();
+  await win.getByRole('button',{name:'Interface language'}).click();await win.getByRole('button',{name:ru['language.ru']}).click();await win.getByRole('heading',{name:ru['Browser profiles']}).waitFor();
   const created=await win.evaluate(async()=>await (window as any).profileApi.create({name:'Lang test',note:'',startUrls:['about:blank'],languages:['en-US'],proxyId:null}));expect(created.ok).toBe(true);
   await win.getByText('Lang test').waitFor();
-  await app.evaluate(({dialog})=>{(globalThis as any).__dialogOptions=null;dialog.showMessageBox=(async(_window,options)=>{(globalThis as any).__dialogOptions=options;return {response:0,checkboxChecked:false};}) as typeof dialog.showMessageBox;});
-  await win.getByRole('button',{name:ru['Clear cookies…']}).click();await win.waitForTimeout(100);
-  const dialogOptions=await app.evaluate(()=>(globalThis as any).__dialogOptions);
-  expect(dialogOptions.message).toContain('Lang test');expect(dialogOptions.message).toContain('IndexedDB');expect(dialogOptions.buttons).toEqual([nativeMessage('cookie.clear.cancel','ru'),nativeMessage('cookie.clear.button','ru')]);
+   await app.evaluate(({dialog})=>{(globalThis as any).__dialogCalls=0;dialog.showMessageBox=(()=>{(globalThis as any).__dialogCalls++;throw Error('Unexpected native confirmation');}) as typeof dialog.showMessageBox;});
+    await win.getByRole('button',{name:ru.Settings}).click();await win.getByRole('button',{name:ru['Clear cookies…']}).click();
+   const confirm=win.getByRole('alertdialog');await confirm.waitFor();expect(await confirm.textContent()).toContain(nativeMessage('cookie.clear.confirm','ru',{name:'Lang test'}));expect(await confirm.getByRole('button').allTextContents()).toEqual([nativeMessage('cookie.clear.cancel','ru'),nativeMessage('cookie.clear.button','ru')]);
+   await confirm.getByRole('button',{name:nativeMessage('cookie.clear.cancel','ru')}).click();expect(await win.getByRole('alertdialog').count()).toBe(0);expect(await app.evaluate(()=>(globalThis as any).__dialogCalls)).toBe(0);
   expect(await win.evaluate(()=>document.documentElement.lang)).toBe('ru');
   const requests=await app.evaluate(()=>(globalThis as any).__localeRequests as string[]);
   expect(requests.filter(url=>!url.startsWith('file://')&&!url.startsWith('devtools://')&&!url.startsWith('data:'))).toEqual([]);
  }finally{await app.close();}
  app=await launch();
- try{const win=await app.firstWindow();await win.getByRole('heading',{name:ru['Browser profiles']}).waitFor();expect(await win.evaluate(()=>document.documentElement.lang)).toBe('ru');expect(await win.getByLabel(ru['language.label']).inputValue()).toBe('ru');}
+ try{const win=await app.firstWindow();await win.getByRole('heading',{name:ru['Browser profiles']}).waitFor();expect(await win.evaluate(()=>document.documentElement.lang)).toBe('ru');expect(await win.getByRole('button',{name:ru['language.label']}).textContent()).toContain('RU');}
  finally{await app.close();rmSync(data,{recursive:true,force:true});}
+},30000);
+
+it('pins the sidebar footer and opens language choices upward',async()=>{
+  const data=mkdtempSync(join(tmpdir(),'exodus-footer-'));const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
+  try{
+    const win=await app.firstWindow();await win.waitForSelector('h1');
+    const aside=await win.locator('aside').boundingBox();const footer=await win.locator('aside > footer.sidebar-footer').boundingBox();
+    expect(aside).not.toBeNull();expect(footer).not.toBeNull();
+    expect(Math.abs((footer!.y+footer!.height)-(aside!.y+aside!.height))).toBeLessThanOrEqual(1);
+    expect(footer!.width).toBeGreaterThanOrEqual(aside!.width-1);
+    await win.getByRole('button',{name:'Interface language'}).click();
+    const popup=await win.locator('.language-popup').boundingBox();const trigger=await win.getByRole('button',{name:'Interface language'}).boundingBox();
+    expect(popup).not.toBeNull();expect(trigger).not.toBeNull();
+    expect(popup!.y+popup!.height).toBeLessThanOrEqual(trigger!.y+1);
+    await win.keyboard.press('Escape');
+    expect(await win.locator('.language-popup').count()).toBe(0);
+  }finally{await app.close();rmSync(data,{recursive:true,force:true});}
 },30000);
 
 it('keeps the fingerprint action opaque and readable without hovering in the profile editor',async()=>{
@@ -108,7 +142,7 @@ it('opens isolated local app, creates a profile offline, stores proxy secrets wi
     expect(created.ok).toBe(true);
     await win.getByText('Test profile').waitFor();
     const surface=await win.evaluate(()=>{const api=(window as any).profileApi;return {keys:Object.keys(api),noNode:(window as any).require===undefined&&(window as any).process===undefined};});
-     expect(surface.keys).toEqual(['list','create','update','remove','start','stop','states','engineStatus','installEngine','linkEngine','backup','restore','checkProxy','listProxies','createProxy','updateProxy','removeProxy','checkSavedProxy','runningProxyVersions','importCookies','exportCookies','clearCookies','exportProfile','importProfile','getSettings','updateSettings']);
+      expect(surface.keys).toEqual(['list','create','update','remove','start','stop','states','engineStatus','installEngine','linkEngine','backup','restore','checkProxy','listProxies','createProxy','updateProxy','removeProxy','checkSavedProxy','runningProxyVersions','importCookies','exportCookies','clearCookies','exportProfile','importProfile','getSettings','updateSettings','onCloseRequested','confirmClose']);
     expect(surface.noNode).toBe(true);
     expect(JSON.stringify(created)).not.toContain('proxy-password');
     const requests=await app.evaluate(()=>(globalThis as any).__requests as string[]);
@@ -128,7 +162,7 @@ it('opens isolated local app, creates a profile offline, stores proxy secrets wi
     const listed=await win.evaluate(async()=>(window as any).profileApi.list());
     expect(listed.ok).toBe(true);expect(listed.value[0].proxy.hasPassword).toBe(true);expect(JSON.stringify(listed)).not.toContain('proxy-password');
     expect(listed.value[0].fingerprint).toMatchObject({canvas:'noise',webgl:'real',os:'windows11'});
-    await win.getByText('Windows 11 · Canvas: Noise · WebGL: Real').waitFor();
+     await win.getByRole('button',{name:'Settings'}).click();await win.getByText('Windows 11 · Canvas: Noise · WebGL: Real').waitFor();
   }finally{await app.close();rmSync(data,{recursive:true,force:true});}
 },90000);
 
@@ -148,7 +182,7 @@ it('checks the selected proxy from the UI without a confirmation dialog or backg
    const card=win.locator('article').filter({has:win.getByRole('heading',{name:'IP check'})});
    await card.getByRole('heading',{name:'IP check'}).waitFor({timeout:3000});
    expect(requests).toEqual([]);
-   await card.getByRole('button',{name:'Check IP'}).click();
+    await card.getByRole('button',{name:'Settings'}).click();await card.getByRole('button',{name:'Check IP'}).click();
     await win.getByRole('alert').or(card.getByText('External IP: 8.8.8.8',{exact:true})).waitFor({timeout:5000});
    expect(await app.evaluate(()=>(globalThis as any).__dialogCalls)).toBe(0);
      await card.getByText('External IP: 8.8.8.8',{exact:true}).waitFor({timeout:5000});

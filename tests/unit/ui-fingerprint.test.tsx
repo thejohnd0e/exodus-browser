@@ -48,6 +48,34 @@ it('reveals manual timezone and geolocation fields',()=>{
   expect(screen.getByLabelText('Latitude')).toBeTruthy();
   expect(screen.getByLabelText('Longitude')).toBeTruthy();
 });
+it('selects a searched time zone from the list and saves only its identifier',()=>{
+  const onChange=vi.fn();renderWithI18n(<Harness onChange={onChange}/>);
+  fireEvent.click(within(group('Timezone')).getByRole('button',{name:'Manual'}));
+  const combo=screen.getByLabelText('Time zone');fireEvent.focus(combo);fireEvent.change(combo,{target:{value:'tallinn'}});
+  expect(screen.getAllByRole('option').map(option=>option.textContent)).toEqual([expect.stringContaining('Europe/Tallinn')]);
+  expect(onChange.mock.calls.every(([next])=>next.timezone.mode!=='manual'||next.timezone.value==='')).toBe(true);
+  const callsBeforeSelect=onChange.mock.calls.length;
+  fireEvent.mouseDown(screen.getByRole('option',{name:/Europe\/Tallinn/}));
+  expect(onChange).toHaveBeenCalledTimes(callsBeforeSelect+1);
+  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({timezone:{mode:'manual',value:'Europe/Tallinn'}}));
+  expect(screen.queryByRole('listbox')).toBeNull();
+});
+it('chooses the active time zone with the keyboard and cancels with Escape',()=>{
+  const onChange=vi.fn();renderWithI18n(<Harness onChange={onChange}/>);
+  fireEvent.click(within(group('Timezone')).getByRole('button',{name:'Manual'}));
+  const combo=screen.getByLabelText('Time zone');fireEvent.focus(combo);fireEvent.change(combo,{target:{value:'Europe/Pa'}});
+  fireEvent.keyDown(combo,{key:'ArrowDown'});fireEvent.keyDown(combo,{key:'Enter'});
+  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({timezone:{mode:'manual',value:'Europe/Paris'}}));
+  const callsBeforeCancel=onChange.mock.calls.length;
+  fireEvent.focus(combo);fireEvent.change(combo,{target:{value:'Asia/'}});fireEvent.keyDown(combo,{key:'Escape'});
+  expect(screen.queryByRole('listbox')).toBeNull();expect(onChange).toHaveBeenCalledTimes(callsBeforeCancel);
+});
+it('shows a localized empty result for an unmatched search',()=>{
+  renderWithI18n(<Harness/>);
+  fireEvent.click(within(group('Timezone')).getByRole('button',{name:'Manual'}));
+  const combo=screen.getByLabelText('Time zone');fireEvent.focus(combo);fireEvent.change(combo,{target:{value:'Mars/Olympus'}});
+  expect(screen.getByText('No matching time zones')).toBeTruthy();
+});
 it('disables every control while the profile is busy',()=>{
    renderWithI18n(<FingerprintPanel value={DEFAULT_FINGERPRINT} disabled onChange={()=>{}} chromeVersion="156.0.8078.80"/>);
   for(const button of screen.getAllByRole('button') as HTMLButtonElement[])expect(button.disabled).toBe(true);

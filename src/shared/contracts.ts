@@ -39,4 +39,6 @@ export interface ProfileApi {
   getSettings():Promise<Result<AppSettings>>;
   updateSettings(input:AppSettings):Promise<Result<AppSettings>>;
   runningProxyVersions():Promise<Result<Record<string,string|null>>>;
+  onCloseRequested(callback:()=>void):()=>void;
+  confirmClose(shouldClose:boolean):Promise<boolean>;
 }

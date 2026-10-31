@@ -62,7 +62,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 - `ProfileEditor.tsx` — profile form; username and password are not sent for SOCKS5.
 - `EngineSettings.tsx` — engine status, “Attach Chromium…” and “Download Chromium”.
 - `window.profileApi` — the only system channel; no direct access to Node.js, disk, or processes.
-- `shared/i18n/` — locally bundled typed English/Russian catalogs, locale-aware formatting, safe error-code mapping, and native-dialog messages. The application language is persisted independently from each profile's website language; there are no remote locale requests.
+- `shared/i18n/` — locally bundled typed English/Russian catalogs, locale-aware formatting, safe error-code mapping, and native file-dialog messages. The application language is persisted independently from each profile's website language; there are no remote locale requests. Confirmation prompts are accessible Exodus dialogs rendered in the renderer.
 
 ### 3.2 IPC
 
@@ -155,8 +155,8 @@ Original first-version boundaries (later fingerprint additions are described in 
 - `main/cookies/serialize.ts` — JSON and Netscape export.
 - `main/cookies/session.ts` — temporary headless Chromium using the same `user-data-dir`: dead loopback proxy, DNS blocked, background traffic disabled, no navigation; `Network.setCookies` in the `about:blank` session, `Storage.getCookies` on the browser connection, closure through `Browser.close` while awaiting process exit.
 - `main/cookies/service.ts` — import/export under `withStopped`, orphan-browser check, readback by `domain+path+name`, atomic file writing, closing all sessions during application exit.
-- Cookie clearing uses a separate confirmation and Chromium `Storage.clearCookies`, verifies a raw zero-cookie count including partitioned entries, and requires clean maintenance-session closure; other site storage is not cleared.
-- `main/cookies/operations.ts` and `index.ts` — open/save dialogs in main; renderer receives only `{count, fileName}`.
+- Cookie clearing follows a renderer confirmation and Chromium `Storage.clearCookies`, verifies a raw zero-cookie count including partitioned entries, and requires clean maintenance-session closure; other site storage is not cleared.
+- `main/cookies/operations.ts` and `index.ts` — native open/save dialogs in main; renderer receives only `{count, fileName}`. The renderer confirms before invoking the operation.
 - Profile cards provide “Import cookies…” and “Export cookies…” (JSON or Netscape), only for stopped profiles; the result shows a count and filename.
 
 ## 4. Data on disk

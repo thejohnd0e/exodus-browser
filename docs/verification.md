@@ -4,6 +4,13 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### Themed confirmations (2026-10-31)
+
+- Renderer unit tests cover cookie-clear cancel/approve, profile-delete cancel/approve, backup approval, Escape cancellation, and active-window close cancel/approve decisions.
+- Electron smoke verifies Russian cookie-confirmation text/actions in an in-app `alertdialog` without calling `dialog.showMessageBox`.
+- Built Electron dialog screenshot was inspected at `C:\Users\la\AppData\Local\Temp\opencode\exodus-confirmation-preview.png` using separate temporary storage. Native file picker code remains in main.
+- This is automated/agent visual inspection, not user manual acceptance of cookie clearing or closing while real Chromium is running.
+
 | Command | Result |
 |---|---|
 | `npm run verify` (typecheck + unit + production build) | PASS: 141/141 unit, typecheck without errors, production build |
@@ -90,3 +97,36 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - The integration test compares bundled wordmark, favicon, and native-icon bytes with the supplied sources, verifies local `file:` image URLs, decodes the PNG with Electron `nativeImage`, and checks that the sidebar image fits at 1200 px and 940 px viewport widths. The unit check pins the absolute module-relative native icon path and retains renderer security settings.
 - A separate isolated Electron instance was visually inspected with temporary data: the sidebar wordmark is loaded, the old letter badge is absent, and navigation remains visible. The preview was saved outside the repository under the approved OpenCode temporary directory. Real user data was not opened.
 - No installer or executable-resource icon is claimed; the project does not yet package an installer. GitHub recreation and publication remain deferred, as requested.
+
+## Compact profile UI (2026-10-31, local changes)
+
+- `npm run verify`: PASS (230/230 unit tests, typecheck, production build).
+- `npm run test:integration`: PASS (48/48 across 13 files). The built Electron test checks collapsed and expanded card controls, a long profile name at 1188 px and 940 px widths, absence of horizontal overflow, and Russian disclosure labels.
+- Unit coverage checks independent disclosure, visible blocked/missing-credential warnings, unchanged Launch/Stop enablement, preservation of checked IP results across collapse, closure of the transient cookie menu, compact profile/Chromium summary, tooltip accessibility, and the editor path to fingerprint settings.
+- No real profile data was used. Manual visual acceptance remains open. Themed confirmations were deferred at this checkpoint and are covered in the following verification entry.
+
+## Sidebar utility footer (2026-10-31, local changes)
+
+- RED before implementation: unit tests failed for the missing footer, language popover, native-menu removal and exact project-link policy.
+- Implemented: native menu removed with `setMenu(null)`; language, GitHub and dynamic version are in `.sidebar-footer`; language choices open upward and save only a different language; Escape returns focus to the trigger.
+- Exact external-link allowlist: only `https://github.com/thejohnd0e/exodus-browser` and `https://db-ip.com/`; lookalike hosts, credentials, extra paths, query/fragment and non-HTTPS URLs are denied.
+- `npm run verify`: PASS (245/245 unit, typecheck, production build).
+- `npm run test:integration`: PASS (49/49 across 13 files), including footer geometry and upward popover in built Electron.
+- Visual check: built Electron screenshot with the popover open reviewed in an isolated temporary profile directory.
+- Not yet done: Electron check at the minimum 920 × 640 window size, keyboard-only review, and user acceptance.
+
+## Searchable manual timezone (2026-10-31, local changes)
+
+- RED: new unit tests failed before implementation (missing `timezones` module and no combobox). GREEN after adding `src/shared/timezones.ts` and `src/renderer/TimeZoneSelect.tsx`.
+- Covered: current-date UTC offsets including DST, offline IANA list, search, pointer and keyboard selection, Escape cancellation without saving, localized empty result.
+- `npm run verify`: PASS (240/240 unit tests, typecheck, production build).
+- `npm run test:integration`: PASS (48/48 across 13 files).
+- Not yet done: visual inspection of the dropdown in the built application.
+
+## Sidebar wordmark crop (2026-10-31, local changes)
+
+- The user requested approximately equal left, right, and top margins around the visible artwork after noting that the supplied PNG has more empty background on the right. The implementation uses a 264×60 px overflow-hidden viewport and the existing PNG at `455px` wide, positioned `left:-32px; top:-26px`; no source asset was edited.
+- RED: the Electron regression assertion failed against the old `475px/-39px/-34px` crop and again when asserting the larger top inset; it passed with the updated dimensions and offsets.
+- `npm run verify`: PASS (231/231 unit tests, typecheck, production build).
+- `npm run test:integration`: PASS (48/48 across 13 files). Electron checks verify the logo viewport fits within the existing sidebar and keeps at least 250 px width at 1200 px and 940 px window widths; bundled image bytes still match the supplied asset.
+- Tests use isolated temporary application storage only; no real profile data was used.

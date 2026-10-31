@@ -2,6 +2,7 @@ import type {Fingerprint} from '../shared/fingerprint';
 import {newFingerprint} from '../shared/fingerprint-presets';
 import {uaForOs} from '../shared/user-agent';
 import {useI18n} from './i18n/provider';
+import {TimeZoneSelect} from './TimeZoneSelect';
 type Option<T extends string>={value:T;label:string;disabled?:boolean};
 function Choices<T extends string>({label,value,options,onChange,disabled,extra=[]}:{label:string;value:T;options:readonly Option<T>[];onChange:(value:T)=>void;disabled:boolean;extra?:readonly {label:string}[]}){
   const {t}=useI18n();
@@ -36,7 +37,7 @@ export function FingerprintPanel({value,onChange,disabled,chromeVersion}:{value:
     <Choices label="ClientRects" value={value.clientRects} options={realNoiseOptions} onChange={clientRects=>set('clientRects',clientRects)} disabled={disabled}/>
     <Choices label="Audio" value={value.audio} options={realNoiseOptions} onChange={audio=>set('audio',audio)} disabled={disabled}/>
     <Choices label="Timezone" value={value.timezone.mode} options={autoManualOptions} onChange={mode=>set('timezone',mode==='manual'?{mode:'manual',value:value.timezone.mode==='manual'?value.timezone.value:''}:{mode:'auto'})} disabled={disabled}/>
-     {value.timezone.mode==='manual'&&<label>{t('Time zone')}<input value={value.timezone.value} maxLength={64} placeholder="Europe/Paris" disabled={disabled} onChange={e=>set('timezone',{mode:'manual',value:e.target.value})}/></label>}
+     {value.timezone.mode==='manual'&&<TimeZoneSelect value={value.timezone.value} disabled={disabled} onSelect={zone=>set('timezone',{mode:'manual',value:zone})}/>}
     <Choices label="Geolocation" value={value.geolocation.mode} options={autoManualOptions} onChange={mode=>set('geolocation',mode==='manual'?geo:{mode:'auto'})} disabled={disabled}/>
      {value.geolocation.mode==='manual'&&<div className="fingerprint-manual"><label>{t('Latitude')}<input type="number" min={-90} max={90} step="any" value={geo.latitude} disabled={disabled} onChange={e=>set('geolocation',{...geo,latitude:Number(e.target.value)})}/></label><label>{t('Longitude')}<input type="number" min={-180} max={180} step="any" value={geo.longitude} disabled={disabled} onChange={e=>set('geolocation',{...geo,longitude:Number(e.target.value)})}/></label><label>{t('Accuracy, m')}<input type="number" min={1} max={10000} step="any" value={geo.accuracy} disabled={disabled} onChange={e=>set('geolocation',{...geo,accuracy:Number(e.target.value)})}/></label></div>}
     <Choices label="CPU and memory" value={value.hardware.mode} options={modeOptions} onChange={mode=>set('hardware',mode==='manual'?hardware:{mode:'real'})} disabled={disabled}/>

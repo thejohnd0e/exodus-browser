@@ -156,15 +156,15 @@ it('reports rollback uncertainty without exposing cleanup details when session c
 
 it('cancels export confirmation/save and import selection before any archive operation',async()=>{
  const portable= {exportFile:vi.fn(),importFile:vi.fn()};
- const ops=createPortableOperations({portable,showOpen:vi.fn(async()=>({canceled:true,filePaths:[]})),showSave:vi.fn(async()=>({canceled:true})),showExportConfirm:vi.fn(async()=>false)} as any);
+  const ops=createPortableOperations({portable,showOpen:vi.fn(async()=>({canceled:true,filePaths:[]})),showSave:vi.fn(async()=>({canceled:true}))} as any);
  await expect(ops.exportProfile('00000000-0000-4000-8000-000000000001')).resolves.toBeNull();
  await expect(ops.importProfile()).resolves.toBeNull();
  expect(portable.exportFile).not.toHaveBeenCalled();expect(portable.importFile).not.toHaveBeenCalled();
 });
 
-it('requires sensitive-export confirmation before showing a destination dialog or writing the archive',async()=>{
- const portable={exportFile:vi.fn(async()=>undefined),importFile:vi.fn()};const showExportConfirm=vi.fn(async()=>true);const showSave=vi.fn(async()=>({canceled:false,filePath:'C:\\safe\\profile.zip'}));
- const ops=createPortableOperations({portable,showOpen:vi.fn(),showSave,showExportConfirm} as any);
+it('shows the native destination dialog after renderer confirmation',async()=>{
+  const portable={exportFile:vi.fn(async()=>undefined),importFile:vi.fn()};const showSave=vi.fn(async()=>({canceled:false,filePath:'C:\\safe\\profile.zip'}));
+  const ops=createPortableOperations({portable,showOpen:vi.fn(),showSave} as any);
  await expect(ops.exportProfile('00000000-0000-4000-8000-000000000001')).resolves.toEqual({fileName:'profile.zip'});
- expect(showExportConfirm).toHaveBeenCalledOnce();expect(showSave).toHaveBeenCalledOnce();expect(portable.exportFile).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001','C:\\safe\\profile.zip');
+  expect(showSave).toHaveBeenCalledOnce();expect(portable.exportFile).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001','C:\\safe\\profile.zip');
 });
