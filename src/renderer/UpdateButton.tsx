@@ -70,10 +70,16 @@ export function UpdateButton({disabled=false,api=window.profileApi}:{disabled?:b
       break;
   }
 
+  const panel = status || action || message
+    ? <div className="update-panel">
+        {status && <p className="update-status" role="status">{status}</p>}
+        {action}
+        {message && <p className="update-status update-error" role="alert">{message}</p>}
+      </div>
+    : null;
+
   return <span className="update-control">
     <button type="button" className="build-version" aria-label={`${t('Check for updates')} (${version})`} disabled={disabled||busy} onClick={()=>void check()}>{version}</button>
-    {status&&<span className="update-status" role="status">{status}</span>}
-    {action}
-    {message&&<span className="update-status" role="alert">{message}</span>}
+    {panel}
   </span>;
 }

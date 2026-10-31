@@ -20,6 +20,8 @@
 button.build-version{background:none;border:0;padding:0;font:inherit;font-size:11px;color:#8f9eb3;cursor:pointer;font-variant-numeric:tabular-nums}
 button.build-version:hover:not(:disabled){color:#c4cfdd;text-decoration:underline}
 button.build-version:disabled{cursor:default}
-.update-control{display:inline-flex;align-items:center;gap:6px;min-width:0}
-.update-status{font-size:11px;color:#8f9eb3;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.update-control button:not(.build-version){font-size:11px;padding:2px 8px}
+.update-control{position:relative;display:inline-flex;align-items:center}
+.update-status{margin:0;font-size:12px;line-height:1.4;color:#c9d5e4;white-space:normal;overflow-wrap:anywhere}
+.update-panel{position:absolute;bottom:calc(100% + 10px);left:-8px;z-index:30;display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:260px;padding:10px 12px;border:1px solid #2b3747;border-radius:8px;background:#18212d;box-shadow:0 12px 28px rgba(0,0,0,.45);text-align:left}
+.update-error{color:#f39999}
+.update-control button:not(.build-version){font-size:12px;padding:4px 10px}
