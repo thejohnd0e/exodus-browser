@@ -12,7 +12,8 @@ export type CookieOperationResult = {count:number;fileName:string};
 export type CookieFormat = 'json'|'netscape';
 export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:string}};
 export type EngineStatus = {state:'missing'|'ready'|'unsupported';version?:string;source?:'downloaded'|'external'};
-export type ExtensionEntry = {id: string; name: string; version: string; addedAt: string; updatedAt: string};
+export type ExtensionSource = 'folder' | 'zip' | 'store';
+export type ExtensionEntry = {id: string; name: string; version: string; source: ExtensionSource; storeId?: string; addedAt: string; updatedAt: string};
 export type ExtensionResult = Result<ExtensionEntry | null>;
 export interface ProfileApi {
   list():Promise<Result<Profile[]>>;

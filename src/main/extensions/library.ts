@@ -5,9 +5,9 @@ import {join} from 'node:path';
 import {inspectFolder,inspectZip,assertNoLinks} from './package';
 import {parseStoreLink,readCrxZip,resolveExtensionName,storeDownloadUrl} from './store';
 import type {ExtensionSource,ExtensionSummary} from '../../shared/extension';
-// ExtensionSummary is used by StagedEntry below.
+import type {ExtensionEntry} from '../../shared/contracts';
 
-export type ExtensionEntry = {id: string; name: string; version: string; source: ExtensionSource; storeId?: string; addedAt: string; updatedAt: string};
+export type {ExtensionEntry};
 export type ExtensionDownload = (url: string, destination: string) => Promise<void>;
 
 const MAX_PACKAGE_BYTES=100*1024*1024;

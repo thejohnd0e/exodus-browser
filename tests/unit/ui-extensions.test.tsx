@@ -8,7 +8,7 @@ import {ru} from '../../src/shared/i18n/ru';
 
 afterEach(cleanup);
 const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
-const entry:ExtensionEntry={id:'3f0f5a2e-1c7b-4c1e-9a55-8e6f2b7d9a10',name:'TimeZone Changer',version:'2.2',addedAt:'now',updatedAt:'now'};
+const entry:ExtensionEntry={id:'3f0f5a2e-1c7b-4c1e-9a55-8e6f2b7d9a10',name:'TimeZone Changer',version:'2.2',source:'folder',addedAt:'now',updatedAt:'now'};
 const p:Profile={id,name:'Work',note:'',languages:['en-US'],startUrls:['about:blank'],proxyId:null,proxy:null,fingerprint:DEFAULT_FINGERPRINT,restoreLastSession:false,fingerprintSeed:1,extensionIds:[],createdAt:'now',updatedAt:'now'};
 
 function api(overrides:Partial<ProfileApi>={}):ProfileApi{return {
@@ -48,6 +48,40 @@ it('adds extensions from a folder or archive through the main-process pickers',a
   await waitFor(()=>expect(addExtensionFolder).toHaveBeenCalledOnce());
   fireEvent.click(await screen.findByRole('button',{name:'Add archive…'}));
   await waitFor(()=>expect(addExtensionZip).toHaveBeenCalledOnce());
+});
+
+it('adds an extension from a pasted store link and closes the dialog',async()=>{
+  const addExtensionFromStore=vi.fn(async()=>({ok:true as const,value:entry}));
+  render(<App api={api({addExtensionFromStore})}/>);await screen.findByText('Work');
+  fireEvent.click(screen.getByRole('button',{name:'Extensions'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Add from store…'}));
+  const dialog=await screen.findByRole('dialog');
+  expect(within(dialog).getByLabelText('Chrome Web Store link')).toBeTruthy();
+  fireEvent.change(within(dialog).getByLabelText('Chrome Web Store link'),{target:{value:'https://chromewebstore.google.com/detail/eagle/lieogkinebikhdchceieedcigeafdkid'}});
+  fireEvent.click(within(dialog).getByRole('button',{name:'Add extension'}));
+  await waitFor(()=>expect(addExtensionFromStore).toHaveBeenCalledWith('https://chromewebstore.google.com/detail/eagle/lieogkinebikhdchceieedcigeafdkid'));
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('does not submit a store link when the dialog is cancelled',async()=>{
+  const addExtensionFromStore=vi.fn(async()=>({ok:true as const,value:null}));
+  render(<App api={api({addExtensionFromStore})}/>);await screen.findByText('Work');
+  fireEvent.click(screen.getByRole('button',{name:'Extensions'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Add from store…'}));
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Cancel'}));
+  expect(screen.queryByRole('dialog')).toBeNull();expect(addExtensionFromStore).not.toHaveBeenCalled();
+});
+
+it('shows the localized store link error and marks store entries',async()=>{
+  const addExtensionFromStore=vi.fn(async()=>({ok:false as const,error:{code:'EXTENSION_INVALID_LINK',message:'invalid'}}));
+  render(<App api={api({addExtensionFromStore,listExtensions:async()=>({ok:true,value:[{...entry,source:'store' as const,storeId:'lieogkinebikhdchceieedcigeafdkid'}]})})}/>);await screen.findByText('Work');
+  fireEvent.click(screen.getByRole('button',{name:'Extensions'}));
+  expect(await screen.findByText('Store')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Add from store…'}));
+  const dialog=await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText('Chrome Web Store link'),{target:{value:'https://example.com/x'}});
+  fireEvent.click(within(dialog).getByRole('button',{name:'Add extension'}));
+  await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('Paste a Chrome Web Store link'));
 });
 
 it('saves the extension selection for one profile',async()=>{

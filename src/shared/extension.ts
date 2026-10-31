@@ -1,2 +1,2 @@
 export type ExtensionSummary = {name: string; version: string};
-export type ExtensionSource = 'folder' | 'zip' | 'store';
+export type {ExtensionSource} from './contracts';
