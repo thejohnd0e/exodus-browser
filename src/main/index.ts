@@ -19,6 +19,7 @@ import {isTrustedSender} from './trust';
 import releases from './engines/releases.json';
 import {BUILD_INFO} from '../shared/build-info';
 import {SessionStore} from './sessions/store';
+import {AppSettingsService} from './settings/service';
 app.setName('Exodus Browser');
 // Keep the existing data directory independent of the visible product name.
 app.setPath('userData',join(app.getPath('appData'),'Local Profiles'));
@@ -31,7 +32,7 @@ else void app.whenReady().then(async()=>{
     const response=await net.fetch(url,{signal:AbortSignal.timeout(180000)});if(!response.ok||!response.body)throw Error('ENGINE_DOWNLOAD_FAILED');
     await pipeline(Readable.fromWeb(response.body as any),createWriteStream(destination,{flags:'wx'}));
   });
-  const sessions=new SessionStore(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions});await supervisor.recover();
+  const sessions=new SessionStore(root);const settings=new AppSettingsService(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions});await supervisor.recover();
   const backups=new BackupService(profiles,supervisor,undefined,sessions);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
   const cookies=new CookieService(profiles,supervisor,installer);
   const cookieOps=createCookieOperations({
@@ -61,7 +62,8 @@ else void app.whenReady().then(async()=>{
     checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');return {...await checkProxy(input.proxy),service:IP_CHECK_SERVICE};},
     listProxies:async()=>profiles.listProxies(),createProxy:input=>profiles.createProxy(input),updateProxy:(id,input)=>profiles.updateProxy(id,input),removeProxy:id=>profiles.removeProxy(id),
     checkSavedProxy:async id=>({...await checkProxy(profiles.getProxyInput(id)),service:IP_CHECK_SERVICE}),runningProxyVersions:async()=>supervisor.runningProxyVersions(),
-     importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies,clearCookies:cookieOps.clearCookies
+     importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies,clearCookies:cookieOps.clearCookies,
+     getSettings:()=>settings.getSettings(),updateSettings:input=>settings.updateSettings(input)
   },event=>isTrustedSender(event as never,win.webContents,ui));
   for(const method of operations)ipcMain.handle('profiles:'+method,(event,...args)=>dispatcher(event,method,args));
   win.on('close',event=>{

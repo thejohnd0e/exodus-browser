@@ -1,4 +1,5 @@
 import type { Fingerprint } from './fingerprint';
+import type {AppSettings} from './settings';
 export type ProxyInput = { kind: 'http'|'https'|'socks5'; host: string; port: number; username?: string; password?: string };
 export type ProxyPublic = Omit<ProxyInput,'password'> & {hasPassword:boolean};
 export type SavedProxyInput = ProxyInput & {name:string};
@@ -33,5 +34,7 @@ export interface ProfileApi {
   importCookies(id:string):Promise<Result<CookieOperationResult|null>>;
   exportCookies(id:string,format:CookieFormat):Promise<Result<CookieOperationResult|null>>;
   clearCookies(id:string):Promise<Result<{cleared:true}|null>>;
+  getSettings():Promise<Result<AppSettings>>;
+  updateSettings(input:AppSettings):Promise<Result<AppSettings>>;
   runningProxyVersions():Promise<Result<Record<string,string|null>>>;
 }

@@ -54,3 +54,11 @@ it('validates cookie clearing and returns only allowlisted failure messages',asy
  const unsafe=createDispatcher({clearCookies:async()=>{throw Error('COOKIE_SESSION_CLOSE_FAILED path C:/private secret');}},()=>true);
  const result=await unsafe({},'clearCookies',[id]);expect(JSON.stringify(result)).not.toContain('secret');expect(JSON.stringify(result)).not.toContain('private');
 });
+it('validates persisted application settings through the trusted IPC boundary',async()=>{
+ let language='en';const dispatch=createDispatcher({getSettings:async()=>({language}),updateSettings:async(input:{language:'en'|'ru'})=>{language=input.language;return {language};}},()=>true);
+ expect(await dispatch({},'getSettings',[])).toMatchObject({ok:true,value:{language:'en'}});
+ expect(await dispatch({},'updateSettings',[{language:'ru'}])).toMatchObject({ok:true,value:{language:'ru'}});
+ expect((await dispatch({},'updateSettings',[{language:'fr'}])).ok).toBe(false);
+ expect((await dispatch({},'updateSettings',[{language:'en',unexpected:true}])).ok).toBe(false);
+ expect(language).toBe('ru');
+});

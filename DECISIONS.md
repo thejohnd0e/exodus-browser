@@ -175,3 +175,8 @@ An independent branch review found a critical issue: without a pinned hash, the 
 **Decision:** provide a separate confirmed action for stopped profiles that invokes Chromium `Storage.clearCookies`, verifies zero cookies from the raw CDP cookie list (including partitioned cookies), and reports success only after the temporary maintenance browser closes successfully. Local storage, IndexedDB, and other site data are not cleared.
 **Rationale:** users can sign out without unexpectedly deleting broader site state; verification and lifecycle errors fail closed instead of displaying success prematurely.
 **Cost of being wrong:** some users may interpret “clear cookies” as clearing all website data; the confirmation and completion message explicitly state that other site data is retained.
+
+### 27. Persist application language locally (2026-10-31)
+**Decision:** store only the explicit interface language (`en` or `ru`) in a strict application-owned JSON settings file. Default to English, validate through trusted IPC, and use the English catalog as fallback for missing translations. Do not infer from Windows locale or download catalogs.
+**Rationale:** predictable first-run behavior and offline operation; website `languages` remain profile-specific and independent of UI language.
+**Cost of being wrong:** users must change the interface language manually; newly added keys remain English until translated.

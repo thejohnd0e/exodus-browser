@@ -85,7 +85,7 @@ it('opens isolated local app, creates a profile offline, stores proxy secrets wi
     expect(created.ok).toBe(true);
     await win.getByText('Test profile').waitFor();
     const surface=await win.evaluate(()=>{const api=(window as any).profileApi;return {keys:Object.keys(api),noNode:(window as any).require===undefined&&(window as any).process===undefined};});
-    expect(surface.keys).toEqual(['list','create','update','remove','start','stop','states','engineStatus','installEngine','linkEngine','backup','restore','checkProxy','listProxies','createProxy','updateProxy','removeProxy','checkSavedProxy','runningProxyVersions','importCookies','exportCookies','clearCookies']);
+    expect(surface.keys).toEqual(['list','create','update','remove','start','stop','states','engineStatus','installEngine','linkEngine','backup','restore','checkProxy','listProxies','createProxy','updateProxy','removeProxy','checkSavedProxy','runningProxyVersions','importCookies','exportCookies','clearCookies','getSettings','updateSettings']);
     expect(surface.noNode).toBe(true);
     expect(JSON.stringify(created)).not.toContain('proxy-password');
     const requests=await app.evaluate(()=>(globalThis as any).__requests as string[]);

@@ -44,7 +44,7 @@ Shared edits: `src/shared/{contracts,validation}.ts`, `src/main/{index,ipc}.ts`,
 
 - [ ] Review the spec and its proposed defaults with the user before application implementation.
 - [x] Clarify language policy: Russian UI translation strings are product data; project documentation, comments, tests, and GitHub metadata remain English.
-- [x] Complete Tasks 1–3; Task 4 remains.
+- [x] Complete Tasks 1–4; Task 5 remains.
 - [ ] Complete Tasks 4–6 as individual increments, subject to their gates.
 - [ ] Complete Tasks 7–8 for portable transfer.
 - [ ] Complete Task 9 acceptance, documentation, and independent review.
@@ -97,10 +97,10 @@ Shared edits: `src/shared/{contracts,validation}.ts`, `src/main/{index,ipc}.ts`,
 
 **Interfaces:** `AppLanguage='en'|'ru'`; `AppSettings={language:AppLanguage}`; `getSettings():Promise<Result<AppSettings>>`, `updateSettings(input:AppSettings):Promise<Result<AppSettings>>`; `translate(language,key,params?):string`. English keys define the catalog type; other catalogs satisfy that type. Default to `en`; strict validated application-owned settings file, atomic writes, safe fallback on malformed files.
 
-- [ ] Write failing tests for English default, persistence across restart, invalid/extra settings rejection, English fallback for missing translation, parameter substitution, and a language switch preserving unsaved editor input and profile website locale.
-- [ ] Run `npx vitest run tests/unit/settings.test.ts tests/unit/i18n.test.tsx`; confirm missing behavior fails.
-- [ ] Implement settings service, trusted IPC methods, typed provider, and persistent EN/RU selector. Use a single English catalog as fallback; no automatic OS-language switch or remote catalogs.
-- [ ] Run targeted tests and both full verification commands; expect PASS. Commit: `feat: add persistent application language settings`.
+- [x] Write failing tests for English default, persistence across service restart, invalid/extra settings rejection, English fallback for missing translation, parameter substitution, and a language switch preserving unsaved editor input and profile website locale.
+- [x] Run `npx vitest run tests/unit/settings.test.ts tests/unit/i18n.test.tsx`; missing service/provider behavior failed as expected.
+- [x] Implement settings service, trusted IPC methods, typed provider, and persistent EN/RU selector. Use English as the fallback; no automatic OS-language switch or remote catalogs.
+- [x] Run targeted tests and both full verification commands: `npm run verify` PASS (176 unit tests, typecheck, production build); `npm run test:integration` PASS (43/43). Commit: `feat: add persistent application language settings`.
 
 ### Task 5: Translate renderer and native dialogs
 

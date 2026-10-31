@@ -66,6 +66,7 @@ The installer checks HTTPS, exact URL/version agreement, SHA-256, absence of uns
 `%APPDATA%\Local Profiles`:
 
 - `profiles.sqlite` — profiles and encrypted secrets;
+- `settings.json` — validated application settings, including explicit EN/RU interface language;
 - `profiles/<uuid>/` — Chromium data;
 - `engine/` — attached or downloaded engine;
 - `runtime-<uuid>.json` — launch journal (its presence at startup means `blocked`).

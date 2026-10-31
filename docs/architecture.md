@@ -165,6 +165,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 | Path | Contents |
 |---|---|
 | `profiles.sqlite` | profiles, public settings, encrypted secrets |
+| `settings.json` | validated application-owned settings such as interface language |
 | `profiles/<uuid>/` | profile Chromium data |
 | `engine/current/` | downloaded engine (if pinned) |
 | `engine/external.json` | attached `chrome.exe` path and SHA-256 |
