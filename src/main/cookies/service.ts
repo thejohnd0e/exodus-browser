@@ -59,6 +59,10 @@ export class CookieService {
     }
   }
 
+  hasActiveWork(): boolean {
+    return this.active.size > 0 || this.handles.size > 0;
+  }
+
   async importFile(id: string, filePath: string): Promise<CookieResult> {
     const cookies = parseCookies(await readCookieFile(filePath));
     if (!cookies.length) throw Error('INVALID_COOKIE_FILE');

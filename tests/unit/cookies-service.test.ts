@@ -104,3 +104,9 @@ it('clears cookies and requires both zero raw readback and successful browser cl
   await expect(closeFailure.clear(p.id)).rejects.toThrow('COOKIE_SESSION_CLOSE_FAILED');
  }finally{profiles.close();cleanup(root);}
 });
+
+it('reports active maintenance work while a cookie operation is pending',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());
+  const service=new CookieService(profiles,{withStopped:async(_id,fn)=>fn()},{resolveExecutable:async()=>process.execPath},{probe:async()=>[],launch:()=>new Promise(()=>undefined) as any});
+  try{const p=await profiles.create(valid);expect(service.hasActiveWork()).toBe(false);void service.clear(p.id).catch(()=>undefined);await new Promise(r=>setTimeout(r,20));expect(service.hasActiveWork()).toBe(true);}finally{profiles.close();cleanup(root);}
+});

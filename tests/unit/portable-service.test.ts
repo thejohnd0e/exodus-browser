@@ -168,3 +168,9 @@ it('shows the native destination dialog after renderer confirmation',async()=>{
  await expect(ops.exportProfile('00000000-0000-4000-8000-000000000001')).resolves.toEqual({fileName:'profile.zip'});
   expect(showSave).toHaveBeenCalledOnce();expect(portable.exportFile).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001','C:\\safe\\profile.zip');
 });
+
+it('reports active portable work while an export is pending',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const sessions=new SessionStore(root);
+  const service=new PortableProfileService(profiles,{withStopped:async<T>(_id:string,fn:()=>Promise<T>)=>fn()},{resolveExecutable:async()=>process.execPath},sessions,{probe:async()=>[],launch:()=>new Promise(()=>undefined) as any});
+  try{const p=await profiles.create(valid);expect(service.hasActiveWork()).toBe(false);void service.exportFile(p.id,join(root,'out.zip')).catch(()=>undefined);await new Promise(r=>setTimeout(r,50));expect(service.hasActiveWork()).toBe(true);}finally{profiles.close();cleanup(root);}
+});

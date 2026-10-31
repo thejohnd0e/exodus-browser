@@ -16,6 +16,7 @@ export class Supervisor {
   private sessions?:SessionStore;
   private extensionDirectory:(id:string)=>string;
   states(){return {...this.state};}
+  hasActiveWork():boolean{return this.locks.size>0||this.running.size>0||Object.values(this.state).some(s=>['starting','running','stopping','blocked'].includes(s));}
   runningProxyVersions():Record<string,string|null>{return Object.fromEntries([...this.running].map(([id,run])=>[id,run.proxyVersion]));}
   private journal(id:string){return join(this.profiles.root,'runtime-'+id+'.json');}
   async assertStopped(id:string){this.profiles.get(id);if(this.running.has(id)||this.locks.has(id)||['starting','running','stopping','blocked'].includes(this.state[id]))throw Error('PROFILE_BUSY');}

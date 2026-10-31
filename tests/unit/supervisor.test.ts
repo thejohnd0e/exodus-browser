@@ -72,3 +72,8 @@ it('uses saved tab URLs only when session restore is enabled and passes the stab
   await supervisor.stop(fallback.id);
  }finally{profiles.close();cleanup(root);}
 });
+
+it('reports active work only while a profile is starting or running',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const s=new Supervisor(profiles,f.engine,{probe:async()=>[]});
+  try{const a=await profiles.create(valid);expect(s.hasActiveWork()).toBe(false);await s.start(a.id);expect(s.hasActiveWork()).toBe(true);await s.stop(a.id);expect(s.hasActiveWork()).toBe(false);await s.shutdown();}finally{profiles.close();cleanup(root);}
+});

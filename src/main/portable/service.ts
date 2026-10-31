@@ -26,6 +26,7 @@ const inside=(directory:string,target:string)=>{const rel=relative(resolve(direc
 export class PortableProfileService{
  private active=new Set<Promise<unknown>>();private handles=new Set<Launched>();
  constructor(private profiles:ProfileService,private lease:Lease,private engine:Engine,private sessions:SessionStore,private deps:Deps={}){}
+ hasActiveWork():boolean{return this.active.size>0||this.handles.size>0;}
  private fault(stage:Stage){if(this.deps.failAt===stage)throw Error('INJECTED_PORTABLE_FAILURE');}
  private async executable(){try{const path=await this.engine.resolveExecutable();await access(path);return path;}catch{throw Error('ENGINE_NOT_READY');}}
  private async assertNoOrphan(directory:string){const rows=await (this.deps.probe??probeProfileProcesses)();if(rows.some(row=>row.commandLine.toLowerCase().includes(directory.toLowerCase())))throw Error('ORPHAN_BROWSER');}
