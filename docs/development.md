@@ -27,6 +27,7 @@ npm start
 |---|---|
 | `npm run dev` | build + launch Electron |
 | `npm run build` | esbuild for main/preload + Vite for UI into `dist/` |
+| `npm run dist` | production build + unsigned Windows x64 NSIS installer in `dist-install/` |
 | `npm start` | launch the built application |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | unit tests (Vitest) |
@@ -34,6 +35,12 @@ npm start
 | `npm run verify` | typecheck + unit + production build |
 
 Every invocation of `scripts/build.mjs` (including `dev`, `verify`, and integration tests) consumes the next `0.1.N` build number; failed attempts may leave gaps. The counter is local in `.local/build-version.json` and is not reset by deleting `dist/`. If the counter is missing/corrupt, builds fail closed. For a crashed build, first verify no build is running and remove the stale `.local/build.lock`; then run `node scripts/recover-build-version.mjs <last-used-number>` and type `YES` at the prompt. Choose a number no lower than the committed `build-version-floor.json`; recovery never guesses or lowers a valid counter. Do not run concurrent builds in one checkout.
+
+## Windows installer
+
+Run `npm run dist` on Windows x64. The command runs the regular production build first, then packages it with the pinned development-only electron-builder NSIS target. The assisted wizard offers per-user (default) or all-users installation, a changeable directory, optional desktop shortcut, Start Menu shortcut, and a finish-page launch checkbox. The output is `dist-install/ExodusBrowser-Setup-<package-version>.exe`; electron-builder also writes a blockmap. No update YAML is generated because auto-update is not configured. Artifacts are ignored by Git.
+
+The installer does not bundle Chromium or move application data. `%APPDATA%\Local Profiles` remains the data path, and uninstall leaves it intact. `better-sqlite3` is unpacked from asar; electron-builder's dependency rebuild is disabled because the pinned platform prebuild is exercised by the Electron integration suite. The installer is unsigned, so Windows SmartScreen may warn. Do not click through or disable that warning as part of automation.
 
 ## Engine preparation
 

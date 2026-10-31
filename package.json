@@ -50,6 +50,7 @@
     "appId": "com.exodusbrowser.desktop",
     "productName": "Exodus Browser",
     "asar": true,
+    "npmRebuild": false,
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**"
     ],

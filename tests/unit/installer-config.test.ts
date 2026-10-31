@@ -12,7 +12,7 @@ it('declares a pinned development-only electron-builder and the dist command',()
 it('configures branded NSIS artifacts with native SQLite unpacked from asar',()=>{
   const build=packageJson.build;
   expect(packageJson.author).toBe('thejohnd0e');
-  expect(build).toMatchObject({appId:'com.exodusbrowser.desktop',productName:'Exodus Browser',asar:true});
+  expect(build).toMatchObject({appId:'com.exodusbrowser.desktop',productName:'Exodus Browser',asar:true,npmRebuild:false});
   expect(build.directories.output).toBe('dist-install');
   expect(build.asarUnpack).toContain('**/node_modules/better-sqlite3/**');
   expect(build.win).toMatchObject({target:['nsis'],icon:'ico/exodus-icon.ico'});

@@ -13,7 +13,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 - no accounts, cloud, synchronization, or Dolphin API;
 - no anti-detection or fingerprint spoofing (Canvas/WebGL/Audio, etc.) in the original scope;
 - no guarantees against DNS/WebRTC/UDP leaks; a browser proxy is not a system VPN;
-- no Dolphin profile import, installer, digital signature, or auto-update;
+- no Dolphin profile import, digital signature, or auto-update;
 - no PAC, proxy chains, or authenticated SOCKS5.
 
 ## 2. Technology stack
@@ -24,6 +24,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 | Language | TypeScript, strict |
 | Interface | React 19, custom CSS |
 | Build | Vite 6 (renderer), esbuild (main/preload) |
+| Windows distribution | electron-builder 26, assisted NSIS |
 | Metadata | SQLite through `better-sqlite3` |
 | Validation | Zod |
 | Proxies | `proxy-chain` |
@@ -158,7 +159,14 @@ Original first-version boundaries (later fingerprint additions are described in 
 - Store entries are downloaded in main over HTTPS with a 60-second timeout and a 100 MB cap, validated like local packages, and stored with `source: 'store'` and their store ID. Duplicate store IDs are rejected. "Update…" re-downloads store entries and uses the folder picker for local ones. Trust rests on TLS to Google; the CRX signature is not independently verified, and updates are never automatic.
 - Renderer: the Extensions section manages the library and per-profile checkboxes select the set; changes apply at the next launch. Native folder/archive pickers run in main only.
 
-### 3.11 Cookies: import and export
+### 3.11 Windows installer
+
+- `npm run dist` runs the regular build and emits an unsigned x64 NSIS setup executable into ignored `dist-install/`.
+- The assisted wizard defaults to current-user installation under `%LOCALAPPDATA%\Programs\Exodus Browser`, supports elevation for all-users/Program Files, allows directory selection, creates a Start Menu shortcut, and offers optional desktop shortcut and run-after-install checkboxes.
+- `better-sqlite3` remains a production dependency and is unpacked from asar. Its existing Windows prebuild was verified with Electron 45; electron-builder dependency rebuilding is disabled to avoid a network header fetch during packaging.
+- Uninstall removes program files and shortcuts only. `%APPDATA%\Local Profiles` and the downloaded Chromium engine remain. There is no updater or signing certificate.
+
+### 3.12 Cookies: import and export
 
 - `shared/cookies.ts` — `CookieInput` model, limits (5 MiB, 20,000 entries, field lengths), and strict Zod schema with `SameSite=None`, `__Secure-`, and `__Host-` requirements.
 - `main/cookies/parse.ts`, `netscape.ts`, `normalize.ts` — file reading (strict UTF-8, BOM, size limit), format detection, normalization of Dolphin JSON (expiry scale, booleans, special names, `facebook.com`) and Netscape (include-subdomains field, `#HttpOnly_`); any invalid entry rejects the entire file.
@@ -213,4 +221,4 @@ The Dolphin directory (`C:\Program Files\Dolphin Anty`, its profiles and setting
 - After `STOP_TIMEOUT`, the browser is not forcibly terminated; the profile remains `blocked`.
 - Backups include Chromium cache and can be large; no progress is shown.
 - Backups may contain cookies Chromium binds to a Windows account; transfer to another user is not guaranteed.
-- Installer, signing, and auto-update are outside the first version. Fingerprint spoofing is limited to implemented fields; script-based overrides are distinguishable from a real browser, and the CDP debugging port is accessible to local processes while the profile runs.
+- Installer UI build is implemented but interactive install/uninstall verification is pending. Signing and auto-update remain out of scope. Fingerprint spoofing is limited to implemented fields; script-based overrides are distinguishable from a real browser, and the CDP debugging port is accessible to local processes while the profile runs.

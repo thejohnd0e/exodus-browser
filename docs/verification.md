@@ -142,3 +142,10 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - `npm run verify`: PASS (231/231 unit tests, typecheck, production build).
 - `npm run test:integration`: PASS (48/48 across 13 files). Electron checks verify the logo viewport fits within the existing sidebar and keeps at least 250 px width at 1200 px and 940 px window widths; bundled image bytes still match the supplied asset.
 - Tests use isolated temporary application storage only; no real profile data was used.
+
+## Windows NSIS installer (2026-10-31)
+
+- `npm run dist`: PASS on Windows 10 x64, Node.js 22.23.4, Electron 45.1.0, electron-builder 26.18.0. Output: `dist-install/ExodusBrowser-Setup-0.1.0.exe` (138,401,067 bytes) and the NSIS `.blockmap`; no update YAML is produced because auto-update is not configured. The artifacts are ignored by Git.
+- Windows executable metadata reports ProductName `Exodus Browser`, ProductVersion `0.1.0`, and CompanyName `thejohnd0e`. The setup filename and bundled Exodus ICO match the configuration. `better-sqlite3`'s Windows x64 prebuild is present in `app.asar.unpacked`; Electron app-smoke integration verifies the same native prebuild loads with Electron 45.
+- `npm run verify`: PASS (282/282 unit, typecheck, production build). `npm run test:integration`: PASS (51/51 across 14 files).
+- NSIS packaging reports `oneClick=false` and `perMachine=false`; the installer is configured for an assisted current-user default with elevation/all-users selection and a changeable directory. Interactive wizard navigation, installed launch, Start Menu/desktop shortcut selection, and uninstall data preservation were not completed. Packaged mode intentionally ignores `LOCAL_PROFILES_DATA` and selects `%APPDATA%\Local Profiles`; perform those acceptance steps only with a disposable Windows account. The installer is unsigned and may trigger SmartScreen.
