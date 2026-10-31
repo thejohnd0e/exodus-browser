@@ -36,8 +36,9 @@ else void app.whenReady().then(async()=>{
   const cookies=new CookieService(profiles,supervisor,installer);
   const cookieOps=createCookieOperations({
     cookies,
-    showOpen:options=>dialog.showOpenDialog(win,options as Electron.OpenDialogOptions),
-    showSave:options=>dialog.showSaveDialog(win,options as Electron.SaveDialogOptions),
+     showOpen:options=>dialog.showOpenDialog(win,options as Electron.OpenDialogOptions),
+     showSave:options=>dialog.showSaveDialog(win,options as Electron.SaveDialogOptions),
+     showClearConfirm:async id=>{const profile=profiles.get(id);const result=await dialog.showMessageBox(win,{type:'warning',message:`Clear all cookies for “${profile.name}”? You will be signed out of websites. Local storage, IndexedDB and other site data will be kept.`,buttons:['Cancel','Clear cookies'],cancelId:0,defaultId:0});return result.response===1;},
   });
   let quitting=false,closing=false;
   const dispatcher=createDispatcher({
@@ -60,7 +61,7 @@ else void app.whenReady().then(async()=>{
     checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');return {...await checkProxy(input.proxy),service:IP_CHECK_SERVICE};},
     listProxies:async()=>profiles.listProxies(),createProxy:input=>profiles.createProxy(input),updateProxy:(id,input)=>profiles.updateProxy(id,input),removeProxy:id=>profiles.removeProxy(id),
     checkSavedProxy:async id=>({...await checkProxy(profiles.getProxyInput(id)),service:IP_CHECK_SERVICE}),runningProxyVersions:async()=>supervisor.runningProxyVersions(),
-    importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies
+     importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies,clearCookies:cookieOps.clearCookies
   },event=>isTrustedSender(event as never,win.webContents,ui));
   for(const method of operations)ipcMain.handle('profiles:'+method,(event,...args)=>dispatcher(event,method,args));
   win.on('close',event=>{

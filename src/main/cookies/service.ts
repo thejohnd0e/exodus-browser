@@ -25,7 +25,7 @@ export class CookieService {
   private active = new Set<Promise<unknown>>();
   constructor(private profiles: ProfileService, private supervisor: Lease, private engine: Engine, private deps: Deps = {}) {}
 
-  private async session<T>(id: string, fn: (session: CookieSession) => Promise<T>): Promise<T> {
+  private async session<T>(id: string, fn: (session: CookieSession) => Promise<T>,requireSuccessfulClose=false): Promise<T> {
     const operation = this.supervisor.withStopped(id, async () => {
       const dir = profilePath(this.profiles.root, id);
       const rows = await (this.deps.probe ?? probeProfileProcesses)();
@@ -47,7 +47,8 @@ export class CookieService {
         return await fn(session);
       } finally {
         this.handles.delete(launched);
-        await launched.close().catch(() => undefined);
+          if(requireSuccessfulClose){try{await launched.close();}catch{throw Error('COOKIE_SESSION_CLOSE_FAILED');}}
+          else await launched.close().catch(() => undefined);
       }
     });
     this.active.add(operation);
@@ -89,6 +90,15 @@ export class CookieService {
       }
       return {count: cookies.length, fileName: basename(filePath)};
     });
+  }
+
+  async clear(id:string):Promise<{cleared:true}>{
+    return this.session(id,async session=>{
+      try{await session.clearCookies();}catch{throw Error('COOKIE_CLEAR_FAILED');}
+      let count:number;try{count=await session.getRawCookieCount();}catch{throw Error('COOKIE_CLEAR_FAILED');}
+      if(count!==0)throw Error('COOKIES_NOT_CLEARED');
+      return {cleared:true};
+    },true);
   }
 
   async closeAll(): Promise<void> {

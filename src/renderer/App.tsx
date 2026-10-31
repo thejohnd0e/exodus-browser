@@ -16,18 +16,22 @@ export function App({api=window.profileApi}:{api?:ProfileApi}){
  async function run<T>(action:()=>Promise<Result<T>>):Promise<T|false>{setBusy(true);setMessage('');try{const result=await action();if(!result.ok){setMessage(result.error.message);return false;}return result.value;}catch{setMessage('Operation failed.');return false;}finally{await refresh();setBusy(false);}}
  const filtered=profiles.filter(p=>(p.name+' '+p.note).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
  async function createProxy(input:SavedProxyInput){return run(()=>api.createProxy(input));}
-  function cookieAction(id:string,kind:'import'|'export',format?:CookieFormat){
+   function cookieAction(id:string,kind:'import'|'export',format?:CookieFormat){
    const p=profiles.find(item=>item.id===id);if(!p)return;const version=p.updatedAt;
    void run(()=>kind==='import'?api.importCookies(id):api.exportCookies(id,format??'json')).then(value=>{
     if(!value)return;
     const text=kind==='import'?`Imported ${value.count} cookies from ${value.fileName}`:`Exported ${value.count} cookies to ${value.fileName}`;
     setCookieResults(prev=>({...prev,[id]:{text,version}}));
    });
-  }
+   }
+   function clearCookies(id:string){
+    const p=profiles.find(item=>item.id===id);if(!p)return;const version=p.updatedAt;
+    void run(()=>api.clearCookies(id)).then(value=>{if(value)setCookieResults(prev=>({...prev,[id]:{text:'Cookies cleared. Other site data was kept.',version}}));});
+   }
   return <div className="shell"><aside><div className="brand"><img src={wordmark} alt="Exodus Browser" width={1200} height={300}/><span className="build-version">v{BUILD_INFO.version}</span></div><nav><button className={view==='profiles'?'nav-active':''} aria-label="Profiles" disabled={busy} onClick={()=>setView('profiles')}>▦ Browser profiles</button><button className={view==='proxies'?'nav-active':''} aria-label="Proxies" disabled={busy} onClick={()=>setView('proxies')}>⇄ Proxies</button></nav></aside><main>
  {message&&<div className="notice" role="alert"><span>{message}</span><button onClick={()=>setMessage('')} aria-label="Dismiss message">✕</button></div>}
   {view==='profiles'?<><header className="page-header"><div><h1>Browser profiles</h1></div><button className="primary" onClick={()=>setEditor(null)} disabled={busy}>＋ New profile</button></header><section className="stats"><div><strong>{profiles.length}</strong><span>Total profiles</span></div><div><strong>{Object.values(states).filter(s=>s==='running').length}</strong><span>Currently running</span></div></section><EngineSettings status={engine} busy={busy} onInstall={()=>void run(()=>api.installEngine())} onLink={()=>void run(()=>api.linkEngine())}/><div className="toolbar"><input placeholder="Search profiles" aria-label="Search profiles" value={query} onChange={e=>setQuery(e.target.value)}/><button disabled={busy} onClick={()=>void run(()=>api.restore())}>Restore from backup</button></div>
- {filtered.length?<ProfileList profiles={filtered} states={states} proxyResults={proxyResults} runningVersions={runningVersions} cookieResults={cookieResults} engineReady={engine.state==='ready'} busy={busy} onEdit={setEditor} onImportCookies={id=>cookieAction(id,'import')} onExportCookies={(id,format)=>cookieAction(id,'export',format)} onAction={(action,id)=>{
+  {filtered.length?<ProfileList profiles={filtered} states={states} proxyResults={proxyResults} runningVersions={runningVersions} cookieResults={cookieResults} engineReady={engine.state==='ready'} busy={busy} onEdit={setEditor} onImportCookies={id=>cookieAction(id,'import')} onExportCookies={(id,format)=>cookieAction(id,'export',format)} onClearCookies={clearCookies} onAction={(action,id)=>{
   if(action==='checkProxy'){const p=profiles.find(p=>p.id===id);if(!p)return;const version=profileCheckVersion(p);setProxyResults(prev=>({...prev,[id]:undefined}));void run(async()=>{const result=await api.checkProxy(id);if(result.ok&&result.value){const {ip}=result.value;setProxyResults(prev=>({...prev,[id]:{ip,version}}));}return result;});return;}
   void run(()=>action==='start'?api.start(id):action==='stop'?api.stop(id):action==='remove'?api.remove(id):api.backup(id));
  }}/>:<section className="empty"><div>▧</div><h2>{query?'No profiles found':'Start with your first profile'}</h2><p>{query?'Try a different name.':'Each profile will have its own cookies, site data and settings.'}</p>{!query&&<button onClick={()=>setEditor(null)}>Create profile</button>}</section>}</>:<ProxyLibrary proxies={proxies} profiles={profiles} busy={busy} results={savedResults} onCreate={()=>setProxyEditor(null)} onEdit={setProxyEditor} onRemove={id=>void run(()=>api.removeProxy(id))} onCheck={p=>{const version=p.updatedAt;setSavedResults(prev=>({...prev,[p.id]:undefined}));void run(async()=>{const result=await api.checkSavedProxy(p.id);if(result.ok){const {ip}=result.value;setSavedResults(prev=>({...prev,[p.id]:{ip,version}}));}return result;});}}/>}

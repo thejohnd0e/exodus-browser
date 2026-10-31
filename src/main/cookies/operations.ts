@@ -11,10 +11,12 @@ export function createCookieOperations({
   cookies,
   showOpen,
   showSave,
+  showClearConfirm,
 }: {
-  cookies: Pick<CookieService, 'importFile' | 'exportFile'>;
+  cookies: Pick<CookieService, 'importFile' | 'exportFile' | 'clear'>;
   showOpen: (options: OpenOptions) => Promise<OpenResult>;
   showSave: (options: SaveOptions) => Promise<SaveResult>;
+  showClearConfirm?:(id:string)=>Promise<boolean>;
 }) {
   return {
     async importCookies(id: string): Promise<CookieOperationResult | null> {
@@ -35,6 +37,10 @@ export function createCookieOperations({
       });
       if (result.canceled || !result.filePath) return null;
       return cookies.exportFile(id, result.filePath, format);
+    },
+    async clearCookies(id:string):Promise<{cleared:true}|null>{
+      if(!showClearConfirm||!await showClearConfirm(id))return null;
+      return cookies.clear(id);
     },
   };
 }

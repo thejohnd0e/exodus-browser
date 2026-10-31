@@ -44,7 +44,7 @@ Shared edits: `src/shared/{contracts,validation}.ts`, `src/main/{index,ipc}.ts`,
 
 - [ ] Review the spec and its proposed defaults with the user before application implementation.
 - [x] Clarify language policy: Russian UI translation strings are product data; project documentation, comments, tests, and GitHub metadata remain English.
-- [x] Complete Tasks 1–2; Task 3 remains.
+- [x] Complete Tasks 1–3; Task 4 remains.
 - [ ] Complete Tasks 4–6 as individual increments, subject to their gates.
 - [ ] Complete Tasks 7–8 for portable transfer.
 - [ ] Complete Task 9 acceptance, documentation, and independent review.
@@ -82,12 +82,12 @@ Shared edits: `src/shared/{contracts,validation}.ts`, `src/main/{index,ipc}.ts`,
 
 **Interfaces:** `CookieService.clear(id:string):Promise<void>`; `ProfileApi.clearCookies(id:string):Promise<Result<{cleared:true}|null>>`, where null is confirmation cancellation. Extend the cookie session with browser-level `clearCookies():Promise<void>` and raw-count readback that does not normalize away partitioned cookies.
 
-- [ ] Write failing service/IPC/UI tests for confirm/cancel, running/blocked/orphan rejection, unavailable engine, CDP clear failure, nonzero readback, and no cookie values in errors or UI. Cancellation must not acquire a maintenance session.
-- [ ] Run the existing cookie unit test files plus the new cases; confirm failure for the missing operation.
-- [ ] Implement main-process confirmation and `Storage.clearCookies` within the existing isolated session/exclusive lock. Verify zero raw cookies, close normally, and return success only after lifecycle cleanup succeeds; do not swallow failed persistence/closure as success.
-- [ ] Add the stopped-profile action with sign-out warning and busy state. Update IPC argument validation and preload allowlist tests.
-- [ ] Extend real Chromium cookie tests: persistent/session/httpOnly/partitioned cookies disappear after reopening, localStorage/IndexedDB survive, another profile is unaffected, and the maintenance browser emits no network requests. If partitioned fixtures require a specific engine, report BLOCKED rather than omitting that assertion.
-- [ ] Run both full verification commands; expect PASS. Commit: `feat: clear all cookies from stopped profiles`.
+- [x] Write failing service/IPC/UI tests for confirm/cancel, running/blocked/orphan rejection, unavailable engine, CDP clear failure, nonzero readback, close failure, and no cookie values in errors or UI. Cancellation never acquires a maintenance session.
+- [x] Run cookie unit tests and observe expected missing-method failures.
+- [x] Implement main-process confirmation and `Storage.clearCookies` within the existing isolated session/exclusive lock. Verify zero raw cookies including partitioned entries, close normally, and return success only after lifecycle cleanup succeeds.
+- [x] Add the stopped-profile action with sign-out warning and busy state. Update IPC argument validation and preload allowlist tests.
+- [x] Real Chromium verifies persistent/session/httpOnly/partitioned cookies disappear, localStorage/IndexedDB survive, another profile is unaffected, and the maintenance browser emits no network requests.
+- [x] `npm run verify` PASS (170 unit tests, typecheck, production build); `npm run test:integration` PASS (43/43). Commit: `feat: clear all cookies from stopped profiles`.
 
 ### Task 4: Persist application settings and establish typed localization
 

@@ -15,6 +15,7 @@
 ## Completed
 
 - Session restoration (2026-10-31): per-profile opt-in (default off), ordered eligible tab URL snapshots, stable fingerprint seed, unexpected Chromium exit flush, and portable backup manifest v4. v1–v3 remain readable. `npm run verify` PASS (165/165 unit); `npm run test:integration` PASS (42/42), including real Chromium restore/fallback and cookie-session isolation. Manual UI acceptance remains open.
+- Cookie clearing (2026-10-31): added a stopped-profile, confirmed action that clears all Chromium cookies (including CHIPS) while preserving localStorage/IndexedDB and other profiles. Success requires zero raw-cookie readback and clean maintenance-browser closure. `npm run verify` PASS (170/170 unit); `npm run test:integration` PASS (43/43). Manual Electron confirmation-dialog acceptance remains open.
 
 - Profiles: create, edit, search, launch, stop, delete; metadata survives restart.
 - Isolation: each profile has a separate Chromium directory and process; cookies, localStorage, and IndexedDB remain separate and persist after restart (verified on real Chromium).

@@ -12,7 +12,8 @@ function setup(extra:any={}){
     {probe:async()=>[],launch:(async()=>({client:{send:async(method:string,p:any)=>{
       if(method==='Target.getTargets')return {targetInfos:[{targetId:'t1',type:'page'}]};
       if(method==='Target.attachToTarget')return {sessionId:'s1'};
-      if(method==='Network.setCookies'){stored.push(p.cookies[0]);return {};}
+       if(method==='Network.setCookies'){stored.push(p.cookies[0]);return {};}
+       if(method==='Storage.clearCookies'){stored.length=0;return {};}
       if(method==='Storage.getCookies')return {cookies:stored};return {};
     },close:vi.fn()},close:async()=>{closed();}})) as any,...extra});
   return {root,profiles,service,stored,closed};
@@ -81,4 +82,25 @@ it('does not export expired cookies',async()=>{
     await expect(service.exportFile(p.id,out,'json')).resolves.toEqual({count:0,fileName:'expired.json'});
     expect(JSON.parse(await readFile(out,'utf8'))).toEqual([]);
   }finally{profiles.close();cleanup(root);}
+});
+it('clears cookies and requires both zero raw readback and successful browser closure',async()=>{
+ const {root,profiles,stored,closed}=setup();
+ try{
+  const p=await profiles.create(valid);const service=new CookieService(profiles,{withStopped:async(_id,fn)=>fn()},{resolveExecutable:async()=>process.execPath},
+   {probe:async()=>[],launch:(async()=>({client:{send:async(method:string)=>{
+     if(method==='Storage.clearCookies'){stored.length=0;return {};}
+     if(method==='Storage.getCookies')return {cookies:stored};
+     return {targetInfos:[{targetId:'t1',type:'page'}],sessionId:'s1'};
+   },close:vi.fn()},close:async()=>{closed();}})) as any});
+  await expect(service.clear(p.id)).resolves.toEqual({cleared:true});expect(closed).toHaveBeenCalledOnce();expect(stored).toEqual([]);
+  const remaining=new CookieService(profiles,{withStopped:async(_id,fn)=>fn()},{resolveExecutable:async()=>process.execPath},
+   {probe:async()=>[],launch:(async()=>({client:{send:async(method:string)=>method==='Storage.getCookies'?{cookies:[cookie]}:method==='Target.getTargets'?{targetInfos:[{targetId:'t1',type:'page'}]}:{sessionId:'s1'},close:vi.fn()},close:async()=>{}})) as any});
+  await expect(remaining.clear(p.id)).rejects.toThrow('COOKIES_NOT_CLEARED');
+  const cdpFailure=new CookieService(profiles,{withStopped:async(_id,fn)=>fn()},{resolveExecutable:async()=>process.execPath},
+   {probe:async()=>[],launch:(async()=>({client:{send:async(method:string)=>{if(method==='Storage.clearCookies')throw Error('secret cookie value');if(method==='Target.getTargets')return {targetInfos:[{targetId:'t1',type:'page'}]};if(method==='Storage.getCookies')return {cookies:[]};return {sessionId:'s1'};},close:vi.fn()},close:async()=>{}})) as any});
+  await expect(cdpFailure.clear(p.id)).rejects.toThrow('COOKIE_CLEAR_FAILED');
+  const closeFailure=new CookieService(profiles,{withStopped:async(_id,fn)=>fn()},{resolveExecutable:async()=>process.execPath},
+   {probe:async()=>[],launch:(async()=>({client:{send:async(method:string)=>method==='Storage.getCookies'?{cookies:[]}:method==='Target.getTargets'?{targetInfos:[{targetId:'t1',type:'page'}]}:{sessionId:'s1'},close:vi.fn()},close:async()=>{throw Error('close failed');}})) as any});
+  await expect(closeFailure.clear(p.id)).rejects.toThrow('COOKIE_SESSION_CLOSE_FAILED');
+ }finally{profiles.close();cleanup(root);}
 });

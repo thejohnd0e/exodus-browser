@@ -170,3 +170,8 @@ An independent branch review found a critical issue: without a pinned hash, the 
 **Decision:** save only the ordered URLs of eligible HTTP(S) and `about:blank` tabs; do not save browsing history, form state, or cookies separately. Restoration is per profile and defaults off. A persistent random uint32 fingerprint seed keeps script-based fingerprint noise stable across profile renames/backup transfer; older records derive the existing deterministic seed. Backup manifest v4 carries the preference, seed, and optional tab snapshot; v1–v3 remain readable.
 **Rationale:** explicit opt-in limits surprise and privacy impact; URL-only restore is bounded and avoids claiming to restore transient browser state. A random stored seed avoids deriving fingerprint identity directly from a portable profile UUID.
 **Cost of being wrong:** users who expect form/session state need to sign in or refill forms; a copied v4 archive reproduces the fingerprint noise seed on the destination machine.
+
+### 26. Confirmed cookie-only clearing (2026-10-31)
+**Decision:** provide a separate confirmed action for stopped profiles that invokes Chromium `Storage.clearCookies`, verifies zero cookies from the raw CDP cookie list (including partitioned cookies), and reports success only after the temporary maintenance browser closes successfully. Local storage, IndexedDB, and other site data are not cleared.
+**Rationale:** users can sign out without unexpectedly deleting broader site state; verification and lifecycle errors fail closed instead of displaying success prematurely.
+**Cost of being wrong:** some users may interpret “clear cookies” as clearing all website data; the confirmation and completion message explicitly state that other site data is retained.

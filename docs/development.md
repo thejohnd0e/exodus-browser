@@ -81,6 +81,8 @@ Development reset: close the application and delete the `Local Profiles` directo
   - `isolation.test.ts` — real Chromium: cookies/localStorage/IndexedDB are isolated and survive restart; uses a locally installed Playwright build, otherwise the test fails with `BLOCKED`;
   - `languages.test.ts` — real Chromium: checks the single selected language through `navigator.language`, `navigator.languages[0]`, HTTP Accept-Language, and Preferences with normal Accept-Language Reduction;
   - `app-smoke.test.ts` — Electron: offline profile creation, restricted preload, no Node in renderer, no external window requests, DPAPI roundtrip, and no plaintext password;
+  - `sessions.test.ts` — real Chromium: ordered URL snapshots, opt-in restoration and start-page fallback, graceful and unexpected exit;
+  - `cookies.test.ts` — real Chromium: isolated import/export and cookie clearing (including CHIPS), network isolation, and preservation of localStorage/IndexedDB;
   - `proxy.test.ts` — HTTP/CONNECT, authentication, percent signs in passwords, SOCKS5, no fallback, separate ports, unavailable upstream, IP checking;
   - `backups.test.ts` — roundtrip, rejection of unsafe paths/links/duplicates/size, no partial profile on failure;
   - `recovery.test.ts` — blocking when a process remains/inventory is unavailable;

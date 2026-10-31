@@ -30,3 +30,16 @@ it('reads cookies and skips partitioned entries',async()=>{
   const session=await openCookieSession({client:{send:send as never,close:vi.fn()},close:async()=>{}});
   expect(await session.getCookies()).toEqual([{domain:'.example.com',name:'a',path:'/',value:'1',expirationDate:null,httpOnly:false,secure:true,sameSite:'lax',storeId:'0'}]);
 });
+it('clears all cookies through Storage.clearCookies and counts partitioned cookies in raw readback',async()=>{
+ let current=[{name:'a',value:'1'},{name:'b',value:'2',partitionKey:{topLevelSite:'https://example.com'}}];
+ const send=vi.fn(async(method:string)=>{
+   if(method==='Storage.getCookies')return {cookies:current};
+   if(method==='Storage.clearCookies'){current=[];return {};}
+   if(method==='Target.getTargets')return {targetInfos:[{targetId:'t1',type:'page'}]};
+   return {sessionId:'s1'};
+ });
+ const session=await openCookieSession({client:{send:send as never,close:vi.fn()},close:async()=>{}});
+ await expect(session.clearCookies()).resolves.toBeUndefined();
+ expect(send.mock.calls.map(call=>call[0])).toContain('Storage.clearCookies');
+ expect(await session.getRawCookieCount()).toBe(0);
+});

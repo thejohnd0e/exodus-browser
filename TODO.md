@@ -13,6 +13,8 @@ Priorities: P0 — blocks a reliable handoff, P1 — important quality/security,
   Recommended next step: open the build with a separate `LOCAL_PROFILES_DATA`, check real open/save dialogs, JSON/Netscape import and export in both directions, dialog cancellation, result messages, and rejection for running profiles. Ensure the UI does not show cookie values; record results in `docs/verification.md`.
   Files: `src/main/cookies/operations.ts`, `src/main/index.ts`, `src/renderer/ProfileList.tsx`, `src/renderer/App.tsx`, `tests/integration/cookies.test.ts`.
 
+- [ ] **Manually verify confirmed cookie clearing in Electron.** Confirm Cancel starts no maintenance process; confirm Clear cookies signs out but retains localStorage/IndexedDB; verify running-profile action is disabled and no cookie values appear in UI.
+
 - [ ] **Extend migration/restore failure injection.**
   Non-blocking review finding: the current migration rollback test fails during prevalidation, and the restore test fails before directory publication. Add failures after the migration SQL write and after the restore rename but before commit.
 

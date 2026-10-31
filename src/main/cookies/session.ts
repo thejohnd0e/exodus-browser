@@ -30,6 +30,8 @@ type CookieCdp = Pick<CdpClient, 'send' | 'close'>;
 export interface CookieSession {
   setCookie(cookie: CookieInput): Promise<void>;
   getCookies(): Promise<CookieInput[]>;
+  clearCookies():Promise<void>;
+  getRawCookieCount():Promise<number>;
   close(): Promise<void>;
 }
 
@@ -87,6 +89,8 @@ export async function openCookieSession({client, close}: {client: CookieCdp; clo
           storeId: '0',
         }));
     },
+    async clearCookies(){await client.send('Storage.clearCookies',{});},
+    async getRawCookieCount(){const {cookies}=await client.send<{cookies:Array<Record<string,unknown>>}>('Storage.getCookies',{});return cookies.length;},
     async close() {
       await close();
     },

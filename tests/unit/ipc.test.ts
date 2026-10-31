@@ -44,3 +44,13 @@ it('validates cookie operations and explains their errors',async()=>{
     expect(result.ok).toBe(false);if(!result.ok){expect(result.error.code).toBe(code);expect(result.error.message).toContain(text);}
   }
 });
+it('validates cookie clearing and returns only allowlisted failure messages',async()=>{
+ const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';let calls=0;
+ const dispatch=createDispatcher({clearCookies:async()=>{calls++;return {cleared:true};}},()=>true);
+ expect(await dispatch({},'clearCookies',[id])).toMatchObject({ok:true,value:{cleared:true}});
+ expect((await dispatch({},'clearCookies',['../bad'])).ok).toBe(false);expect(calls).toBe(1);
+ const failure=createDispatcher({clearCookies:async()=>{throw Error('COOKIE_CLEAR_FAILED');}},()=>true);
+ expect(await failure({},'clearCookies',[id])).toMatchObject({ok:false,error:{code:'COOKIE_CLEAR_FAILED',message:'Could not clear cookies in Chromium.'}});
+ const unsafe=createDispatcher({clearCookies:async()=>{throw Error('COOKIE_SESSION_CLOSE_FAILED path C:/private secret');}},()=>true);
+ const result=await unsafe({},'clearCookies',[id]);expect(JSON.stringify(result)).not.toContain('secret');expect(JSON.stringify(result)).not.toContain('private');
+});

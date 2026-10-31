@@ -86,6 +86,43 @@ it('sends httpOnly cookies to the server but not to document.cookie',async()=>{
   }finally{profiles.close();cleanup(root);server.closeAllConnections();server.close();}
 },120000);
 
+it('clears persistent, session and partitioned cookies while preserving other site data and unrelated profiles',async()=>{
+ if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
+ const reports:Array<{local:string;db:string}>=[];let seededCookie='';let checkCookie='';let requests=0;
+ const server=createServer((req,res)=>{
+  requests++;
+  if(req.url==='/seed'){
+   res.setHeader('Set-Cookie',['persistent=one; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax','session=two; Path=/; HttpOnly; SameSite=Lax','partitioned=three; Path=/; Secure; SameSite=None; Partitioned']);
+   res.setHeader('Content-Type','text/html');res.end(`<!doctype html><script>localStorage.setItem('keep','yes');const r=indexedDB.open('kept-db',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>{const tx=r.result.transaction('data','readwrite');tx.objectStore('data').put('yes','key');tx.oncomplete=()=>fetch('/seeded')}</script>`);return;
+  }
+  if(req.url==='/seeded'){seededCookie=req.headers.cookie??'';res.end('ok');return;}
+  if(req.url==='/check'){
+   checkCookie=req.headers.cookie??'';res.setHeader('Content-Type','text/html');res.end(`<!doctype html><script>const r=indexedDB.open('kept-db');r.onsuccess=()=>{const q=r.result.transaction('data').objectStore('data').get('key');q.onsuccess=()=>fetch('/report?local='+encodeURIComponent(localStorage.getItem('keep')||'')+'&db='+encodeURIComponent(q.result||''))}</script>`);return;
+  }
+  if(req.url?.startsWith('/report')){const u=new URL(req.url,'http://localhost');reports.push({local:u.searchParams.get('local')??'',db:u.searchParams.get('db')??''});res.end('ok');return;}
+  res.end('ok');
+ });
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const port=(server.address() as AddressInfo).port;const origin=`http://localhost:${port}`;
+ const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const service=new CookieService(profiles,{withStopped:async(_id,fn)=>fn()},{resolveExecutable:async()=>exe},{probe:async()=>[]});const engine=new ChromiumAdapter(exe);
+ try{
+  const p=await profiles.create(valid);const other=await profiles.create({...valid,name:'Other'});
+  const otherCookies=join(root,'other.json');await writeFile(otherCookies,cookieFile('localhost'));await service.importFile(other.id,otherCookies);
+  const first=await engine.launch({profileId:p.id,userDataDir:join(root,'profiles',p.id),languages:['en-US'],startUrls:[`${origin}/seed`],fingerprint:DEFAULT_FINGERPRINT});
+  for(let i=0;i<100&&!seededCookie;i++)await new Promise(resolve=>setTimeout(resolve,50));await first.stop();
+  expect(seededCookie).toContain('persistent=one');expect(seededCookie).toContain('session=two');
+  if(!seededCookie.includes('partitioned=three'))throw Error('BLOCKED: local Chromium did not accept the CHIPS fixture');
+  const requestCount=requests;
+  await expect(service.clear(p.id)).resolves.toEqual({cleared:true});
+  expect(requests).toBe(requestCount);
+  const second=await engine.launch({profileId:p.id,userDataDir:join(root,'profiles',p.id),languages:['en-US'],startUrls:[`${origin}/check`],fingerprint:DEFAULT_FINGERPRINT});
+  for(let i=0;i<100&&!reports.length;i++)await new Promise(resolve=>setTimeout(resolve,50));await second.stop();
+  expect(checkCookie).not.toContain('persistent=');expect(checkCookie).not.toContain('session=');expect(checkCookie).not.toContain('partitioned=');
+  expect(reports).toEqual([{local:'yes',db:'yes'}]);
+  const otherExport=join(root,'other-after-clear.json');await expect(service.exportFile(other.id,otherExport,'json')).resolves.toMatchObject({count:2});
+ }finally{profiles.close();cleanup(root);server.closeAllConnections();server.close();}
+},120000);
+
 it('import and export are independent of the proxy, while launch with an unreachable proxy is rejected',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const root=tempRoot();const profiles=new ProfileService(root,testSecrets());

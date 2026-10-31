@@ -32,5 +32,6 @@ export interface ProfileApi {
   checkSavedProxy(id:string):Promise<Result<{ip:string;service:string}>>;
   importCookies(id:string):Promise<Result<CookieOperationResult|null>>;
   exportCookies(id:string,format:CookieFormat):Promise<Result<CookieOperationResult|null>>;
+  clearCookies(id:string):Promise<Result<{cleared:true}|null>>;
   runningProxyVersions():Promise<Result<Record<string,string|null>>>;
 }

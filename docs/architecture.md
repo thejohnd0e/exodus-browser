@@ -86,6 +86,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 - a profile is stored as JSON in a row; originally, the proxy secret used a separate encrypted column;
 - outward-facing `Profile` contains no password, only `hasPassword`;
 - profile directory is `<root>/profiles/<uuid>`; the user-provided name is not used in paths;
+- optional session snapshots live at `<root>/sessions/<uuid>.json`; profile JSON stores `restoreLastSession` and a persistent uint32 fingerprint seed without a SQLite schema bump;
 - `profilePath` rejects UUID substitution, symlinks, and escape from storage;
 - original inline-proxy update behavior: `password: undefined` preserves the previous secret only when `kind/host/port/username` are unchanged; `password: ""` clears it;
 - deletion: first check “profile stopped”, rename the directory to `trash-<uuid>`, delete the row, then remove the directory asynchronously.
@@ -132,7 +133,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 ### 3.8 Backups
 
 - creation only for a stopped profile under an exclusive lock;
-- streaming ZIP: `manifest.json` (version 3) + `data/…`; the manifest carries the fingerprint, proxy passwords are excluded; v1/v2 remain readable with fingerprint defaults supplied;
+- streaming ZIP: `manifest.json` (version 4) + `data/…`; the manifest carries the fingerprint, session preference, seed, and optional URL snapshot; proxy passwords are excluded; v1–v3 remain readable with safe defaults;
 - restoration uses temporary `.restore-<uuid>`, validating the manifest, layout, version, duplicates, links, special files, device names, and limits (100,000 entries, 20 GiB based on bytes actually written);
 - publication occurs only after successful extraction, with a new UUID; no visible profile appears on failure.
 
@@ -142,6 +143,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 
 - `main/cdp/client.ts` — minimal DevTools protocol client: connects to `127.0.0.1` using a URL from stderr, 15 s to open WebSocket, 5 s per command, one session per profile. Waits up to 10 s for the devtools-URL line.
 - `main/cdp/fingerprint.ts` — after connecting and before the first navigation, applies `Emulation.setTimezoneOverride`, `Emulation.setGeolocationOverride` (Manual only), and `Network.setUserAgentOverride` with `userAgentMetadata`, then `Page.addScriptToEvaluateOnNewDocument` with the bundled script (`Page.enable` is required before adding the script). If the browser has not created its initial page, launch waits up to 5 s rather than failing immediately. New targets (popups, `window.open`) receive the same settings; a target arriving with navigation already underway is reloaded once. Workers, devtools, and `chrome://` are excluded. An application failure closes the page and ends launch with `FINGERPRINT_UNAVAILABLE`.
+- `main/sessions/*` tracks only eligible ordered tab URLs for normal managed launches; snapshots are bounded, atomic local files, debounced, and flushed before intentional or unexpected browser exit. Restore is profile-specific and opt-in; form state/history are not captured. Cookie-maintenance sessions do not use the tracker.
 - `main/engines/spoof-script.ts` — injected script (string template with JSON configuration): deterministic Canvas/WebGL/ClientRects/Audio noise using a positional hash from `sha256(profileId)`, configured vendor/renderer, disabling `navigator.gpu`, overriding `hardwareConcurrency`, `deviceMemory`, `screen.*`, and `outer*`, removing `RTCPeerConnection` for WebRTC Off; Canvas/WebGL Off disable their respective APIs. The script is idempotent (`window.__LP_FP__`).
 - Geolocation: Manual grants session permission and coordinates; Auto overrides nothing and retains the normal permission prompt.
 
@@ -152,6 +154,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 - `main/cookies/serialize.ts` — JSON and Netscape export.
 - `main/cookies/session.ts` — temporary headless Chromium using the same `user-data-dir`: dead loopback proxy, DNS blocked, background traffic disabled, no navigation; `Network.setCookies` in the `about:blank` session, `Storage.getCookies` on the browser connection, closure through `Browser.close` while awaiting process exit.
 - `main/cookies/service.ts` — import/export under `withStopped`, orphan-browser check, readback by `domain+path+name`, atomic file writing, closing all sessions during application exit.
+- Cookie clearing uses a separate confirmation and Chromium `Storage.clearCookies`, verifies a raw zero-cookie count including partitioned entries, and requires clean maintenance-session closure; other site storage is not cleared.
 - `main/cookies/operations.ts` and `index.ts` — open/save dialogs in main; renderer receives only `{count, fileName}`.
 - Profile cards provide “Import cookies…” and “Export cookies…” (JSON or Netscape), only for stopped profiles; the result shows a count and filename.
 
