@@ -27,3 +27,20 @@ it('formats localized native confirmation prompts without altering user-provided
  expect(nativeMessage('cookie.clear.confirm','ru',{name:'User profile'})).toContain('«User profile»');
  expect(nativeMessage('cookie.clear.button','ru')).not.toBe(nativeMessage('cookie.clear.button','en'));
 });
+
+it('localizes every update error code in both languages',()=>{
+ const codes=['UPDATE_CHECK_FAILED','UPDATE_INVALID_RELEASE','UPDATE_DOWNLOAD_FAILED','UPDATE_CHECKSUM_MISMATCH','UPDATE_TOO_LARGE','UPDATE_CANCELLED','UPDATE_UNTRUSTED_REDIRECT','UPDATE_BUSY','UPDATE_BUSY_PROFILES','UPDATE_NOT_READY'];
+ for(const code of codes){
+  expect(errorsForLanguage('en')).toContain(code);
+  expect(messageForError(code,'en')).not.toBe(en['error.generic']);
+  expect(messageForError(code,'ru')).not.toBe(ru['error.generic']);
+ }
+});
+
+it('provides English and Russian copy for the update controls',()=>{
+ for(const key of ['Check for updates','Checking for updates…','You have the latest version.','Version {{version}} is available ({{size}}).','Download update','Downloading {{percent}}%','Cancel download','Install and restart','Stop all browsers before installing the update.'] as const){
+  expect(en[key]).toBeTruthy();
+  expect(ru[key]).toBeTruthy();
+  expect(ru[key]).not.toBe(en[key]);
+ }
+});
