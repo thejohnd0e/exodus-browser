@@ -10,7 +10,13 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 - Fresh `npm run verify` PASS (349 unit, typecheck, production build), `npm run test:integration` PASS (60/60), `npm run dist` PASS (version 1.1.85, `app.asar` intact).
 - Published `ExodusBrowser-Setup-1.1.85.exe` (135,268,906 bytes) and `SHA256SUMS`. SHA-256: `a1d99a33150e2e47bbd737860567cd8dfc789b8fc20810bbd4ffcc4bc825ed24`. An unauthenticated `releases/latest` request returned `v1.1.85`, non-draft and non-prerelease.
 - A disposable real-Electron production-default service run, reporting current version 1.1.84, checked/downloaded the public 1.1.85 installer to `ready` in 7.60 seconds; size and SHA-256 matched. The probe did not execute an installer or open real profile storage.
-- User acceptance of download speed/progress in the installed UI, the install button and the actual NSIS handoff/restart is pending. This test release contains no separate installation fix.
+- User acceptance was initially pending; see the subsequent confirmation below. This test release contains no separate installation fix.
+
+### User acceptance: installed update 1.1.84 to 1.1.85 (2026-10-31)
+
+- After reporting a manual installation of 1.1.84, the user tested the published 1.1.85 update through the installed application and confirmed that downloading was fast and installation completed normally.
+- This is user-reported acceptance of the download-to-install scenario on this Windows installation, not another disposable service-only probe. The earlier slow/stalled-download and missing-install-step reports did not recur in this test.
+- The user did not supply an exact duration or a separate post-restart version screenshot. Automatic restart details, other installation modes/accounts and Windows proxy/PAC/custom-certificate environments are not separately verified by this report. No additional test release is required for the reported scenario.
 
 ### Update transport investigation (2026-10-31; unpublished 1.1.84 candidate)
 
