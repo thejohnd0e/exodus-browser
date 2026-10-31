@@ -15,7 +15,7 @@ export async function withBuildVersion({root,run}){
   catch(error){if(error?.code==='EEXIST')throw Error('BUILD_ALREADY_RUNNING');throw error;}
   try{
     const statePath=join(local,'build-version.json');
-    const markerPath=join(local,'build-version.initialized');
+    const markerPath=join(root,'.build-version.initialized');
     const floorPath=join(root,'build-version-floor.json');
     let state;
     try{state=JSON.parse(await readFile(statePath,'utf8'));}
@@ -41,4 +41,25 @@ export async function withBuildVersion({root,run}){
     await lock.close();
     await rm(lockPath,{force:true});
   }
+}
+
+export async function recoverBuildVersion({root,buildNumber,confirm}){
+  if(!Number.isSafeInteger(buildNumber)||buildNumber<0)throw Error('BUILD_VERSION_SEED_INVALID');
+  const local=join(root,'.local');await mkdir(local,{recursive:true});
+  const lockPath=join(local,'build.lock');let lock;
+  try{lock=await open(lockPath,'wx');}
+  catch(error){if(error?.code==='EEXIST')throw Error('BUILD_ALREADY_RUNNING');throw error;}
+  try{
+    if(!await confirm())throw Error('BUILD_VERSION_RECOVERY_CANCELLED');
+    const floor=JSON.parse(await readFile(join(root,'build-version-floor.json'),'utf8'));
+    if(!floor||!Number.isSafeInteger(floor.buildNumber)||buildNumber<floor.buildNumber)throw Error('BUILD_VERSION_SEED_INVALID');
+    const statePath=join(local,'build-version.json');
+    try{
+      const state=JSON.parse(await readFile(statePath,'utf8'));
+      if(!Number.isSafeInteger(state.buildNumber)||buildNumber<state.buildNumber)throw Error('BUILD_VERSION_SEED_INVALID');
+    }catch(error){if(error.message==='BUILD_VERSION_SEED_INVALID')throw error;if(error?.code!=='ENOENT'){/* Confirmed recovery of corrupt state. */}}
+    await writeAtomic(statePath,JSON.stringify({buildNumber})+'\n');
+    const markerPath=join(root,'.build-version.initialized');
+    try{await writeFile(markerPath,'initialized\n',{flag:'wx'});}catch(error){if(error?.code!=='EEXIST')throw error;}
+  }finally{await lock.close();await rm(lockPath,{force:true});}
 }

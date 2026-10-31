@@ -33,6 +33,8 @@ npm start
 | `npm run test:integration` | build first, then integration tests |
 | `npm run verify` | typecheck + unit + production build |
 
+Every invocation of `scripts/build.mjs` (including `dev`, `verify`, and integration tests) consumes the next `0.1.N` build number; failed attempts may leave gaps. The counter is local in `.local/build-version.json` and is not reset by deleting `dist/`. If the counter is missing/corrupt, builds fail closed. For a crashed build, first verify no build is running and remove the stale `.local/build.lock`; then run `node scripts/recover-build-version.mjs <last-used-number>` and type `YES` at the prompt. Choose a number no lower than the committed `build-version-floor.json`; recovery never guesses or lowers a valid counter. Do not run concurrent builds in one checkout.
+
 ## Engine preparation
 
 The UI can download the already pinned CfT 156.0.8078.80 using “Download Chromium”. See `docs/verification.md` for pin provenance and verification results. Alternative attachment and preparation of a new release are described below.

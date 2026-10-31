@@ -36,6 +36,9 @@ it('loads the supplied wordmark, favicon and native icon from the built applicat
       expect(image).not.toBeNull();expect(sidebar).not.toBeNull();
       expect(image!.width).toBeGreaterThanOrEqual(228);
       expect(image!.x+image!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
+      const version=await win.locator('.build-version').boundingBox();
+      expect(version).not.toBeNull();
+      expect(version!.x+version!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
     }
   }finally{await app.close();rmSync(data,{recursive:true,force:true});}
 },30000);

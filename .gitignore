@@ -5,6 +5,7 @@ out/
 release/
 .cache/
 .local/
+.build-version.initialized
 *.tsbuildinfo
 engine-cache/
 

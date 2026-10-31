@@ -2,7 +2,7 @@ import {it,expect} from 'vitest';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {withBuildVersion} from '../../scripts/build-version.mjs';
+import {recoverBuildVersion,withBuildVersion} from '../../scripts/build-version.mjs';
 
 async function buildRoot(){
   const root=await mkdtemp(join(tmpdir(),'exodus-version-'));
@@ -55,5 +55,17 @@ it('requires explicit recovery when initialized version state disappears',async(
     await withBuildVersion({root,run:async()=>{}});
     await rm(join(root,'.local','build-version.json'));
     await expect(withBuildVersion({root,run:async()=>{}})).rejects.toThrow('BUILD_VERSION_STATE_MISSING');
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+it('requires confirmation and an idle build lock before reseeding lost state',async()=>{
+  const root=await buildRoot();
+  try{
+    await withBuildVersion({root,run:async()=>{}});
+    await rm(join(root,'.local','build-version.json'));
+    await expect(recoverBuildVersion({root,buildNumber:10,confirm:async()=>false})).rejects.toThrow('BUILD_VERSION_RECOVERY_CANCELLED');
+    await expect(withBuildVersion({root,run:async()=>{}})).rejects.toThrow('BUILD_VERSION_STATE_MISSING');
+    await expect(recoverBuildVersion({root,buildNumber:10,confirm:async()=>true})).resolves.toBeUndefined();
+    await expect(withBuildVersion({root,run:async()=>{}})).resolves.toMatchObject({version:'0.1.11'});
   }finally{await rm(root,{recursive:true,force:true});}
 });
