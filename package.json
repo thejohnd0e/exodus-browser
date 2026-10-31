@@ -2,7 +2,7 @@
   "name": "exodus-browser",
   "productName": "Exodus Browser",
   "author": "thejohnd0e",
-  "version": "0.1.0",
+  "version": "1.1.78",
   "private": true,
   "type": "module",
   "main": "dist/main.cjs",
