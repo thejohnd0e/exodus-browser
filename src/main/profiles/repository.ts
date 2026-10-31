@@ -9,7 +9,7 @@ export function openRepository(root:string){
   mkdirSync(root,{recursive:true});const db=new Database(join(root,'profiles.sqlite'));
   try{
     const version=db.pragma('user_version',{simple:true}) as number;
-    if(version>2)throw Error('DATABASE_TOO_NEW');
+    if(version>3)throw Error('DATABASE_TOO_NEW');
     db.pragma('foreign_keys = ON');db.pragma('journal_mode = WAL');
     if(version<2)db.transaction(()=>{
       const rows=version===1?db.prepare('SELECT id,data,secret FROM profiles ORDER BY rowid').all() as {id:string;data:string;secret:Buffer|null}[]:[];
@@ -21,6 +21,9 @@ export function openRepository(root:string){
         const {language,proxy,...rest}=p;const data={...rest,languages:[language],proxyId};db.prepare('INSERT INTO profiles VALUES(?,?,?)').run(p.id,JSON.stringify(data),proxyId);
       }
       if(version===1)db.exec('DROP TABLE profiles_v1');db.pragma('user_version = 2');
+    })();
+    if(db.pragma('user_version',{simple:true})===2)db.transaction(()=>{
+      db.exec('CREATE TABLE extensions(id TEXT PRIMARY KEY,data TEXT NOT NULL)');db.pragma('user_version = 3');
     })();
     return db;
   }catch(error){db.close();throw error;}

@@ -16,6 +16,7 @@ type RestoreOptions={requiresProxyPassword?:boolean;session?:SessionSnapshot|nul
 export class ProfileService {
   private db;private closed=false;
   constructor(readonly root:string,private secrets:Secrets,private assertStopped:(id:string)=>Promise<void>=async()=>{}){this.db=openRepository(root);}
+  get database(){return this.db;}
   async list():Promise<Profile[]>{return (this.db.prepare('SELECT id FROM profiles ORDER BY rowid').all() as {id:string}[]).map(r=>this.get(r.id));}
   get(id:string):Profile{
     const row=this.db.prepare('SELECT data,proxy_id FROM profiles WHERE id=?').get(parseProfileId(id)) as {data:string;proxy_id:string|null}|undefined;

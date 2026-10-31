@@ -1,4 +1,4 @@
-import {lstat,readFile,mkdir} from 'node:fs/promises';
+import {lstat,readFile,readdir,mkdir} from 'node:fs/promises';
 import {basename,join} from 'node:path';
 import {z} from 'zod';
 import {extractArchive} from '../backups/archive';
@@ -16,6 +16,13 @@ export function validateManifest(text:string):ExtensionSummary{
   const result=manifestSchema.safeParse(parsed);
   if(!result.success)throw Error('EXTENSION_INVALID_MANIFEST');
   return {name:result.data.name,version:result.data.version};
+}
+
+export async function assertNoLinks(directory:string):Promise<void>{
+  for(const entry of await readdir(directory,{withFileTypes:true})){
+    if(entry.isSymbolicLink())throw Error('EXTENSION_UNSAFE_PACKAGE');
+    if(entry.isDirectory())await assertNoLinks(join(directory,entry.name));
+  }
 }
 
 export async function inspectFolder(directory:string):Promise<ExtensionSummary>{

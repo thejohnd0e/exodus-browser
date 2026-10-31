@@ -12,7 +12,7 @@ it('migrates v1 records and secret bytes without decrypting or merging equal pro
  let s:ProfileService|undefined;
   try{s=new ProfileService(root,secrets);const profiles=await s.list();expect(profiles.map(p=>p.languages)).toEqual([['en-NZ'],['en-NZ']]);expect(profiles.map(p=>p.fingerprint)).toEqual([DEFAULT_FINGERPRINT,DEFAULT_FINGERPRINT]);expect(profiles.map(p=>p.id)).toEqual(ids);
  expect(profiles[0].proxyId).not.toBe(profiles[1].proxyId);expect(await s.listProxies()).toHaveLength(2);s.close();
- const db=new Database(join(root,'profiles.sqlite'));expect(db.pragma('user_version',{simple:true})).toBe(2);const rows=db.prepare('SELECT secret FROM proxies ORDER BY rowid').all() as {secret:Buffer}[];expect(rows.map(r=>r.secret.toString())).toEqual(['cipher-0','cipher-1']);db.close();
+ const db=new Database(join(root,'profiles.sqlite'));expect(db.pragma('user_version',{simple:true})).toBe(3);const rows=db.prepare('SELECT secret FROM proxies ORDER BY rowid').all() as {secret:Buffer}[];expect(rows.map(r=>r.secret.toString())).toEqual(['cipher-0','cipher-1']);db.close();
  s=new ProfileService(root,secrets);expect(await s.listProxies()).toHaveLength(2);
  }finally{s?.close();cleanup(root);}
 });
