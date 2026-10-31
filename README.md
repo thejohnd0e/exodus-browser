@@ -2,11 +2,11 @@
   <img src="ico/exodus-icon.png" alt="Exodus Browser" width="88" height="88">
 </p>
 
-<h1 align="center">Exodus Browser</h1>
+<h1 align="center">Exodus Anti-Detect Browser</h1>
 
 <p align="center">
-  <strong>Separate browser profiles. Your sessions, under your control.</strong><br>
-  A local-first browser profile manager for Windows.
+  <strong>Anti-detect tools. Separate profiles. Local control.</strong><br>
+  A local-first anti-detect browser for Windows with isolated profiles, configurable fingerprints and per-profile proxies.
 </p>
 
 <p align="center">
@@ -20,12 +20,13 @@
   <a href="https://github.com/thejohnd0e/exodus-browser/releases/latest"><strong>Download for Windows</strong></a>
   &nbsp; · &nbsp; <a href="#get-started">Get started</a>
   &nbsp; · &nbsp; <a href="#features">Features</a>
+  &nbsp; · &nbsp; <a href="#anti-detect-and-privacy">Anti-detect &amp; privacy</a>
   &nbsp; · &nbsp; <a href="https://github.com/thejohnd0e/exodus-browser/issues">Help &amp; feedback</a>
 </p>
 
 ---
 
-Exodus Browser keeps different browsing activities in separate profiles. Each profile has its own cookies, website data, settings and optional proxy, so you can keep work, personal sessions and testing environments apart without signing in and out of one shared browser.
+**Exodus Browser** combines isolated Chromium profiles with anti-detect controls for the browser information websites can inspect. Keep work, personal sessions and testing environments apart, choose a fingerprint and optional proxy for each profile, and control which cookies and website data each context retains.
 
 Profiles stay on your computer. There is no Exodus account to create, no subscription and no cloud synchronization. Your everyday Chrome profile is not used.
 
@@ -37,12 +38,45 @@ Profiles stay on your computer. There is no Exodus account to create, no subscri
 | **Parallel browsing** | Run several profiles at once, each in its own Chromium browser process. Launch and stop them from one place. |
 | **Per-profile proxies** | Save named HTTP, HTTPS or SOCKS5 connections and assign them to profiles. Reuse one saved connection across multiple profiles. |
 | **IP checks** | Check a saved proxy's external IP on demand and see an estimated country flag beside the result. |
-| **Browser identity settings** | Generate a new fingerprint or adjust browser identity, time zone, location, screen, hardware and privacy-related settings. |
+| **Anti-detect controls** | Generate a fingerprint preset or adjust browser identity, graphics/audio-related signals, time zone, location, screen, hardware and WebRTC settings. |
 | **Extensions** | Add an extension from a Chrome Web Store link, a folder or a ZIP archive. Choose which profiles use it and update it explicitly. |
 | **Cookies** | Import and export JSON or Netscape cookie files. Clear a profile's cookies without clearing its other website data. |
 | **Saved tabs** | Choose start pages or enable restoring tabs from the previous session for an individual profile. |
 | **Backups and transfers** | Back up a stopped profile, restore it as a new profile, or use portable export/import to transfer supported profile data. |
 | **Two interface languages** | Switch the manager between English and Russian. Set a separate website language for each profile. |
+
+## Anti-detect and privacy
+
+### Control your browser fingerprint
+
+Websites can recognize a browser using more than cookies: its reported platform, screen, graphics, audio behavior and other characteristics can form a **browser fingerprint**. Exodus lets you adjust selected parts of that fingerprint separately for each profile.
+
+| Control | What it changes |
+|---|---|
+| **Browser identity** | The reported operating system and User-Agent, plus the profile's website language. |
+| **Graphics and audio signals** | Canvas and WebGL can use real output, profile-specific noise or disabled modes. ClientRects and Audio offer noise settings; WebGL vendor/renderer can be set manually and WebGPU can be turned off. |
+| **Screen and hardware** | Reported screen dimensions, CPU core count and memory size. These settings do not replace your physical hardware. |
+| **Time zone and location** | Choose a manual time zone and location instead of the system/browser defaults. These are not automatically matched to the proxy IP. |
+| **WebRTC** | Keep normal behavior, restrict non-proxied UDP, alter some locally reported addresses or disable WebRTC. Altered mode does not substitute the proxy's public IP. Restrictive modes can affect calls and other websites; they are not a guarantee against every IP leak. |
+
+**New fingerprint** generates a preset for your configured Chromium version; you can then review and adjust it. Fingerprint changes are a choice, not an invisible always-on shield: a new profile starts with many real browser values until you configure them or generate a preset.
+
+Noise modifies selected outputs; it does not recreate a different physical device or hide every fingerprint signal.
+
+### Reduce tracking between browsing contexts
+
+- **Separate website storage.** Cookies and other saved website data are not shared between profiles. A tracking identifier saved in one profile's storage is not automatically available in another profile.
+- **Choose the connection per profile.** An assigned proxy changes the browsing connection's exit address. Without a proxy, the profile uses your normal connection; reusing an IP address can still link activity.
+- **Control persistent cookies.** Import only cookies you trust, export them when needed, or clear them for a stopped profile. Cookies intentionally persist between launches; closing a profile does not erase its history or identifiers. Clearing cookies also leaves other website storage intact.
+- **Keep management local.** Profile data stays on your computer rather than being synchronized to an Exodus cloud account. Websites, proxies and installed extensions can still observe information you send to them.
+
+**There is no built-in ad blocker or tracker-blocking list.** You can add a compatible content-blocking extension to selected profiles. Only install extensions you trust: their permissions may let them read or change browsing data.
+
+### Know the boundaries
+
+Anti-detect controls help you manage selected identifying signals; **they do not make you invisible, guarantee anonymity or guarantee that profiles cannot be linked**. Script-based fingerprint changes can themselves be detected, and Exodus does not disguise every network-level identifier. Signing into the same account, importing the same cookies or reusing identifying information can connect profiles regardless of their settings.
+
+Use separate profiles for separate contexts, review fingerprint and proxy settings before browsing, and keep your Chromium engine and trusted extensions current. A proxy is not a system VPN, and choosing a location or time zone does not by itself conceal your real network address. See [Privacy and limitations](#privacy-and-limitations) for the remaining caveats.
 
 ## Get started
 

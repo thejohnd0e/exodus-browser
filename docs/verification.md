@@ -4,6 +4,14 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### Anti-detect and privacy presentation (2026-10-31)
+
+- On the user's approval, changed the README heading to **Exodus Anti-Detect Browser** and updated GitHub positioning. The Windows application's display name, installer filenames, source behavior, release tags and storage paths remain unchanged.
+- Added a user-oriented explanation of configurable fingerprints, graphics/audio noise, screen/hardware settings, time zone/location, WebRTC controls, isolated storage, optional proxies, cookie persistence and local profile management.
+- Fact-checked against fingerprint schemas/defaults, presets and the implemented spoof script. Clarified that noise changes selected outputs rather than recreating another physical device, Altered WebRTC does not substitute the proxy's public IP, many new-profile defaults expose real values, and there is no built-in ad/tracker-blocking list. Included account/cookie/IP correlation and network/anonymity limitations.
+- Added `anti-detect`, `antidetect-browser`, `anti-fingerprinting` and `browser-privacy` Topics; existing Topics and release tags were preserved. Checked tracked relative links, remote release/issue URLs, all badge SVGs and GitHub Markdown rendering.
+- `npm run verify` PASS (349 unit, typecheck, build); `npm run test:integration` PASS (60/60). Subsequent fact-check corrections changed prose only.
+
 ### Repository presentation (2026-10-31)
 
 - Reworked the English README as a user guide: existing Exodus artwork, four factual badges, a latest-release download link, feature overview, installer-first onboarding, everyday tasks, data storage, updates, privacy limits and support. Developer setup remains in the linked development guide; removed README links to local-only files that are not published.
