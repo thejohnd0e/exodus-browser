@@ -1,157 +1,152 @@
-# Exodus Browser
+<p align="center">
+  <img src="ico/exodus-icon.png" alt="Exodus Browser" width="88" height="88">
+</p>
 
-A local browser profile manager for Windows. Each profile runs in a separate Chromium process with its own persistent data directory: cookies, localStorage, IndexedDB, cache, and settings are not shared between profiles. A proxy is configured separately for each profile.
+<h1 align="center">Exodus Browser</h1>
 
-The application requires no account, subscription, cloud, or Dolphin servers. It does not use Dolphin's engine or branding. Reuse of Dolphin code and ideas is permitted by the user's 2026-10-30 decision, without its branding or third-party binaries.
+<p align="center">
+  <strong>Separate browser profiles. Your sessions, under your control.</strong><br>
+  A local-first browser profile manager for Windows.
+</p>
 
-> **Profile isolation is not anti-detection.** A profile can override selected fingerprint parameters (User-Agent and Client Hints, timezone, Canvas/WebGL/Audio, screen, CPU/memory, WebRTC, Manual geolocation), but script-based overrides are distinguishable from a real browser, TLS/JA3 is not disguised, and sites may still link profiles using other signals. A browser proxy is not a system VPN: elimination of all DNS/WebRTC/UDP leaks is not guaranteed.
+<p align="center">
+  <a href="https://github.com/thejohnd0e/exodus-browser/releases/latest"><img src="https://img.shields.io/github/v/release/thejohnd0e/exodus-browser?style=flat-square&amp;label=release&amp;color=0b7285" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4?style=flat-square" alt="Windows 10 and 11, x64">
+  <img src="https://img.shields.io/badge/Data-stored%20locally-16875d?style=flat-square" alt="Data stored locally">
+  <img src="https://img.shields.io/badge/Interface-English%20%2F%20Russian-596579?style=flat-square" alt="English and Russian interface">
+</p>
+
+<p align="center">
+  <a href="https://github.com/thejohnd0e/exodus-browser/releases/latest"><strong>Download for Windows</strong></a>
+  &nbsp; · &nbsp; <a href="#get-started">Get started</a>
+  &nbsp; · &nbsp; <a href="#features">Features</a>
+  &nbsp; · &nbsp; <a href="https://github.com/thejohnd0e/exodus-browser/issues">Help &amp; feedback</a>
+</p>
+
+---
+
+Exodus Browser keeps different browsing activities in separate profiles. Each profile has its own cookies, website data, settings and optional proxy, so you can keep work, personal sessions and testing environments apart without signing in and out of one shared browser.
+
+Profiles stay on your computer. There is no Exodus account to create, no subscription and no cloud synchronization. Your everyday Chrome profile is not used.
 
 ## Features
 
-- Create, edit, search, launch, and stop profiles.
-- Separate cookies, localStorage, IndexedDB, and cache for each profile.
-- Run different profiles in parallel; launching the same profile twice is prohibited.
-- HTTP/HTTPS proxies with optional authentication and unauthenticated SOCKS5 (one per profile).
-- Explicit external IP check through the selected proxy.
-- ZIP backups of stopped profiles and restoration into a new profile.
-- Profile fingerprint: OS and User-Agent, WebRTC, Canvas, WebGL and WebGL Info, WebGPU, ClientRects, Audio, timezone, Manual geolocation, CPU/memory, and screen. “New fingerprint” builds a consistent set for the attached engine version; a summary appears in the card.
-- Recovery after a manager crash: the profile is blocked until its browser is closed manually. Unrelated processes are not terminated.
-- English interface, entirely local metadata storage in SQLite.
+| Feature | What you can do |
+|---|---|
+| **Separate profiles** | Create, name, search and organize profiles with notes. Cookies and website data stay separate and persist between launches. |
+| **Parallel browsing** | Run several profiles at once, each in its own Chromium browser process. Launch and stop them from one place. |
+| **Per-profile proxies** | Save named HTTP, HTTPS or SOCKS5 connections and assign them to profiles. Reuse one saved connection across multiple profiles. |
+| **IP checks** | Check a saved proxy's external IP on demand and see an estimated country flag beside the result. |
+| **Browser identity settings** | Generate a new fingerprint or adjust browser identity, time zone, location, screen, hardware and privacy-related settings. |
+| **Extensions** | Add an extension from a Chrome Web Store link, a folder or a ZIP archive. Choose which profiles use it and update it explicitly. |
+| **Cookies** | Import and export JSON or Netscape cookie files. Clear a profile's cookies without clearing its other website data. |
+| **Saved tabs** | Choose start pages or enable restoring tabs from the previous session for an individual profile. |
+| **Backups and transfers** | Back up a stopped profile, restore it as a new profile, or use portable export/import to transfer supported profile data. |
+| **Two interface languages** | Switch the manager between English and Russian. Set a separate website language for each profile. |
 
-## Requirements
+## Get started
 
-- Windows 10/11 x64.
-- Node.js 22+ and npm.
-- Separate Chromium: download it through the application or attach a trusted build (see below). Your personal Chrome profile is not used.
+### 1. Install Exodus Browser
 
-## Install and run
+Open the **[latest release](https://github.com/thejohnd0e/exodus-browser/releases/latest)** and download the `ExodusBrowser-Setup-<version>.exe` installer under **Assets**. Run it and follow the setup wizard.
 
-> **The proxy directory and language selection changes have not yet completed full manual acceptance.** The new build upgrades SQLite to v2; before using existing data, close the manager and browsers and save a complete copy of `%APPDATA%\Local Profiles`. Older builds cannot read v2. Development and testing have not migrated the user's real database.
+- **Supported:** Windows 10 or Windows 11, 64-bit (x64).
+- **Not required:** Node.js, npm or other developer tools when using the installer.
+- **Internet access:** needed for downloads and online browsing; managing existing profiles does not require an Exodus account or cloud connection.
 
-```powershell
-npm ci
-npm run build
-npm start
-```
+> The installer is not digitally signed yet, so Windows SmartScreen may display a warning. Only use releases from this repository; do not disable Windows security protections.
 
-Development: `npm run dev` (build + launch Electron).
+### 2. Set up Chromium once
 
-## Application data
+In Exodus, click **Download Chromium** to install the browser used by your profiles. Alternatively, choose **Link Chromium…** and select `chrome.exe` from an existing Chromium installation you trust.
 
-Metadata and profile directories are stored in the legacy location `%APPDATA%\Local Profiles`:
+This browser runs separately from your personal browser. You can create profiles before setting it up, but launching them requires an available engine.
 
-- `profiles.sqlite` — profiles, settings, and encrypted proxy passwords;
-- `profiles\<uuid>\` — Chromium data for the corresponding profile;
-- `engine\` — installed engine;
-- `runtime-<uuid>.json` — running browser journal.
+### 3. Create your first profile
 
-The Exodus Browser display name does not imply a data-directory migration. Preserve the compatibility-related Electron `app.setName` behavior and legacy storage location unless a migration is separately approved.
+Click **New profile**, enter a name, and choose a website language and start pages. Add a proxy if needed, then save the profile and click **Launch**.
 
-Proxy passwords are encrypted by Windows DPAPI through Electron `safeStorage`; they are not written as plaintext to the database, logs, or command line. If OS encryption is unavailable, the password is not saved.
+### 4. Make it your own
 
-## Chromium engine and checksum
+Expand a profile's **Settings**, then choose **Edit** to change its fingerprint, enable session restoration or select extensions. Cookie and backup actions are in the expanded card. Stop the profile before changing settings or making a backup.
 
-The application needs a separate Chromium. There are two explicit ways to provide it.
+## Everyday use
 
-**1. Attach an installed Chromium.** “Attach Chromium…” opens a file picker; select `chrome.exe` from a Chromium build you trust (for example, manually extracted Chrome for Testing). The application stores the path and file SHA-256 and checks before every launch that the file has not changed. If replaced, launch is blocked until it is attached again. The user is responsible for the selected file's provenance; the application neither downloads nor replaces it.
+### Proxies
 
-**2. Download Chrome for Testing.** “Download Chromium” downloads official Chrome for Testing from `storage.googleapis.com` **only on explicit request**, and only if `src/main/engines/releases.json` pins a release with SHA-256.
+Add connections in **Proxies**, then select a saved connection in each profile's settings. HTTP and HTTPS proxies support usernames and passwords; SOCKS5 connections currently work without authentication. Select **No proxy** for a direct connection.
 
-The repository pins Chrome for Testing **156.0.8078.80** for Windows x64; click “Download Chromium” to install it in the application directory. As of 2026-10-30, this version matches the Stable channel in the [official metadata](https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json). The application does not automatically select a newer version. To replace the pinned release, the build maintainer must:
+- Changes to a saved proxy take effect the next time an assigned profile starts.
+- **Check IP** checks the saved connection. Restart a running profile after changing its proxy before comparing its route with that result.
+- A failed configured proxy does not silently switch the profile to a direct connection.
+- PAC files, proxy chains and authenticated SOCKS5 are not supported.
 
-1. Download `chrome-win64.zip` for the required version from the official Chrome for Testing directory.
-2. Independently establish the file's provenance (official directory, TLS, stable network/known copy).
-3. Calculate SHA-256: `Get-FileHash .\chrome-win64.zip -Algorithm SHA256`.
-4. Update `src/main/engines/releases.json`:
-   ```json
-   { "release": { "version": "156.0.8078.80", "url": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/win64/chrome-win64.zip", "sha256": "<sha256>" } }
-   ```
-5. Rebuild the application (`npm run build`).
+### Fingerprint and profile preferences
 
-The verified archive SHA-256 and installation results are in [docs/verification.md](docs/verification.md). The hash pins a specific archive but is not independent proof of its provenance: the initial download trusts TLS to Google's official server. Without a pinned release, downloads are prohibited, while profile management continues to work offline.
+Use **New fingerprint** to generate a preset for your linked browser version, or adjust the settings yourself. Available controls include the operating system and User-Agent, Canvas, WebGL, WebGPU, ClientRects, Audio, WebRTC, screen size, CPU and memory, time zone, and manual location.
 
-The “Chrome for Testing is only for automated testing” banner is normal for this build; the application does not suppress it using test flags or by disabling security warnings.
+The default time zone follows your system; it is **not** automatically detected from the proxy IP. Use **Manual** to choose a time zone. Extensions that also change the time zone can conflict with these settings.
 
-Installation verifies HTTPS and the exact official URL, version format, downloaded archive SHA-256, safe extraction (no `..`, absolute paths, links, or special files), presence of `chrome-win64\chrome.exe`, and an archive size of at most 500 MB. Only then does the directory atomically become the current engine. There is no engine auto-update.
+Enable **Restore tabs from the previous session** when you want a profile to reopen its saved pages instead of its start pages. This restores tab addresses, not unsaved forms or a complete snapshot of a page.
 
-## Proxies
+### Extensions and cookies
 
-### Connection directory (new implementation)
+Add extensions once in **Extensions**, then enable the ones you need in each profile. Extensions must use the current **Manifest V3** format. Library changes apply on the next profile launch. Some extensions may behave differently from a normal store installation.
 
-The “Proxies” section creates named connections with type, address, port, and authentication. A profile selects a saved entry or “No proxy”; a new entry can be added from the form without losing the draft. Multiple profiles can use one proxy. Edits to a shared entry apply at the next launch; an already running browser keeps its previous settings. IP checking checks the current saved entry and does not prove the route of a browser using an older snapshot.
+Cookie actions are available in a stopped profile's **Settings**:
 
-Assigned proxies cannot be deleted: remove profile references first. Unlinking does not delete the entry, nor does deleting a profile. During migration, old embedded connections become separate entries even when addresses match, because passwords may differ.
+- **Import cookies…** reads JSON or Netscape files, adding cookies and replacing matching entries.
+- **Export cookies…** saves either format.
+- **Clear cookies…** removes all cookies while keeping other local website data. Cookie-based sessions usually require signing in again; other saved sign-in methods may remain.
 
-### Profile languages
+Cookie files are limited to 5 MiB and 20,000 entries. Partitioned cookies are not supported by import/export. Treat exported cookie files like passwords.
 
-The editor offers one site language, searchable by name and BCP47 code; codes outside the built-in catalog are allowed. The language can differ by profile. It is saved in Preferences and passed through `--lang`. Chromium may reduce language preferences for privacy; the application does not disable this protection. The browser UI language depends on the build's resources. There is no IP-based autodetection. Valid locale codes such as `ru-RU` and arbitrary user input remain supported; the repository's English-only publication policy does not restrict such data.
+### Backups and moving profiles
 
-- HTTP and HTTPS: optional username and password.
-- SOCKS5: no authentication.
-- PAC, proxy chains, and authenticated SOCKS5 are unsupported.
-- Each launch creates a local proxy bridge listening only on `127.0.0.1`; Chromium uses it, and the bridge adds upstream authentication. Proxy failure does not result in a direct connection.
-- HTTPS upstream certificates are checked against system trust.
-- IP checking runs only on button click, without a separate dialog. A warning next to the button states that `http://api.ipify.org?format=json` is used; the HTTP response can be altered, and the service sees the proxy IP. The result appears in the profile card without a URL and is not persisted; it is cleared on repeat checking, profile editing, or manager restart. Errors are displayed separately from the result.
-- Chromium receives `--proxy-bypass-list=<-loopback>`. The original documentation stated that production builds did not open a remote debugging port; later fingerprint implementation uses a loopback-only CDP debugging port, as described in the security section below.
+Use **Backup** for a stopped profile and **Restore from backup** to create a new profile from an archive. Restoration does not overwrite the original profile.
 
-## Cookies
+Use **Export profile…** and **Import profile…** for portable transfers of profile settings, supported website data, cookies and saved tab addresses. Windows-bound saved passwords and other operating-system-protected data are not portable. Ordinary backup cookies may also remain tied to the original Windows account.
 
-- Cookie import/export is available from a stopped-profile card: JSON (Dolphin format) and Netscape `cookies.txt`. Both formats can be read and written.
-- Import adds cookies and overwrites matches (`domain + path + name`); there is no “replace all” mode. httpOnly and session cookies persist.
-- A temporary headless browser uses the same profile directory but **has no network access**: dead loopback proxy, blocked DNS, and disabled background traffic. Import/export therefore does not depend on the profile proxy; launching the profile itself still fails when the proxy is unavailable.
-- Cookie values are not shown in the UI, logs, or messages: only the entry count and filename are visible.
-- Partitioned (CHIPS) cookies and `storeId` mode are unsupported; limits are 5 MiB and 20,000 entries per file.
+Portable import/export requires Chromium to be set up in Exodus. Archives do not include the extension library or a profile's extension selections: add and select your extensions again after restoration or transfer.
 
-## Backups
-
-- Only a stopped profile can be copied; running or blocked profiles cannot be backed up.
-- A backup contains profile data and a settings manifest (version 3, including the fingerprint), but **not** the proxy password — enter it again after restore. Version 1 and 2 archives are readable, with fingerprint defaults supplied.
-- Backups contain cookies and other sensitive data: store them securely.
-- Restore creates a new profile with a new UUID, validates manifest version, paths, links, duplicates, and limits (100,000 entries, 20 GiB), writes to a temporary directory, and publishes the profile only after successful extraction.
-- Chromium-encrypted cookies may be bound to a Windows account; working cookies are not guaranteed to transfer to another computer.
-
-## Limitations and security
-
-- The renderer is isolated: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`; only the narrow typed `window.profileApi` API is available.
-- All IPC arguments are schema-validated; requests are accepted only from the main frame of the application's own window.
-- The window does not open external sites or new windows; navigation and webview are prohibited; CSP has no `unsafe-eval`.
-- Chromium launches without a shell, with arguments passed as an array; passwords never enter argv. The profile User-Agent is visible in the process command line so popups receive it before the first navigation.
-- While a profile is running, its CDP debugging port is accessible to local processes: it listens only on `127.0.0.1` on an ephemeral port, its URL is not logged, and its session lasts as long as the browser.
-- The application's appearance and copy do not use Dolphin branding; installed Dolphin data is neither read nor modified.
-- Dolphin profiles are not imported.
-
-## Checks
-
-```powershell
-npm run verify          # typecheck + unit + production build
-npm run test:integration
-```
-
-Isolation integration tests launch real local Chromium: they use an existing Playwright Chromium installation if present; otherwise they report `BLOCKED`. Results on the current machine and uncovered scenarios are listed in [docs/verification.md](docs/verification.md).
-
-## Documentation
-
-- [AGENTS.md](AGENTS.md) — instructions for agents (Codex, Claude Code, OpenCode) and everyone modifying the repository.
-- [STATUS.md](STATUS.md) — current state, verified behavior, and next step.
-- [TODO.md](TODO.md) — prioritized work list.
-- [docs/architecture.md](docs/architecture.md) — components, data flows, IPC, security model.
-- [DECISIONS.md](DECISIONS.md) — decisions, trade-offs, and deferred improvements.
-- [docs/development.md](docs/development.md) — builds, engine preparation, tests, troubleshooting.
-- [docs/verification.md](docs/verification.md) — verified behavior, blockers, and manual scenarios.
-- [docs/superpowers/specs/2026-10-30-local-profile-manager-design.md](docs/superpowers/specs/2026-10-30-local-profile-manager-design.md) — specification.
-- [docs/superpowers/plans/2026-10-30-local-profile-manager.md](docs/superpowers/plans/2026-10-30-local-profile-manager.md) — implementation plan.
+**Proxy passwords are not included in either kind of archive** and must be entered again after import or restoration. Archives can contain readable cookies and other private data: keep them somewhere safe and share them only with people you trust.
 
 ## Updates
 
-Click the version label at the bottom of the sidebar to check GitHub Releases for a newer Exodus Browser installer. Exodus downloads it only after you ask, verifies its SHA-256 against the release's `SHA256SUMS`, and starts the installer only when you choose "Install and restart" and no profile browser is running. There is no background update check. The installer is not yet code-signed, so Windows SmartScreen may warn. Details: `docs/architecture.md` §3.13.
+Click the **version number at the bottom of the sidebar** to check for a newer release. Choose **Download update**, wait for the file to be downloaded and verified, then stop all profile browsers and click **Install and restart**. Complete the Windows installation wizard.
 
-## Structure
+There are **no background update checks or silent installations**. You can also install a newer release manually after closing Exodus and its profile browsers.
 
-- `src/shared` — DTOs and Zod schemas;
-- `src/main/profiles` — SQLite, profiles, safe paths;
-- `src/main/security` — secret encryption;
-- `src/main/engines` — Chromium adapter and engine installation;
-- `src/main/runtime` — lifecycle and recovery;
-- `src/main/proxy` — bridge and IP checking;
-- `src/main/backups` — ZIP backups and safe restoration;
-- `src/renderer` — React UI.
+Updating Exodus does not automatically replace a previously installed Chromium engine. If the built-in updater cannot complete, download the current installer from [Releases](https://github.com/thejohnd0e/exodus-browser/releases/latest) using your normal browser.
+
+## Your data
+
+Profiles, saved connections, settings, extensions and the managed browser are stored locally under:
+
+```text
+%APPDATA%\Local Profiles
+```
+
+The folder keeps its original name for compatibility. Installing or updating Exodus does not move it, and uninstalling the application leaves it intact. Back up important profiles before moving computers or making major changes.
+
+Saved proxy passwords are encrypted using Windows protection. **This does not mean that all profile data, backups or cookie exports are encrypted.** Profiles and exports can contain active logins and other sensitive information.
+
+## Privacy and limitations
+
+- **Isolation is not a promise of anonymity or undetectability.** Fingerprint adjustments do not guarantee that websites cannot recognize or link profiles.
+- **A profile proxy is not a system VPN.** It does not cover every application or guarantee prevention of all DNS, WebRTC or other network leaks.
+- **Local-first does not mean no network traffic.** Websites, proxy IP checks, downloads and manually requested updates contact their respective services.
+- **IP and country results are advisory.** The IP check uses an unencrypted HTTP service, so the response can be altered in transit; the country is an estimate.
+- **No cloud or team workspace.** There is no account synchronization or shared online profile storage.
+- **Windows only.** Other operating-system choices in the fingerprint editor do not make Exodus a macOS, Linux or mobile application.
+
+## Help and feedback
+
+- **Browser not installed?** Use **Download Chromium** or **Link Chromium…** before launching a profile.
+- **Profile blocked after a crash?** Close the remaining profile browser manually, then restart Exodus. The manager does not forcibly kill unrelated processes.
+- **Chrome for Testing banner?** That banner is normal for the managed browser; it is not an installation error.
+- **Found a problem or have a suggestion?** [Open an issue](https://github.com/thejohnd0e/exodus-browser/issues). Include your Exodus version, Windows version, steps to reproduce and a screenshot if useful. Remove passwords, cookie contents and other private information first.
+
+## For developers
+
+Looking to build, test or understand the internals? See the [development guide](docs/development.md), [architecture](docs/architecture.md) and [verification notes](docs/verification.md). Developer setup is separate from the Windows installer instructions above.

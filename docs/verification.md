@@ -4,6 +4,14 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### Repository presentation (2026-10-31)
+
+- Reworked the English README as a user guide: existing Exodus artwork, four factual badges, a latest-release download link, feature overview, installer-first onboarding, everyday tasks, data storage, updates, privacy limits and support. Developer setup remains in the linked development guide; removed README links to local-only files that are not published.
+- Checked feature claims against the implemented UI and archive schemas. Review corrections clarified the Settings > Edit path, Manifest V3 extension support, extension exclusions from archives, the Chromium requirement for portable transfers and the limits of cookie clearing.
+- Updated the GitHub description, homepage link to Releases and 12 descriptive Topics. No license, release tags or application code changed.
+- Verified all README relative files are tracked; external release/issue links and all badge SVG endpoints responded successfully. GitHub's Markdown API rendered the README, and a disposable preview was visually checked at desktop and 390 px mobile widths using only public artwork and documentation.
+- `npm run verify` PASS (349 unit, typecheck, build); `npm run test:integration` PASS (60/60). Subsequent review corrections changed prose only.
+
 ### 1.1.85 installed-updater test release (2026-10-31)
 
 - The user reported manually installing 1.1.84. Published the version-only `v1.1.85` release so the installed application can exercise its new transport; application code is unchanged from 1.1.84.
