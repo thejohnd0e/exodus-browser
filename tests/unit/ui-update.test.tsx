@@ -65,3 +65,48 @@ it('shows a localized error state from the service',async()=>{
   push({state:'error',code:'UPDATE_CHECKSUM_MISMATCH'});
   expect(await screen.findByText('The update checksum does not match. The file was removed.')).toBeTruthy();
 });
+
+it('closes the panel on Escape, on outside click and with the close button',async()=>{
+  const {push}=harness();
+  push({state:'available',version:'1.1.78',size:138000000});
+  expect(await screen.findByRole('button',{name:'Download update'})).toBeTruthy();
+  fireEvent.keyDown(document,{key:'Escape'});
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'Download update'})).toBeNull());
+
+  push({state:'available',version:'1.1.78',size:138000000});
+  fireEvent.mouseDown(document.body);
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'Download update'})).toBeNull());
+
+  push({state:'available',version:'1.1.78',size:138000000});
+  fireEvent.click(await screen.findByRole('button',{name:'Close update panel'}));
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'Download update'})).toBeNull());
+});
+
+it('keeps the panel open while a click inside it happens',async()=>{
+  const {push}=harness();
+  push({state:'available',version:'1.1.78',size:138000000});
+  const download=await screen.findByRole('button',{name:'Download update'});
+  fireEvent.mouseDown(download);
+  expect(screen.getByRole('button',{name:'Download update'})).toBeTruthy();
+});
+
+it('hides the up-to-date message by itself after a short delay',async()=>{
+  vi.useFakeTimers();
+  try{
+    const {push}=harness();
+    push({state:'up-to-date'});
+    expect(screen.getByText('You have the latest version.')).toBeTruthy();
+    act(()=>{vi.advanceTimersByTime(6000);});
+    expect(screen.queryByText('You have the latest version.')).toBeNull();
+  }finally{vi.useRealTimers();}
+});
+
+it('keeps an available update on screen until the user acts',async()=>{
+  vi.useFakeTimers();
+  try{
+    const {push}=harness();
+    push({state:'available',version:'1.1.78',size:138000000});
+    act(()=>{vi.advanceTimersByTime(30000);});
+    expect(screen.getByRole('button',{name:'Download update'})).toBeTruthy();
+  }finally{vi.useRealTimers();}
+});

@@ -25,3 +25,7 @@ button.build-version:disabled{cursor:default}
 .update-panel{position:absolute;bottom:calc(100% + 10px);left:-8px;z-index:30;display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:260px;padding:10px 12px;border:1px solid #2b3747;border-radius:8px;background:#18212d;box-shadow:0 12px 28px rgba(0,0,0,.45);text-align:left}
 .update-error{color:#f39999}
 .update-control button:not(.build-version){font-size:12px;padding:4px 10px}
+
+.update-close{position:absolute;top:4px;right:6px;background:none;border:0;color:#8f9eb3;font-size:16px;line-height:1;padding:2px 4px;cursor:pointer}
+.update-close:hover{color:#e6edf6}
+.update-panel .update-status{padding-right:14px}
