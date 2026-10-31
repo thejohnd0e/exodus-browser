@@ -13,6 +13,7 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 - Dependency licenses were read from installed packages and the production tree: MIT (20), Apache-2.0 (1), BSD-3-Clause (1), 0BSD (1). All are GPLv3-compatible; Apache-2.0 is compatible with GPLv3 but not GPLv2, and nothing here requires GPLv2.
 - README gained a GPL-3.0 badge and a License section; `LICENSE` and `NOTICE` links resolve and are tracked. All remote links and badge endpoints responded successfully.
 - `npm run verify` PASS (349 unit, typecheck, build); `npm run test:integration` PASS (60/60). No application code changed.
+- Published and verified on GitHub: repository license detection reports `GPL-3.0` / "GNU General Public License v3.0", the detected `LICENSE` blob is `f288702d2fa16d3cdf0035b15a9fcbc552cd88e7` (the canonical Git blob for the GPLv3 text, 35,149 bytes), and the public README blob equals the committed one. The rendered page shows the "GPL-3.0 license" label in the README header, all six badges including the license badge, the License section, and working `LICENSE`/`NOTICE` links.
 - Not done: NSIS license page (installer UI change, deferred) and per-file SPDX headers. No new release was built.
 
 ### Anti-detect and privacy presentation (2026-10-31)
