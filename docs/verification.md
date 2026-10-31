@@ -168,3 +168,9 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Verified with the fixed build: `npm run verify` PASS (338 unit), `npm run test:integration` PASS (57/57), `npm run dist` PASS with "Packaged application verified: version 1.1.79, app.asar intact", and an Electron run against a copy of the real data root rendered the existing profile names.
 - Still not verified: starting the packaged executable while another Exodus instance is closed, the NSIS wizard on a clean account, and the installer handoff.
 
+## Release 1.1.79 (2026-10-31)
+
+- Published `v1.1.79` with `ExodusBrowser-Setup-1.1.79.exe` (135,268,836 bytes) and `SHA256SUMS`; the broken `v1.1.78` release and tag were deleted at the user's request. Unauthenticated `releases/latest` returns `v1.1.79`.
+- Live update check from version 1.1.78 (temporary test, not committed): the service reported `available` for 1.1.79, downloaded the installer and matched SHA-256 `3a68ac410808530f353ea0ca2ee268306e2e222ee15493f27fb8daa54cbeb2ad`.
+
+
