@@ -40,7 +40,7 @@ else void app.whenReady().then(async()=>{
   const extensionVersion=(releases.release as EngineRelease|undefined)?.version??'156.0.8078.80';
   const downloadExtension=async(url:string,destination:string)=>{
     const response=await net.fetch(url,{signal:AbortSignal.timeout(60000)}).catch(()=>{throw Error('EXTENSION_DOWNLOAD_FAILED');});
-    if(!response.ok||!response.body||!response.url.startsWith('https://'))throw Error('EXTENSION_DOWNLOAD_FAILED');
+    if(!response.ok||!response.body)throw Error('EXTENSION_DOWNLOAD_FAILED');
     let received=0;const limit=100*1024**2;
     await pipeline(Readable.fromWeb(response.body as never),new Transform({transform(chunk,_encoding,callback){received+=chunk.length;callback(received>limit?Error('EXTENSION_TOO_LARGE'):null,chunk);}}),createWriteStream(destination,{flags:'wx'}));
   };

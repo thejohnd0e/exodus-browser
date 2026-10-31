@@ -1,6 +1,7 @@
 import {it,expect} from 'vitest';
 import {chromium} from 'playwright';
 import {existsSync,readdirSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {ZipFile} from 'yazl';
 import {join} from 'node:path';
 import {chromiumArgs} from '../../src/main/engines/chromium';
 import {ProfileService} from '../../src/main/profiles/service';
@@ -31,6 +32,44 @@ const waitForWorker=async(ctx:Awaited<ReturnType<typeof chromium.launchPersisten
   }
   return null;
 };
+
+async function crxOf(version:string){
+  const zip=new ZipFile();
+  zip.addBuffer(Buffer.from(JSON.stringify({manifest_version:3,name:'Store fixture',version,permissions:['storage'],background:{service_worker:'background.js'}})),'manifest.json');
+  zip.addBuffer(Buffer.from("chrome.runtime.onInstalled.addListener(()=>undefined);"),'background.js');
+  const chunks:Buffer[]=[];zip.outputStream.on('data',chunk=>chunks.push(chunk));
+  const body=await new Promise<Buffer>((resolve,reject)=>{zip.outputStream.on('end',()=>resolve(Buffer.concat(chunks)));zip.outputStream.on('error',reject);zip.end();});
+  const header=Buffer.alloc(8);const prefix=Buffer.alloc(12);prefix.write('Cr24',0,'latin1');prefix.writeUInt32LE(3,4);prefix.writeUInt32LE(header.length,8);
+  return Buffer.concat([prefix,header,body]);
+}
+
+it('installs a store package into the library and loads it in Chromium',async()=>{
+  if(!existsSync(executable))throw Error('BLOCKED: no local Chromium');
+  const root=tempRoot();let service:ProfileService|undefined;
+  try{
+    const svc=service=new ProfileService(root,testSecrets());
+    const download=async(_url:string,destination:string)=>{writeFileSync(destination,await crxOf('5.1.0'));};
+    const library=new ExtensionLibrary(root,svc.database,download);
+    const entry=await library.addFromStore('https://chromewebstore.google.com/detail/fixture/lieogkinebikhdchceieedcigeafdkid');
+    expect(entry).toMatchObject({name:'Store fixture',version:'5.1.0',source:'store'});
+    const profile=await svc.create({...valid,name:'Store profile',extensionIds:[entry.id]});
+    const input=svc.getLaunchInput(profile.id);
+    const args=chromiumArgs({profileId:profile.id,userDataDir:join(root,'profiles',profile.id),languages:input.languages,startUrls:['about:blank'],fingerprint:DEFAULT_FINGERPRINT,extensionDirs:input.extensionIds.map(extensionId=>library.directoryFor(extensionId))})
+      .filter(arg=>!arg.startsWith('--remote-debugging-port')&&!arg.startsWith('--user-data-dir')&&arg!=='about:blank');
+    mkdirSync(join(root,'profiles',profile.id),{recursive:true});
+    const ctx=await chromium.launchPersistentContext(join(root,'profiles',profile.id),{executablePath:executable,headless:false,ignoreDefaultArgs:['--disable-extensions'],args});
+    try{
+      const worker=await waitForWorker(ctx);
+      expect(worker).not.toBeNull();
+      expect(await worker!.evaluate(()=>(globalThis as any).chrome.runtime.getManifest().version)).toBe('5.1.0');
+    }finally{await ctx.close();}
+  }finally{
+    service?.close();
+    for(let attempt=0;attempt<10;attempt++){
+      try{cleanup(root);break;}catch{await new Promise(resolve=>setTimeout(resolve,200));}
+    }
+  }
+},180000);
 
 it('loads enabled extensions only in the chosen profile, keeps their storage and applies updates on relaunch',async()=>{
   if(!existsSync(executable))throw Error('BLOCKED: no local Chromium');

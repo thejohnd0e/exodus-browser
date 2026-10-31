@@ -113,7 +113,9 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Acceptance with the real TimeZone Changer folder (`D:\MyProjects\TimeZoneChanger`): a library-style copy loaded in the bundled Chrome for Testing with `name: TimeZone Changer`, `version: 2.2`, and a running background worker. This checked the extension package and copy model, not the new UI buttons.
 - `npm run verify`: PASS (264/264 unit, typecheck, production build).
 - `npm run test:integration`: PASS (50/50 across 14 files).
-- Not yet done: user acceptance through the Extensions screen and the profile checkboxes, and a check that a timezone extension does not conflict with the profile timezone override.
+- Chrome Web Store links (2026-10-31): unit tests cover link parsing (both hosts, lookalike hosts, credentials, HTTP, malformed IDs), the official download URL, CRX3 header handling and rejection of non-CRX or malformed payloads, localized name resolution, store duplicates and failed downloads leaving no row or staging directory. `tests/integration/extensions.test.ts` installs a synthetic CRX through the store path and loads it in real Chromium.
+- Live acceptance: through the built Electron UI, the real Eagle link was pasted into "Add from store…". The library card showed `Eagle for Chrome`, version 3.1.28 and the Store badge, which also confirms the localized `__MSG_appName__` name was resolved. `npm run verify` PASS (278/278 unit, typecheck, build); `npm run test:integration` PASS (51/51 across 14 files). The first attempt failed with a download error because the check expected a non-empty `response.url`, which Electron's `net.fetch` does not provide; the check was removed and the acceptance repeated successfully.
+- Not yet done: user acceptance through the Extensions screen and the profile checkboxes, launching a profile with a store-installed extension, and a check that a timezone extension does not conflict with the profile timezone override.
 
 ## Sidebar utility footer (2026-10-31, local changes)
 

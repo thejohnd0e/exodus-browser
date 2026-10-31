@@ -154,7 +154,9 @@ Original first-version boundaries (later fingerprint additions are described in 
 - `main/extensions/library.ts` — one validated copy per extension at `<root>/extensions/<id>/`, so the unpacked extension ID stays stable across updates. Add and update stage into a sibling directory and rename into place; a failed update restores the previous copy. Removing an entry deletes the copy and strips the ID from every profile in one transaction.
 - `shared/validation.ts` — profiles carry `extensionIds` (UUIDs, unique, at most 50); older profiles load with no extensions.
 - `main/runtime/supervisor.ts`, `main/engines/chromium.ts` — enabled copies are passed as `--disable-extensions-except` and `--load-extension`; nothing else is disabled, and profile storage stays separate per profile.
-- Renderer: the Extensions section manages the library and per-profile checkboxes select the set; changes apply at the next launch. Native folder/archive pickers run in main only. Chrome Web Store links and automatic updates are not supported in this version.
+- `main/extensions/store.ts` — parses Chrome Web Store links (two official hosts, 32-character `[a-p]` ID), builds the Google update-service URL, strips the CRX3 container, and resolves `__MSG_<key>__` names from `_locales/<default_locale>`.
+- Store entries are downloaded in main over HTTPS with a 60-second timeout and a 100 MB cap, validated like local packages, and stored with `source: 'store'` and their store ID. Duplicate store IDs are rejected. "Update…" re-downloads store entries and uses the folder picker for local ones. Trust rests on TLS to Google; the CRX signature is not independently verified, and updates are never automatic.
+- Renderer: the Extensions section manages the library and per-profile checkboxes select the set; changes apply at the next launch. Native folder/archive pickers run in main only.
 
 ### 3.11 Cookies: import and export
 
