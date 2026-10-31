@@ -157,3 +157,14 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Defect found by the live check and fixed before re-release: `SHA256SUMS` is served through a redirect to `objects.githubusercontent.com`. Metadata fetches did not follow allowed redirects, so the first release could not complete a download. The fix follows only allowlisted hosts and has unit tests for allowed and refused redirects. The first `v1.1.78` release (built from `45a7466`) was deleted and re-issued from `452566c`.
 - Publication: repository made public; tag `v1.1.78` annotated on `452566c`; GitHub release `v1.1.78` with `ExodusBrowser-Setup-1.1.78.exe` and `SHA256SUMS`, English notes; unauthenticated `releases/latest` returns `v1.1.78`.
 - Not yet verified: installing the NSIS package through the wizard, the packaged app's update button using Electron `net.fetch` with `redirect: 'manual'`, and the installer handoff on a disposable Windows account.
+
+## Release 1.1.78 failure and fix (2026-10-31)
+
+- Symptom reported by the user: after installing 1.1.78 the application did not start at all (silent exit, code 1), and an earlier launch showed no profiles.
+- Root cause (confirmed by inspecting the published artifact): `resources/app.asar` contained a corrupted `package.json` (427 bytes starting with a fragment of `index.html`) instead of JSON. Electron could not resolve `main` and exited without a window or message. A copy of the artifact with the same corruption reproduced exit code 1 with no output.
+- Contributing cause: `build.files` was unrestricted, so the whole repository (`index.html`, tests, docs, screenshots) was packed into the archive; restricting packaging to `dist/**` and `package.json` produced a valid `package.json` on every rebuild (two corrupt builds before, one valid build after).
+- Guard added: `scripts/check-artifacts.mjs` reads the produced `app.asar` and `npm run dist` now fails if `package.json` is missing or invalid, if `main`/version differ, if `dist/main.cjs`, `dist/preload.cjs`, `dist/ui/index.html` or the GeoIP database are missing, or if the native `better-sqlite3` module is absent. `tests/unit/dist-artifacts.test.ts` covers the check, including the corrupted-`package.json` case.
+- Data safety: the user's database was inspected read-only through copies. It contains 3 profiles (`123`, `3`, `EE`), 3 proxies and 2 extensions; nothing was deleted or migrated.
+- Verified with the fixed build: `npm run verify` PASS (338 unit), `npm run test:integration` PASS (57/57), `npm run dist` PASS with "Packaged application verified: version 1.1.79, app.asar intact", and an Electron run against a copy of the real data root rendered the existing profile names.
+- Still not verified: starting the packaged executable while another Exodus instance is closed, the NSIS wizard on a clean account, and the installer handoff.
+
