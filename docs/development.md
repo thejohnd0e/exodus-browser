@@ -38,7 +38,15 @@ Every invocation of `scripts/build.mjs` (including `dev`, `verify`, and integrat
 
 ## Windows installer
 
-Run `npm run dist` on Windows x64. The command runs the regular production build first, then packages it with the pinned development-only electron-builder NSIS target. The assisted wizard offers per-user (default) or all-users installation, a changeable directory, optional desktop shortcut, Start Menu shortcut, and a finish-page launch checkbox. The output is `dist-install/ExodusBrowser-Setup-<package-version>.exe`; electron-builder also writes a blockmap. No update YAML is generated because auto-update is not configured. Artifacts are ignored by Git.
+Run `npm run dist` on Windows x64. The command runs the regular production build first, then packages it with the pinned development-only electron-builder NSIS target. The assisted wizard offers per-user (default) or all-users installation, a changeable directory, optional desktop shortcut, Start Menu shortcut, and a finish-page launch checkbox. The output is `dist-install/ExodusBrowser-Setup-<package-version>.exe`; electron-builder also writes a blockmap. `npm run dist` runs `scripts/dist.mjs`, which sets `EXODUS_RELEASE=1`, so the packaged version is the `package.json` version rather than the local build counter. electron-builder still writes `latest.yml`, but the in-app update check reads GitHub Releases and `SHA256SUMS` instead. Artifacts are ignored by Git.
+
+### Release procedure
+
+1. Set `package.json` `version` (MAJOR.MINOR.PATCH) and commit it as `chore: release X.Y.Z`.
+2. Run `npm run verify`, `npm run test:integration`, and `npm run dist`; confirm `dist-install/ExodusBrowser-Setup-X.Y.Z.exe` exists.
+3. Write `dist-install/SHA256SUMS` in `<sha256>  <file name>` form (for example from `Get-FileHash -Algorithm SHA256`).
+4. Tag `vX.Y.Z`, push the tag, and create the GitHub release with `gh release create vX.Y.Z <installer> SHA256SUMS`. Release notes must be English.
+5. Check the public download path before announcing it. The repository must be public for unauthenticated update checks.
 
 The installer does not bundle Chromium or move application data. `%APPDATA%\Local Profiles` remains the data path, and uninstall leaves it intact. `better-sqlite3` is unpacked from asar; electron-builder's dependency rebuild is disabled because the pinned platform prebuild is exercised by the Electron integration suite. The installer is unsigned, so Windows SmartScreen may warn. Do not click through or disable that warning as part of automation.
 

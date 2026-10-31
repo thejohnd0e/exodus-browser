@@ -141,6 +141,10 @@ Isolation integration tests launch real local Chromium: they use an existing Pla
 - [docs/superpowers/specs/2026-10-30-local-profile-manager-design.md](docs/superpowers/specs/2026-10-30-local-profile-manager-design.md) — specification.
 - [docs/superpowers/plans/2026-10-30-local-profile-manager.md](docs/superpowers/plans/2026-10-30-local-profile-manager.md) — implementation plan.
 
+## Updates
+
+Click the version label at the bottom of the sidebar to check GitHub Releases for a newer Exodus Browser installer. Exodus downloads it only after you ask, verifies its SHA-256 against the release's `SHA256SUMS`, and starts the installer only when you choose "Install and restart" and no profile browser is running. There is no background update check. The installer is not yet code-signed, so Windows SmartScreen may warn. Details: `docs/architecture.md` §3.13.
+
 ## Structure
 
 - `src/shared` — DTOs and Zod schemas;

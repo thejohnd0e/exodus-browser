@@ -13,7 +13,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 - no accounts, cloud, synchronization, or Dolphin API;
 - no anti-detection or fingerprint spoofing (Canvas/WebGL/Audio, etc.) in the original scope;
 - no guarantees against DNS/WebRTC/UDP leaks; a browser proxy is not a system VPN;
-- no Dolphin profile import, digital signature, or auto-update;
+- no Dolphin profile import, digital signature, or automatic background update (a user-initiated check and verified installer download are described in §3.13);
 - no PAC, proxy chains, or authenticated SOCKS5.
 
 ## 2. Technology stack
@@ -164,7 +164,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 - `npm run dist` runs the regular build and emits an unsigned x64 NSIS setup executable into ignored `dist-install/`.
 - The assisted wizard defaults to current-user installation under `%LOCALAPPDATA%\Programs\Exodus Browser`, supports elevation for all-users/Program Files, allows directory selection, creates a Start Menu shortcut, and offers optional desktop shortcut and run-after-install checkboxes.
 - `better-sqlite3` remains a production dependency and is unpacked from asar. Its existing Windows prebuild was verified with Electron 45; electron-builder dependency rebuilding is disabled to avoid a network header fetch during packaging.
-- Uninstall removes program files and shortcuts only. `%APPDATA%\Local Profiles` and the downloaded Chromium engine remain. There is no updater or signing certificate.
+- Uninstall removes program files and shortcuts only. `%APPDATA%\Local Profiles` and the downloaded Chromium engine remain. There is no signing certificate. Update checks are described in §3.13.
 
 ### 3.12 Cookies: import and export
 
@@ -221,4 +221,13 @@ The Dolphin directory (`C:\Program Files\Dolphin Anty`, its profiles and setting
 - After `STOP_TIMEOUT`, the browser is not forcibly terminated; the profile remains `blocked`.
 - Backups include Chromium cache and can be large; no progress is shown.
 - Backups may contain cookies Chromium binds to a Windows account; transfer to another user is not guaranteed.
-- Installer UI build is implemented but interactive install/uninstall verification is pending. Signing and auto-update remain out of scope. Fingerprint spoofing is limited to implemented fields; script-based overrides are distinguishable from a real browser, and the CDP debugging port is accessible to local processes while the profile runs.
+- Installer UI build is implemented but interactive install/uninstall verification is pending. Signing remains out of scope; the update flow is described in §3.13. Fingerprint spoofing is limited to implemented fields; script-based overrides are distinguishable from a real browser, and the CDP debugging port is accessible to local processes while the profile runs.
+
+### 3.13 Update check and installer download
+
+- Trigger: only the version label in the sidebar footer (`UpdateButton`). There are no timers and no request at startup.
+- `src/main/update/version.ts` compares strict `MAJOR.MINOR.PATCH` versions; `release.ts` validates the GitHub release JSON and `SHA256SUMS`. A release must be non-draft, non-prerelease, tagged `vX.Y.Z`, and contain exactly one `ExodusBrowser-Setup-X.Y.Z.exe` plus one `SHA256SUMS`.
+- `hosts.ts` allows only HTTPS on `github.com` and `*.githubusercontent.com`; `download.ts` re-checks every redirect, limits the body to 300 MiB and the declared size, streams into `updates/<version>/<name>.partial`, verifies SHA-256, and renames only on success. Cancellation or failure removes the version folder.
+- `service.ts` is the state machine (`idle`, `checking`, `up-to-date`, `available`, `downloading`, `ready`, `error`); only one operation runs at a time. The renderer receives state through `app:update-state` and calls five allowlisted operations.
+- Installation is allowed only in `ready` and only when no profile is starting, running, stopping, or blocked and no cookie or portable operation is active. The verified installer starts as an ordinary interactive process and the application then shuts down through the normal path. No browser is closed forcibly.
+- Trust: HTTPS plus the SHA-256 from the same release. The installer is unsigned, so a compromised GitHub account could publish a matching pair; signing is future work.
