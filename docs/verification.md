@@ -4,6 +4,14 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### README screenshot (2026-10-31)
+
+- Added `docs/images/main-window.png` (1280×792, 78 KB) to the README, with a caption stating that the profiles are examples.
+- Captured from a Playwright-driven Electron run using a **temporary userData directory** (`LOCAL_PROFILES_DATA`), never the real profile database or profile directories. Three example profiles were created through the UI; one received a documentation-only proxy on the reserved TEST-NET-2 range (`198.51.100.10:8080`) and a newly generated fingerprint preset.
+- To make the engine indicator realistic without touching real data, the temporary store received a hard link to the already installed `chrome.exe` plus a copy of `release.json`, so the window shows `Chromium 156.0.8078.80`. No profile browser was launched and no network request was made by the app.
+- The build used for the capture was produced with `EXODUS_RELEASE=1`, so the footer shows the released version `v1.1.85` instead of a local build counter.
+- Verified in the captured image: English interface, no personal data, no truncated labels at 1280 px, and the README badge/caption render on GitHub. This is documentation evidence only; it is not a functional acceptance test.
+
 ### GPL-3.0-only licensing (2026-10-31)
 
 - The repository previously had **no license**, so GitHub reported no license and distribution was legally "all rights reserved". The owner approved `GPL-3.0-only` and reserved the product name, logo and `ico/` artwork.

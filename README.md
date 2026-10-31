@@ -31,6 +31,12 @@
 
 Profiles stay on your computer. There is no Exodus account to create, no subscription and no cloud synchronization. Your everyday Chrome profile is not used.
 
+<p align="center">
+  <img src="docs/images/main-window.png" alt="Exodus Browser main window with three example profiles: separate storage, a per-profile proxy and a generated fingerprint" width="960">
+</p>
+
+<p align="center"><sub>Example profiles. Each one has separate website data, its own proxy selection and its own fingerprint settings.</sub></p>
+
 ## Features
 
 | Feature | What you can do |
