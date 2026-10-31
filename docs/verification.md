@@ -180,5 +180,13 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Published `v1.1.80` with `ExodusBrowser-Setup-1.1.80.exe` (135,268,551 bytes) and `SHA256SUMS`; SHA-256 `bd451858b464af0da28af1ac26e8bce541d293154a6c93e180f31bdf5d6852fe`. Unauthenticated `releases/latest` returns `v1.1.80`.
 - Live update check from version 1.1.79 (temporary test, not committed): `available` → downloaded → checksum matched.
 
+## Release 1.1.81 (2026-10-31)
+
+- The update panel is now dismissible: `Esc`, an outside click, or its close button. The "up to date" message hides itself after 6 seconds; an available update stays until the user acts. Covered by unit tests and an Electron run.
+- `npm run verify` PASS (342 unit); `npm run test:integration` PASS (57/57); `npm run dist` PASS with "Packaged application verified: version 1.1.81, app.asar intact".
+- Published `v1.1.81` with `ExodusBrowser-Setup-1.1.81.exe` (135,268,707 bytes) and `SHA256SUMS`; SHA-256 `f06f4197164f1bb61c16e0f5d3bd094913d57d1d0ad081a5eee624ab6fec15ff`. Unauthenticated `releases/latest` returns `v1.1.81`.
+- Live update check from version 1.1.80 (temporary test, not committed): `available` → downloaded → checksum matched.
+
+
 
 
