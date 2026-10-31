@@ -12,6 +12,8 @@ export type CookieOperationResult = {count:number;fileName:string};
 export type CookieFormat = 'json'|'netscape';
 export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:string}};
 export type EngineStatus = {state:'missing'|'ready'|'unsupported';version?:string;source?:'downloaded'|'external'};
+export type ExtensionEntry = {id: string; name: string; version: string; addedAt: string; updatedAt: string};
+export type ExtensionResult = Result<ExtensionEntry | null>;
 export interface ProfileApi {
   list():Promise<Result<Profile[]>>;
   create(input:ProfileInput):Promise<Result<Profile>>;
@@ -39,6 +41,11 @@ export interface ProfileApi {
   getSettings():Promise<Result<AppSettings>>;
   updateSettings(input:AppSettings):Promise<Result<AppSettings>>;
   runningProxyVersions():Promise<Result<Record<string,string|null>>>;
+  listExtensions():Promise<Result<ExtensionEntry[]>>;
+  addExtensionFolder():Promise<ExtensionResult>;
+  addExtensionZip():Promise<ExtensionResult>;
+  updateExtension(id:string):Promise<ExtensionResult>;
+  removeExtension(id:string):Promise<Result<void>>;
   onCloseRequested(callback:()=>void):()=>void;
   confirmClose(shouldClose:boolean):Promise<boolean>;
 }

@@ -13,6 +13,7 @@ import {BackupService} from './backups/service';
 import {CookieService} from './cookies/service';
 import {createCookieOperations} from './cookies/operations';
 import {PortableProfileService} from './portable/service';
+import {ExtensionLibrary} from './extensions/library';
 import {createPortableOperations} from './portable/operations';
 import {checkProxy,IP_CHECK_SERVICE} from './proxy/check';
 import {lookupCountry} from './proxy/country';
@@ -36,7 +37,8 @@ else void app.whenReady().then(async()=>{
     const response=await net.fetch(url,{signal:AbortSignal.timeout(180000)});if(!response.ok||!response.body)throw Error('ENGINE_DOWNLOAD_FAILED');
     await pipeline(Readable.fromWeb(response.body as any),createWriteStream(destination,{flags:'wx'}));
   });
-  const sessions=new SessionStore(root);const settings=new AppSettingsService(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions});await supervisor.recover();
+  const extensions=new ExtensionLibrary(root,profiles.database);
+  const sessions=new SessionStore(root);const settings=new AppSettingsService(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions,extensionDirectory:id=>extensions.directoryFor(id)});await supervisor.recover();
   const backups=new BackupService(profiles,supervisor,undefined,sessions);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
   let currentLanguage=(await settings.getSettings()).language;
    const cookies=new CookieService(profiles,supervisor,installer);const portable=new PortableProfileService(profiles,supervisor,installer,sessions);
@@ -71,6 +73,11 @@ else void app.whenReady().then(async()=>{
     listProxies:async()=>profiles.listProxies(),createProxy:input=>profiles.createProxy(input),updateProxy:(id,input)=>profiles.updateProxy(id,input),removeProxy:id=>profiles.removeProxy(id),
      checkSavedProxy:async id=>{const {ip}=await checkProxy(profiles.getProxyInput(id));return {ip,countryCode:await lookupCountry(ip),service:IP_CHECK_SERVICE};},runningProxyVersions:async()=>supervisor.runningProxyVersions(),
      importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies,clearCookies:cookieOps.clearCookies,
+      listExtensions:async()=>extensions.list(),
+      addExtensionFolder:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.addFromFolder(r.filePaths[0]);},
+      addExtensionZip:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.zip',currentLanguage),properties:['openFile'],filters:[{name:'Extension archive',extensions:['zip']}]});return r.canceled||!r.filePaths[0]?null:extensions.addFromZip(r.filePaths[0]);},
+      updateExtension:async extensionId=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.updateFromFolder(extensionId,r.filePaths[0]);},
+      removeExtension:async extensionId=>{await extensions.remove(extensionId);},
       getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;return value;}
    },event=>isTrustedSender(event as never,win.webContents,ui),()=>currentLanguage);
    for(const method of operations)ipcMain.handle('profiles:'+method,(event,...args)=>dispatcher(event,method,args));

@@ -10,6 +10,16 @@ it('rejects untrusted frames and malformed arguments before invoking privileged 
  expect(called).toBe(0);
  expect((await dispatch('trusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).ok).toBe(true);expect(called).toBe(1);
 });
+it('validates extension operation arguments before touching the library',async()=>{
+  let calls=0;const dispatch=createDispatcher({listExtensions:async()=>{calls++;return [];},addExtensionFolder:async()=>{calls++;return null;},removeExtension:async()=>{calls++;}},(e)=>e==='trusted');
+  expect((await dispatch('trusted','listExtensions',[])).ok).toBe(true);
+  expect((await dispatch('trusted','addExtensionFolder',[])).ok).toBe(true);
+  expect((await dispatch('trusted','removeExtension',['not-a-uuid'])).ok).toBe(false);
+  expect((await dispatch('trusted','updateExtension',['../outside'])).ok).toBe(false);
+  expect((await dispatch('trusted','removeExtension',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a','extra'])).ok).toBe(false);
+  expect(calls).toBe(2);
+});
+
 it('localizes trusted-frame, operation and input validation failures',async()=>{
  let language:'en'|'ru'='en';const dispatch=createDispatcher({},()=>true,()=>language);
  expect(await dispatch({},'unknown',[])).toMatchObject({ok:false,error:{code:'INVALID_REQUEST',message:'Unknown operation.'}});
