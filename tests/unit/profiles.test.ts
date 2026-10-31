@@ -7,6 +7,21 @@ import { DEFAULT_FINGERPRINT } from '../../src/shared/fingerprint';
 import { profilePath } from '../../src/main/profiles/paths';
 import {seedFor} from '../../src/main/engines/fingerprint';
 import {valid,tempRoot,testSecrets,cleanup} from '../fixtures/profiles';
+import {parseProfileInput} from '../../src/shared/validation';
+it('stores enabled extension identifiers, rejects duplicates and reads older profiles as having none',async()=>{
+  const root=tempRoot();const s=new ProfileService(root,testSecrets());
+  try{
+    const extensionA='3f0f5a2e-1c7b-4c1e-9a55-8e6f2b7d9a10';const extensionB='7b2c9d4e-5a6f-4b8c-8d9e-0f1a2b3c4d5e';
+    const profile=await s.create({...valid,extensionIds:[extensionA,extensionB]});
+    expect(s.get(profile.id).extensionIds).toEqual([extensionA,extensionB]);
+    expect(s.getLaunchInput(profile.id).extensionIds).toEqual([extensionA,extensionB]);
+    expect(()=>parseProfileInput({...valid,extensionIds:[extensionA,extensionA]})).toThrow();
+    expect(()=>parseProfileInput({...valid,extensionIds:['not-a-uuid']})).toThrow();
+    const older=await s.create({...valid});
+    expect(s.get(older.id).extensionIds).toEqual([]);
+  }finally{s.close();cleanup(root);}
+});
+
 it('persists profiles, isolates paths and never writes plaintext proxy password',async()=>{
   const root=tempRoot();const secrets=testSecrets();let s=new ProfileService(root,secrets);
   try{

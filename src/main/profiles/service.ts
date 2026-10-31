@@ -21,13 +21,13 @@ export class ProfileService {
   get(id:string):Profile{
     const row=this.db.prepare('SELECT data,proxy_id FROM profiles WHERE id=?').get(parseProfileId(id)) as {data:string;proxy_id:string|null}|undefined;
     if(!row)throw Error('PROFILE_NOT_FOUND');
-     const data=JSON.parse(row.data);return {...data,languages:normalizeStoredLanguages(data.languages),fingerprint:normalizeFingerprint(data.fingerprint),restoreLastSession:data.restoreLastSession===true,fingerprintSeed:Number.isInteger(data.fingerprintSeed)&&data.fingerprintSeed>=0&&data.fingerprintSeed<=0xffffffff?data.fingerprintSeed:seedFor(id),proxyId:row.proxy_id,proxy:row.proxy_id?this.getProxy(row.proxy_id):null};
+     const data=JSON.parse(row.data);return {...data,languages:normalizeStoredLanguages(data.languages),fingerprint:normalizeFingerprint(data.fingerprint),restoreLastSession:data.restoreLastSession===true,extensionIds:Array.isArray(data.extensionIds)?data.extensionIds:[],fingerprintSeed:Number.isInteger(data.fingerprintSeed)&&data.fingerprintSeed>=0&&data.fingerprintSeed<=0xffffffff?data.fingerprintSeed:seedFor(id),proxyId:row.proxy_id,proxy:row.proxy_id?this.getProxy(row.proxy_id):null};
   }
   listProxies():SavedProxy[]{return (this.db.prepare('SELECT id FROM proxies ORDER BY rowid').all() as {id:string}[]).map(r=>this.getProxy(r.id));}
   private proxyRow(id:string){const row=this.db.prepare('SELECT data,secret FROM proxies WHERE id=?').get(parseProfileId(id)) as ProxyRow|undefined;if(!row)throw Error('PROXY_NOT_FOUND');return row;}
   getProxy(id:string):SavedProxy{const row=this.proxyRow(id);return {...JSON.parse(row.data),profileIds:(this.db.prepare('SELECT id FROM profiles WHERE proxy_id=? ORDER BY rowid').all(id) as {id:string}[]).map(r=>r.id)};}
    getProxyInput(id:string):ProxyInput{const row=this.proxyRow(id);const p=JSON.parse(row.data) as SavedProxy;if(p.requiresPassword&&!row.secret)throw Error('PROXY_PASSWORD_REQUIRED');return {kind:p.kind,host:p.host,port:p.port,...(p.username?{username:p.username}:{}),...(row.secret?{password:this.secrets.open(row.secret)}:{})};}
-  getLaunchInput(id:string):LaunchInput{const p=this.get(id);return {name:p.name,note:p.note,startUrls:p.startUrls,languages:p.languages,fingerprint:p.fingerprint,restoreLastSession:p.restoreLastSession,fingerprintSeed:p.fingerprintSeed,proxy:p.proxyId?this.getProxyInput(p.proxyId):null,proxyVersion:p.proxy?`${p.proxy.id}:${p.proxy.updatedAt}`:null};}
+  getLaunchInput(id:string):LaunchInput{const p=this.get(id);return {name:p.name,note:p.note,startUrls:p.startUrls,languages:p.languages,fingerprint:p.fingerprint,restoreLastSession:p.restoreLastSession,fingerprintSeed:p.fingerprintSeed,extensionIds:p.extensionIds,proxy:p.proxyId?this.getProxyInput(p.proxyId):null,proxyVersion:p.proxy?`${p.proxy.id}:${p.proxy.updatedAt}`:null};}
   private timestamp(previous?:string){return new Date(Math.max(Date.now(),previous?Date.parse(previous)+1:0)).toISOString();}
   private prepareProxy(input:SavedProxyInput,id:string,old?:SavedProxy){
     const value=parseSavedProxyInput(input);let secret:Buffer|null=null;
