@@ -36,14 +36,14 @@ it('loads enabled extensions only in the chosen profile, keeps their storage and
   if(!existsSync(executable))throw Error('BLOCKED: no local Chromium');
   const root=tempRoot();let service:ProfileService|undefined;
   try{
-    service=new ProfileService(root,testSecrets());
-    const library=new ExtensionLibrary(root,service.database);
+    const svc=service=new ProfileService(root,testSecrets());
+    const library=new ExtensionLibrary(root,svc.database);
     const entry=await library.addFromFolder(fixture(root,'1.0.0'));
-    const withExtension=await service.create({...valid,name:'With extension',extensionIds:[entry.id]});
-    const without=await service.create({...valid,name:'Without extension'});
+    const withExtension=await svc.create({...valid,name:'With extension',extensionIds:[entry.id]});
+    const without=await svc.create({...valid,name:'Without extension'});
 
     const launch=async (profileId:string)=>{
-      const input=service.getLaunchInput(profileId);
+      const input=svc.getLaunchInput(profileId);
       const args=chromiumArgs({profileId,userDataDir:join(root,'profiles',profileId),languages:input.languages,startUrls:['about:blank'],fingerprint:DEFAULT_FINGERPRINT,extensionDirs:input.extensionIds.map(extensionId=>library.directoryFor(extensionId))})
         .filter(arg=>!arg.startsWith('--remote-debugging-port')&&!arg.startsWith('--user-data-dir')&&arg!=='about:blank');
       mkdirSync(join(root,'profiles',profileId),{recursive:true});
@@ -53,13 +53,13 @@ it('loads enabled extensions only in the chosen profile, keeps their storage and
     const first=await launch(withExtension.id);
     const worker=await waitForWorker(first);
     expect(worker).not.toBeNull();
-    expect(await worker!.evaluate(()=>chrome.runtime.getManifest().version)).toBe('1.0.0');
-    await worker!.evaluate(()=>chrome.storage.local.set({token:'profile-a'}));
+    expect(await worker!.evaluate(()=>(globalThis as any).chrome.runtime.getManifest().version)).toBe('1.0.0');
+    await worker!.evaluate(()=>(globalThis as any).chrome.storage.local.set({token:'profile-a'}));
     await first.close();
 
     const restarted=await launch(withExtension.id);
     const restartedWorker=await waitForWorker(restarted);
-    expect(await restartedWorker!.evaluate(async()=>{const value=await chrome.storage.local.get('token');return value.token;})).toBe('profile-a');
+    expect(await restartedWorker!.evaluate(async()=>{const value=await (globalThis as any).chrome.storage.local.get('token');return value.token;})).toBe('profile-a');
     await restarted.close();
 
     const plain=await launch(without.id);
@@ -70,13 +70,13 @@ it('loads enabled extensions only in the chosen profile, keeps their storage and
     await library.updateFromFolder(entry.id,fixture(root,'2.0.0'));
     const updated=await launch(withExtension.id);
     const updatedWorker=await waitForWorker(updated);
-    expect(await updatedWorker!.evaluate(()=>chrome.runtime.getManifest().version)).toBe('2.0.0');
+    expect(await updatedWorker!.evaluate(()=>(globalThis as any).chrome.runtime.getManifest().version)).toBe('2.0.0');
     await updated.close();
 
     const copy=library.directoryFor(entry.id);
     await library.remove(entry.id);
     expect(existsSync(copy)).toBe(false);
-    expect(service.getLaunchInput(withExtension.id).extensionIds).toEqual([]);
+    expect(svc.getLaunchInput(withExtension.id).extensionIds).toEqual([]);
   }finally{
     service?.close();
     for(let attempt=0;attempt<10;attempt++){
