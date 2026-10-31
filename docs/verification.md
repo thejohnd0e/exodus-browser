@@ -187,6 +187,16 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Published `v1.1.81` with `ExodusBrowser-Setup-1.1.81.exe` (135,268,707 bytes) and `SHA256SUMS`; SHA-256 `f06f4197164f1bb61c16e0f5d3bd094913d57d1d0ad081a5eee624ab6fec15ff`. Unauthenticated `releases/latest` returns `v1.1.81`.
 - Live update check from version 1.1.80 (temporary test, not committed): `available` → downloaded → checksum matched.
 
+## Release 1.1.82: update download inside Electron (2026-10-31)
+
+- Reported symptom: pressing "Download update" in 1.1.80 produced "Could not download the update".
+- Root cause (measured inside the Electron main process): `net.fetch` with `redirect: 'manual'` throws "Redirect was cancelled" as soon as the server answers with a redirect, and GitHub serves `SHA256SUMS` through a redirect to `objects.githubusercontent.com`. The download therefore never started. Earlier live checks passed because they used Node's `fetch`, which honours manual redirects.
+- Fix: `src/main/update/net-fetch.ts` builds a fetch-compatible adapter on `net.request`, which reports redirects as an event; the adapter returns them as an ordinary 302 response so the existing host allowlist and redirect limit still apply.
+- Regression test: `tests/integration/update-net-fetch.test.ts` runs the adapter inside a real Electron process and asserts 302 → 200 with the expected `SHA256SUMS` line. `npm run verify` PASS (342 unit); `npm run test:integration` PASS (58/58).
+- End-to-end inside Electron from version 1.1.81 (temporary probe): `available` for 1.1.82 → downloaded 135,269,736 bytes → SHA-256 `f1221210d7cea16fa4926fc5b49d41685dae10f877ff72227352bd94a1ef2b94`, matching the release.
+- Published `v1.1.82`. Versions 1.1.78–1.1.81 cannot download updates themselves and need one manual install.
+
+
 
 
 
