@@ -1,4 +1,5 @@
-import {it,expect} from 'vitest';
+import {it,expect,vi} from 'vitest';
+import {ZipFile} from 'yazl';
 import Database from 'better-sqlite3';
 import {mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
@@ -66,6 +67,78 @@ it('updates an entry in place: same identifier and directory, new version',async
     const updated=await library.updateFromFolder(entry.id,folder(root,'v2','2.0.0'));
     expect(updated).toMatchObject({id:entry.id,version:'2.0.0'});
     expect(JSON.parse(readFileSync(join(library.directoryFor(entry.id),'manifest.json'),'utf8')).version).toBe('2.0.0');
+    service.close();
+  }finally{cleanup(root);}
+});
+
+const storeId='lieogkinebikhdchceieedcigeafdkid';
+const storeUrl=`https://chromewebstore.google.com/detail/eagle/${storeId}`;
+function crxOf(version:string,headerBytes=8){
+  const zip=new ZipFile();zip.addBuffer(Buffer.from(manifest(version)),'manifest.json');zip.addBuffer(Buffer.from('console.log(1)'),'background.js');
+  const chunks:Buffer[]=[];zip.outputStream.on('data',chunk=>chunks.push(chunk));
+  return new Promise<Buffer>((resolve,reject)=>{zip.outputStream.on('end',()=>{const zipBody=Buffer.concat(chunks);const prefix=Buffer.alloc(12);prefix.write('Cr24',0,'latin1');prefix.writeUInt32LE(3,4);prefix.writeUInt32LE(headerBytes,8);resolve(Buffer.concat([prefix,Buffer.alloc(headerBytes),zipBody]));});zip.outputStream.on('error',reject);zip.end();});
+}
+
+it('adds a store extension through the injected downloader and records its source',async()=>{
+  const root=tempRoot();try{
+    const payload=await crxOf('3.1.28');
+    const download=vi.fn(async(_url:string,destination:string)=>{writeFileSync(destination,payload);});
+    const service=new ProfileService(root,testSecrets());const library=new ExtensionLibrary(root,service.database,download);
+    const entry=await library.addFromStore(storeUrl);
+    expect(entry).toMatchObject({name:'Fixture',version:'3.1.28',source:'store',storeId});
+    expect(download).toHaveBeenCalledOnce();
+    expect((download.mock.calls[0] as unknown[])[0]).toContain('clients2.google.com');
+    expect(library.list().find(item=>item.id===entry.id)).toMatchObject({source:'store',storeId});
+    service.close();
+  }finally{cleanup(root);}
+});
+
+it('rejects a duplicate store extension and leaves no staging directory',async()=>{
+  const root=tempRoot();try{
+    const payload=await crxOf('1.0.0');
+    const download=vi.fn(async(_url:string,destination:string)=>{writeFileSync(destination,payload);});
+    const service=new ProfileService(root,testSecrets());const library=new ExtensionLibrary(root,service.database,download);
+    await library.addFromStore(storeUrl);
+    await expect(library.addFromStore(storeUrl)).rejects.toThrow('EXTENSION_ALREADY_IN_LIBRARY');
+    expect(library.list()).toHaveLength(1);
+    expect(readdirSync(join(root,'extensions')).filter(name=>name.startsWith('.'))).toEqual([]);
+    service.close();
+  }finally{cleanup(root);}
+});
+
+it('leaves the library unchanged when a store download or package is invalid',async()=>{
+  const root=tempRoot();try{
+    const service=new ProfileService(root,testSecrets());
+    const failing=new ExtensionLibrary(root,service.database,async()=>{throw Error('EXTENSION_DOWNLOAD_FAILED');});
+    await expect(failing.addFromStore(storeUrl)).rejects.toThrow('EXTENSION_DOWNLOAD_FAILED');
+    const broken=new ExtensionLibrary(root,service.database,async(_url:string,destination:string)=>{writeFileSync(destination,Buffer.from('PK\u0003\u0004not-a-crx','latin1'));});
+    await expect(broken.addFromStore(storeUrl)).rejects.toThrow('EXTENSION_INVALID_PACKAGE');
+    expect(broken.list()).toEqual([]);
+    expect(readdirSync(join(root,'extensions'))).toEqual([]);
+    service.close();
+  }finally{cleanup(root);}
+});
+
+it('updates a store extension in place by downloading it again',async()=>{
+  const root=tempRoot();try{
+    let version='1.0.0';
+    const download=vi.fn(async(_url:string,destination:string)=>{writeFileSync(destination,await crxOf(version));});
+    const service=new ProfileService(root,testSecrets());const library=new ExtensionLibrary(root,service.database,download);
+    const entry=await library.addFromStore(storeUrl);
+    version='2.0.0';
+    const updated=await library.updateFromStore(entry.id);
+    expect(updated).toMatchObject({id:entry.id,version:'2.0.0',source:'store',storeId});
+    expect(download).toHaveBeenCalledTimes(2);
+    service.close();
+  }finally{cleanup(root);}
+});
+
+it('lists entries written before the source field as local folders',async()=>{
+  const root=tempRoot();try{
+    const service=new ProfileService(root,testSecrets());const library=new ExtensionLibrary(root,service.database);
+    const entry=await library.addFromFolder(folder(root,'legacy'));
+    service.database.prepare('UPDATE extensions SET data=? WHERE id=?').run(JSON.stringify({name:entry.name,version:entry.version,addedAt:entry.addedAt,updatedAt:entry.updatedAt}),entry.id);
+    expect(library.list()[0]).toMatchObject({source:'folder'});
     service.close();
   }finally{cleanup(root);}
 });
