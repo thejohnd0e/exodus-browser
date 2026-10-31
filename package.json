@@ -1,6 +1,7 @@
 {
   "name": "exodus-browser",
   "productName": "Exodus Browser",
+  "author": "thejohnd0e",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,6 +10,7 @@
     "dev": "node scripts/dev.mjs",
     "start": "electron .",
     "build": "node scripts/build.mjs",
+    "dist": "npm run build && electron-builder --win nsis",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests/unit",
     "test:integration": "node scripts/build.mjs && vitest run tests/integration",
@@ -35,6 +37,7 @@
     "@types/yauzl": "3.4.0",
     "@types/yazl": "3.3.1",
     "electron": "45.1.0",
+    "electron-builder": "26.18.0",
     "esbuild": "0.28.2",
     "flag-icons": "7.6.0",
     "jsdom": "26.1.0",
@@ -42,5 +45,38 @@
     "typescript": "7.0.2",
     "vite": "6.4.5",
     "vitest": "3.2.7"
+  },
+  "build": {
+    "appId": "com.exodusbrowser.desktop",
+    "productName": "Exodus Browser",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "directories": {
+      "output": "dist-install"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "ico/exodus-icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createStartMenuShortcut": true,
+      "createDesktopShortcut": false,
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "en_US"
+      ],
+      "include": "build/installer.nsh",
+      "installerIcon": "ico/exodus-icon.ico",
+      "uninstallerIcon": "ico/exodus-icon.ico",
+      "artifactName": "ExodusBrowser-Setup-${version}.${ext}"
+    }
   }
 }

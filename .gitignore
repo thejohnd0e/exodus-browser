@@ -1,6 +1,7 @@
 # Dependencies, builds and caches
 node_modules/
 dist/
+dist-install/
 out/
 release/
 .cache/
