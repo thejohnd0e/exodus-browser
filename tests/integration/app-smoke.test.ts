@@ -46,7 +46,9 @@ it('keeps the fingerprint action opaque and readable without hovering in the pro
   try{
     const win=await app.firstWindow();await win.waitForSelector('h1');
     expect(await app.evaluate(({app})=>({name:app.getName(),data:app.getPath('userData')}))).toEqual({name:'Exodus Browser',data});
-    expect(await win.title()).toBe('Exodus Browser');
+    const version=await win.locator('.build-version').textContent();
+    expect(version).toMatch(/^v0\.1\.\d+$/);
+    expect(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getTitle())).toBe(`Exodus Browser ${version}`);
     expect(await win.evaluate(()=>document.documentElement.lang)).toBe('en');
     await win.getByRole('button',{name:'＋ New profile',exact:true}).click();
     await win.mouse.move(0,0);

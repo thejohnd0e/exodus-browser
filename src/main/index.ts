@@ -17,6 +17,7 @@ import {createWindow} from './window';
 import {createDispatcher,operations} from './ipc';
 import {isTrustedSender} from './trust';
 import releases from './engines/releases.json';
+import {BUILD_INFO} from '../shared/build-info';
 app.setName('Exodus Browser');
 // Keep the existing data directory independent of the visible product name.
 app.setPath('userData',join(app.getPath('appData'),'Local Profiles'));
@@ -30,7 +31,7 @@ else void app.whenReady().then(async()=>{
     await pipeline(Readable.fromWeb(response.body as any),createWriteStream(destination,{flags:'wx'}));
   });
   const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()));await supervisor.recover();
-  const backups=new BackupService(profiles,supervisor);const win=createWindow();const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
+  const backups=new BackupService(profiles,supervisor);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
   const cookies=new CookieService(profiles,supervisor,installer);
   const cookieOps=createCookieOperations({
     cookies,

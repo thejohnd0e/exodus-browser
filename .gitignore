@@ -4,6 +4,7 @@ dist/
 out/
 release/
 .cache/
+.local/
 *.tsbuildinfo
 engine-cache/
 
