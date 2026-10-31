@@ -12,6 +12,8 @@ import {Supervisor} from './runtime/supervisor';
 import {BackupService} from './backups/service';
 import {CookieService} from './cookies/service';
 import {createCookieOperations} from './cookies/operations';
+import {PortableProfileService} from './portable/service';
+import {createPortableOperations} from './portable/operations';
 import {checkProxy,IP_CHECK_SERVICE} from './proxy/check';
 import {lookupCountry} from './proxy/country';
 import {createWindow} from './window';
@@ -37,7 +39,7 @@ else void app.whenReady().then(async()=>{
   const sessions=new SessionStore(root);const settings=new AppSettingsService(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions});await supervisor.recover();
   const backups=new BackupService(profiles,supervisor,undefined,sessions);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
   let currentLanguage=(await settings.getSettings()).language;
-  const cookies=new CookieService(profiles,supervisor,installer);
+   const cookies=new CookieService(profiles,supervisor,installer);const portable=new PortableProfileService(profiles,supervisor,installer,sessions);
   const cookieOps=createCookieOperations({
     cookies,
     language:()=>currentLanguage,
@@ -45,7 +47,12 @@ else void app.whenReady().then(async()=>{
      showSave:options=>dialog.showSaveDialog(win,options as Electron.SaveDialogOptions),
      showClearConfirm:async id=>{const profile=profiles.get(id);const result=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('cookie.clear.confirm',currentLanguage,{name:profile.name}),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('cookie.clear.button',currentLanguage)],cancelId:0,defaultId:0});return result.response===1;},
   });
-  let quitting=false,closing=false;
+   const portableOps=createPortableOperations({portable,language:()=>currentLanguage,
+     showOpen:options=>dialog.showOpenDialog(win,options as Electron.OpenDialogOptions),
+     showSave:options=>dialog.showSaveDialog(win,options as Electron.SaveDialogOptions),
+     showExportConfirm:async()=>{const result=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('portable.export.confirm',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.continue',currentLanguage)],cancelId:0,defaultId:0});return result.response===1;},
+   });
+   let quitting=false,closing=false;
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
       remove:async id=>{const choice=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('profile.delete.confirm',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.delete',currentLanguage)],defaultId:0,cancelId:0});if(choice.response===1)await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
@@ -62,7 +69,8 @@ else void app.whenReady().then(async()=>{
       if(!r.canceled)await installer.link(r.filePaths[0]);
     },
      backup:async id=>{await supervisor.assertStopped(id);const c=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('backup.warning',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.continue',currentLanguage)],cancelId:0,defaultId:0});if(c.response!==1)return;const result=await dialog.showSaveDialog(win,{defaultPath:'profile-backup.zip',filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});if(result.filePath&&!result.canceled)await backups.create(id,result.filePath);},
-     restore:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('backup.restore.title',currentLanguage),properties:['openFile'],filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});return r.canceled?null:backups.restore(r.filePaths[0]);},
+      restore:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('backup.restore.title',currentLanguage),properties:['openFile'],filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});return r.canceled?null:backups.restore(r.filePaths[0]);},
+      exportProfile:portableOps.exportProfile,importProfile:portableOps.importProfile,
      checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');const {ip}=await checkProxy(input.proxy);return {ip,countryCode:await lookupCountry(ip),service:IP_CHECK_SERVICE};},
     listProxies:async()=>profiles.listProxies(),createProxy:input=>profiles.createProxy(input),updateProxy:(id,input)=>profiles.updateProxy(id,input),removeProxy:id=>profiles.removeProxy(id),
      checkSavedProxy:async id=>{const {ip}=await checkProxy(profiles.getProxyInput(id));return {ip,countryCode:await lookupCountry(ip),service:IP_CHECK_SERVICE};},runningProxyVersions:async()=>supervisor.runningProxyVersions(),
@@ -75,7 +83,7 @@ else void app.whenReady().then(async()=>{
     void(async()=>{
       try{const active=Object.values(supervisor.states()).some(s=>['running','starting','stopping','blocked'].includes(s));
         if(active){const r=await dialog.showMessageBox(win,{type:'question',message:nativeMessage('manager.close.confirm',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('manager.close.button',currentLanguage)],cancelId:0,defaultId:0});if(r.response!==1)return;}
-        await cookies.closeAll();await supervisor.shutdown();quitting=true;profiles.close();app.quit();
+         await Promise.all([cookies.closeAll(),portable.closeAll()]);await supervisor.shutdown();quitting=true;profiles.close();app.quit();
       }catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});}
       finally{closing=false;}
     })();

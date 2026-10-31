@@ -1,7 +1,7 @@
 import type { Fingerprint } from './fingerprint';
 import type {AppSettings} from './settings';
 export type ProxyInput = { kind: 'http'|'https'|'socks5'; host: string; port: number; username?: string; password?: string };
-export type ProxyPublic = Omit<ProxyInput,'password'> & {hasPassword:boolean};
+export type ProxyPublic = Omit<ProxyInput,'password'> & {hasPassword:boolean;requiresPassword?:boolean};
 export type SavedProxyInput = ProxyInput & {name:string};
 export type SavedProxy = ProxyPublic & {id:string;name:string;createdAt:string;updatedAt:string;profileIds:string[]};
 export type ProfileInput = {name:string;note:string;startUrls:string[];languages:string[];proxyId:string|null;fingerprint?:Fingerprint;restoreLastSession?:boolean;fingerprintSeed?:number};
@@ -25,6 +25,8 @@ export interface ProfileApi {
   linkEngine():Promise<Result<void>>;
   backup(id:string):Promise<Result<void>>;
   restore():Promise<Result<Profile|null>>;
+  exportProfile(id:string):Promise<Result<{fileName:string}|null>>;
+  importProfile():Promise<Result<Profile|null>>;
   checkProxy(id:string):Promise<Result<{ip:string;countryCode:string|null;service:string}|null>>;
   listProxies():Promise<Result<SavedProxy[]>>;
   createProxy(input:SavedProxyInput):Promise<Result<SavedProxy>>;

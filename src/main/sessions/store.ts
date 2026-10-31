@@ -1,4 +1,5 @@
 import {lstat,mkdir,readFile,rename,rm,writeFile} from 'node:fs/promises';
+import {existsSync,renameSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -34,6 +35,12 @@ export class SessionStore {
     const file=join(this.directory(),`${safeId}.json`);const temporary=`${file}.partial-${randomUUID()}`;
     try{await writeFile(temporary,JSON.stringify(snapshot),{flag:'wx'});await rename(temporary,file);}
     finally{await rm(temporary,{force:true});}
+  }
+  async prepare(id:string,value:SessionSnapshot):Promise<{publish:()=>void;rollback:()=>void}>{
+    const safeId=idSchema.parse(id);const snapshot=sessionSnapshotSchema.parse(value);await this.ensureDirectory(true);
+    const file=join(this.directory(),`${safeId}.json`);if(existsSync(file))throw Error('SESSION_ALREADY_EXISTS');
+    const temporary=`${file}.partial-${randomUUID()}`;await writeFile(temporary,JSON.stringify(snapshot),{flag:'wx'});let published=false;
+    return {publish:()=>{renameSync(temporary,file);published=true;},rollback:()=>{rmSync(temporary,{force:true});if(published)rmSync(file,{force:true});}};
   }
   async remove(id:string):Promise<void>{
     const safeId=idSchema.parse(id);if(!await this.ensureDirectory(false))return;
