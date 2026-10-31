@@ -148,7 +148,15 @@ Original first-version boundaries (later fingerprint additions are described in 
 - `main/engines/spoof-script.ts` — injected script (string template with JSON configuration): deterministic Canvas/WebGL/ClientRects/Audio noise using a positional hash from `sha256(profileId)`, configured vendor/renderer, disabling `navigator.gpu`, overriding `hardwareConcurrency`, `deviceMemory`, `screen.*`, and `outer*`, removing `RTCPeerConnection` for WebRTC Off; Canvas/WebGL Off disable their respective APIs. The script is idempotent (`window.__LP_FP__`).
 - Geolocation: Manual grants session permission and coordinates; Auto overrides nothing and retains the normal permission prompt.
 
-### 3.10 Cookies: import and export
+### 3.10 Extensions: library and per-profile sets
+
+- `main/extensions/package.ts` — validates a folder or ZIP: `manifest_version` 3, `name` and `version`, exactly one root `manifest.json`, no symlinks, and the existing archive path/duplicate/size rules. Archives are extracted into staging and rejected on any unsafe entry.
+- `main/extensions/library.ts` — one validated copy per extension at `<root>/extensions/<id>/`, so the unpacked extension ID stays stable across updates. Add and update stage into a sibling directory and rename into place; a failed update restores the previous copy. Removing an entry deletes the copy and strips the ID from every profile in one transaction.
+- `shared/validation.ts` — profiles carry `extensionIds` (UUIDs, unique, at most 50); older profiles load with no extensions.
+- `main/runtime/supervisor.ts`, `main/engines/chromium.ts` — enabled copies are passed as `--disable-extensions-except` and `--load-extension`; nothing else is disabled, and profile storage stays separate per profile.
+- Renderer: the Extensions section manages the library and per-profile checkboxes select the set; changes apply at the next launch. Native folder/archive pickers run in main only. Chrome Web Store links and automatic updates are not supported in this version.
+
+### 3.11 Cookies: import and export
 
 - `shared/cookies.ts` — `CookieInput` model, limits (5 MiB, 20,000 entries, field lengths), and strict Zod schema with `SameSite=None`, `__Secure-`, and `__Host-` requirements.
 - `main/cookies/parse.ts`, `netscape.ts`, `normalize.ts` — file reading (strict UTF-8, BOM, size limit), format detection, normalization of Dolphin JSON (expiry scale, booleans, special names, `facebook.com`) and Netscape (include-subdomains field, `#HttpOnly_`); any invalid entry rejects the entire file.

@@ -105,6 +105,16 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 - Unit coverage checks independent disclosure, visible blocked/missing-credential warnings, unchanged Launch/Stop enablement, preservation of checked IP results across collapse, closure of the transient cookie menu, compact profile/Chromium summary, tooltip accessibility, and the editor path to fingerprint settings.
 - No real profile data was used. Manual visual acceptance remains open. Themed confirmations were deferred at this checkpoint and are covered in the following verification entry.
 
+## Extension library (2026-10-31, local changes)
+
+- RED first: package, library, profile, IPC and UI tests failed for the expected missing behavior before each implementation step.
+- Covered by unit tests: MV3 manifest validation, rejection of Manifest V2, unsafe archive entry names and nested manifests; schema migration to version 3; independent library copies; failed adds leaving no row or staging directory; in-place updates keeping the identifier; removal stripping assignments; unique/valid `extensionIds`; launch arguments and absence of a blanket `--disable-extensions`.
+- Real Chromium (`tests/integration/extensions.test.ts`): an extension loads only in the profile that enables it, its storage persists across restart, an explicit update changes the loaded version at the next launch, and removal deletes the copy and the assignments.
+- Acceptance with the real TimeZone Changer folder (`D:\MyProjects\TimeZoneChanger`): a library-style copy loaded in the bundled Chrome for Testing with `name: TimeZone Changer`, `version: 2.2`, and a running background worker. This checked the extension package and copy model, not the new UI buttons.
+- `npm run verify`: PASS (264/264 unit, typecheck, production build).
+- `npm run test:integration`: PASS (50/50 across 14 files).
+- Not yet done: user acceptance through the Extensions screen and the profile checkboxes, and a check that a timezone extension does not conflict with the profile timezone override.
+
 ## Sidebar utility footer (2026-10-31, local changes)
 
 - RED before implementation: unit tests failed for the missing footer, language popover, native-menu removal and exact project-link policy.
