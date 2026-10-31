@@ -4,6 +4,14 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### 1.1.85 installed-updater test release (2026-10-31)
+
+- The user reported manually installing 1.1.84. Published the version-only `v1.1.85` release so the installed application can exercise its new transport; application code is unchanged from 1.1.84.
+- Fresh `npm run verify` PASS (349 unit, typecheck, production build), `npm run test:integration` PASS (60/60), `npm run dist` PASS (version 1.1.85, `app.asar` intact).
+- Published `ExodusBrowser-Setup-1.1.85.exe` (135,268,906 bytes) and `SHA256SUMS`. SHA-256: `a1d99a33150e2e47bbd737860567cd8dfc789b8fc20810bbd4ffcc4bc825ed24`. An unauthenticated `releases/latest` request returned `v1.1.85`, non-draft and non-prerelease.
+- A disposable real-Electron production-default service run, reporting current version 1.1.84, checked/downloaded the public 1.1.85 installer to `ready` in 7.60 seconds; size and SHA-256 matched. The probe did not execute an installer or open real profile storage.
+- User acceptance of download speed/progress in the installed UI, the install button and the actual NSIS handoff/restart is pending. This test release contains no separate installation fix.
+
 ### Update transport investigation (2026-10-31; unpublished 1.1.84 candidate)
 
 - User report: downloading the 1.1.83 update from installed 1.1.82 took almost ten minutes, then no installer appeared. Read-only inspection found the full 135,269,832-byte installer under the legacy update directory; SHA-256 was `609f58f4ee8052de5ceeb31af94f02ff083c27f77d67e508cc7ef380a9bd4398`. No real installer was run, no installed app was closed and no profile database was opened by this investigation.
