@@ -8,6 +8,9 @@ it('keeps GitHub-bound repository text free of Cyrillic prose',()=>{
   const files=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','-z'],{encoding:'utf8'}).split('\0').filter(Boolean);
   const violations:string[]=[];
   for(const file of new Set(files)){
+    // Runtime translation data is the explicit exception to English-only publication text.
+    if(['src/shared/i18n/ru.ts','src/shared/i18n/messages.ts'].includes(file))continue;
+    if(['src/shared/i18n/ru.ts','src/shared/i18n/messages.ts'].includes(file))continue;
     if(/\p{Script=Cyrillic}/u.test(file))violations.push(`${file}: filename`);
     const bytes=readFileSync(file);
     if(bytes.includes(0))continue;

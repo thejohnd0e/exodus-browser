@@ -94,7 +94,7 @@ Principles: a test must first fail for the expected reason; mock only slow/exter
 ## Adding an IPC operation
 
 1. Add a method to `ProfileApi` (`src/shared/contracts.ts`).
-2. Add a tuple schema to `schemas` (`src/main/ipc.ts`) and a message to `messages` if the operation can return a domain error.
+2. Add a tuple schema to `schemas` (`src/main/ipc.ts`) and a safe error code/message mapping in `src/shared/i18n/messages.ts` if the operation can return a domain error.
 3. Implement a handler in `src/main/index.ts` (main only; never expose paths/secrets).
 4. Add a preload call (allowlist).
 5. Update the UI and tests: dispatcher (invalid arguments), preload surface in the smoke test.

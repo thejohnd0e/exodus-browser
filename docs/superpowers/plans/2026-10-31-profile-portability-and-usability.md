@@ -108,11 +108,11 @@ Shared edits: `src/shared/{contracts,validation}.ts`, `src/main/{index,ipc}.ts`,
 
 **Interfaces:** `messageForError(code:string,language:AppLanguage):string` with a fixed generic fallback. Main dialogs consume persisted `AppSettings.language`; renderer stores message descriptors/codes and parameters, not permanently formatted strings that become stale on switching languages.
 
-- [ ] Add failing tests for identical key coverage, plural/count formatting, all allowlisted errors, unknown-code fallback, localized native confirm/open/save dialogs, accessible labels, and switching language while an operation result is visible. Test names and descriptions remain English.
-- [ ] Run the i18n/UI tests and confirm untranslated UI/dialog behavior fails.
-- [ ] Extract all UI text, statuses, warnings, empty states, tooltips, aria labels, and result templates into typed catalogs; use `Intl` for locale-dependent formatting. Preserve user-entered names, BCP47 profile language codes, branding, and technical paths. Never display raw exceptions.
-- [ ] Add Electron coverage for language persistence, native-dialog arguments, editor input preservation, and no external locale requests. Manually inspect both languages at normal/narrow widths.
-- [ ] Run both full verification commands; expect PASS. Commit: `feat: localize the interface and dialogs in English and Russian`.
+- [x] Add failing tests for identical key coverage, plural/count formatting, all allowlisted errors, unknown-code fallback, localized native confirm/open/save dialogs, accessible labels, and switching language while an operation result is visible. Test names and descriptions remain English.
+- [x] Run the i18n/UI tests and confirm untranslated UI/dialog behavior fails.
+- [x] Extract displayed UI text, statuses, warnings, empty states, tooltips, aria labels, native dialogs, and result templates into typed catalogs; use `Intl` for locale-dependent formatting. Preserve user-entered names, BCP47 profile language codes, branding, and technical paths. Never display raw exceptions.
+- [x] Add Electron coverage for language persistence, native-dialog arguments, editor input preservation, and no external locale requests. Manual visual inspection remains part of Task 9 acceptance.
+- [x] Run both full verification commands: `npm run verify` PASS (184/184 unit, typecheck, build); `npm run test:integration` PASS (44/44). Commit: `feat: localize the interface and dialogs in English and Russian`.
 
 ### Task 6: Offline country lookup and accessible flags
 

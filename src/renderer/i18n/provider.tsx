@@ -1,12 +1,12 @@
 import {createContext,useContext,type ReactNode} from 'react';
 import type {AppLanguage} from '../../shared/settings';
-import {en} from './en';
+import {en} from '../../shared/i18n/en';
+import {formatMessage} from '../../shared/i18n/format';
 import type {TranslationKey,TranslationParams} from './types';
 
-const english:Record<string,string>=en;
-export function translate(_language:AppLanguage,key:TranslationKey|string,params:TranslationParams={}):string{
- const template=english[key]??key;
- return template.replace(/\{\{(\w+)\}\}/g,(_match,name:string)=>String(params[name]??`{{${name}}}`));
+export function translate(language:AppLanguage,key:TranslationKey|string,params:TranslationParams={}):string{
+ if(Object.hasOwn(en,key))return formatMessage(language,key as TranslationKey,params);
+ return key;
 }
 type I18nValue={language:AppLanguage;t:(key:TranslationKey|string,params?:TranslationParams)=>string;setLanguage:(language:AppLanguage)=>void};
 const I18nContext=createContext<I18nValue|null>(null);

@@ -4,6 +4,9 @@ import {render,screen,fireEvent,waitFor,cleanup,within,act} from '@testing-libra
 import {App} from '../../src/renderer/App';
 import type {ProfileApi,Profile,SavedProxy} from '../../src/shared/contracts';
 import {DEFAULT_FINGERPRINT} from '../../src/shared/fingerprint';
+import {ru} from '../../src/shared/i18n/ru';
+import {formatMessage} from '../../src/shared/i18n/format';
+import {messageForError} from '../../src/shared/i18n/messages';
 afterEach(cleanup);
 const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
 const proxyId='8c6dbed2-8067-43ec-b5fd-3cb482d965ea';
@@ -65,19 +68,34 @@ it('clears cookies and shows a value-free completion message',async()=>{
  expect(await screen.findByText('Cookies cleared. Other site data was kept.')).toBeTruthy();
  expect(document.body.textContent).not.toContain('sid');
 });
+it('reformats an existing safe error descriptor after switching interface language',async()=>{
+ const checkProxy=vi.fn<ProfileApi['checkProxy']>(async()=>({ok:false,error:{code:'PROXY_CHECK_FAILED',message:'Proxy check failed.'}}));
+ render(<App api={api({checkProxy})}/>);await screen.findByText('Work');fireEvent.click(screen.getByRole('button',{name:'Check IP'}));
+ await screen.findByText('Proxy check failed.');
+ fireEvent.change(screen.getByLabelText('Interface language'),{target:{value:'ru'}});
+ await waitFor(()=>expect(screen.getByRole('alert').querySelector('span')?.textContent).toBe(messageForError('PROXY_CHECK_FAILED','ru')));
+});
 it('persists interface language without replacing an unsaved profile draft or site locale',async()=>{
  const updateSettings=vi.fn<ProfileApi['updateSettings']>(async settings=>({ok:true,value:settings}));render(<App api={api({updateSettings})}/>);
  await openProfile();fireEvent.change(screen.getByLabelText('Name'),{target:{value:'Draft not saved'}});
  fireEvent.change(screen.getByLabelText('Interface language'),{target:{value:'ru'}});
  await waitFor(()=>expect(updateSettings).toHaveBeenCalledWith({language:'ru'}));
- expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft not saved');
- expect(screen.getByRole('button',{name:'Choose language'}).textContent).toContain('Russian (Russia)');
+  expect((screen.getByLabelText(ru.Name) as HTMLInputElement).value).toBe('Draft not saved');
+  expect(screen.getByRole('button',{name:ru['Choose language']}).textContent).toContain('Russian (Russia)');
+});
+it('localizes fingerprint controls and their accessible labels',async()=>{
+ render(<App api={api()}/>);await openProfile();
+ fireEvent.change(screen.getByLabelText('Interface language'),{target:{value:'ru'}});
+ await screen.findByRole('heading',{name:ru['Profile settings']});
+ fireEvent.click(within(screen.getByRole('group',{name:ru['WebGL Info']})).getByRole('button',{name:ru.Manual}));
+ expect(screen.getByLabelText(ru['WebGL vendor'])).toBeTruthy();
+ expect(screen.getByLabelText(ru['WebGL renderer'])).toBeTruthy();
 });
 it('edits proxies separately and drops HTTP credentials when switched to SOCKS5',async()=>{
  const updateProxy=vi.fn(api().updateProxy);render(<App api={api({updateProxy})}/>);await screen.findByText('Work');fireEvent.click(screen.getByRole('button',{name:'Proxies'}));fireEvent.click(screen.getByRole('button',{name:'Edit'}));fireEvent.change(screen.getByLabelText('Proxy type'),{target:{value:'socks5'}});fireEvent.click(screen.getByRole('button',{name:'Save proxy'}));await waitFor(()=>expect(updateProxy).toHaveBeenCalled());expect(updateProxy.mock.calls[0][1]).toEqual({name:'Shared HTTP',kind:'socks5',host:'proxy.example.com',port:8080});
 });
 it('discloses the HTTP service before click and shows success only inside the checked card',async()=>{
- const second={...p,id:'3829c231-99ba-48c0-b2f2-233b01c167e6',name:'Personal'};const checkProxy=vi.fn(api().checkProxy);render(<App api={api({list:async()=>({ok:true,value:[p,second]}),checkProxy})}/>);await screen.findByText('Work');expect(within(card()).getByText(/api\.ipify\.org.*HTTP/)).toBeTruthy();expect(checkProxy).not.toHaveBeenCalled();fireEvent.click(within(card()).getByRole('button',{name:'Check IP'}));await waitFor(()=>expect(within(card()).getByText('External IP: 192.0.2.1')).toBeTruthy());expect(checkProxy).toHaveBeenCalledExactlyOnceWith(id);expect(within(card('Personal')).queryByText(/External IP/)).toBeNull();expect(screen.queryByRole('alert')).toBeNull();
+  const second={...p,id:'3829c231-99ba-48c0-b2f2-233b01c167e6',name:'Personal'};const checkProxy=vi.fn(api().checkProxy);render(<App api={api({list:async()=>({ok:true,value:[p,second]}),checkProxy})}/>);await screen.findByText('Work');expect(within(card()).getByText(/api\.ipify\.org.*HTTP/)).toBeTruthy();expect(checkProxy).not.toHaveBeenCalled();fireEvent.click(within(card()).getByRole('button',{name:'Check IP'}));await waitFor(()=>expect(within(card()).getByText('External IP: 192.0.2.1')).toBeTruthy());expect(checkProxy).toHaveBeenCalledExactlyOnceWith(id);expect(within(card('Personal')).queryByText(/External IP/)).toBeNull();expect(screen.queryByRole('alert')).toBeNull();
 });
 it('clears the last IP during a retry and shows failures separately',async()=>{
  let finish!:(value:Awaited<ReturnType<ProfileApi['checkProxy']>>)=>void;const checkProxy=vi.fn<ProfileApi['checkProxy']>().mockResolvedValueOnce({ok:true,value:{ip:'192.0.2.1',service:'test'}}).mockImplementationOnce(()=>new Promise(r=>{finish=r;}));render(<App api={api({checkProxy})}/>);await screen.findByText('Work');fireEvent.click(screen.getByRole('button',{name:'Check IP'}));await screen.findByText('External IP: 192.0.2.1');await waitFor(()=>expect((screen.getByRole('button',{name:'Check IP'}) as HTMLButtonElement).disabled).toBe(false));fireEvent.click(screen.getByRole('button',{name:'Check IP'}));expect(screen.queryByText(/External IP/)).toBeNull();await act(async()=>finish({ok:false,error:{code:'PROXY_CHECK_FAILED',message:'Proxy check failed.'}}));expect(screen.getByRole('alert').textContent).toContain('Proxy check failed.');
@@ -106,7 +124,9 @@ it('imports and exports cookies from the card and shows the count',async()=>{
   fireEvent.click(within(card()).getByRole('button',{name:'Export cookies…'}));
   fireEvent.click(within(card()).getByRole('menuitem',{name:'Netscape cookies.txt'}));
   await waitFor(()=>expect(exportCookies).toHaveBeenCalledWith(id,'netscape'));
-  await waitFor(()=>expect(within(card()).getByText('Exported 1 cookies to cookies.txt')).toBeTruthy());
+   await waitFor(()=>expect(within(card()).getByText('Exported 1 cookie to cookies.txt')).toBeTruthy());
+   fireEvent.change(screen.getByLabelText('Interface language'),{target:{value:'ru'}});
+    await waitFor(()=>expect(within(card()).getByText(formatMessage('ru','cookies.exported',{count:1,fileName:'cookies.txt'}))).toBeTruthy());
 });
 it('disables cookies for a running profile and shows errors',async()=>{
   const importCookies=vi.fn<ProfileApi['importCookies']>(async()=>({ok:false,error:{code:'INVALID_COOKIE_FILE',message:'The cookies file is corrupted.'}}));

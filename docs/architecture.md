@@ -62,6 +62,7 @@ Original first-version boundaries (later fingerprint additions are described in 
 - `ProfileEditor.tsx` — profile form; username and password are not sent for SOCKS5.
 - `EngineSettings.tsx` — engine status, “Attach Chromium…” and “Download Chromium”.
 - `window.profileApi` — the only system channel; no direct access to Node.js, disk, or processes.
+- `shared/i18n/` — locally bundled typed English/Russian catalogs, locale-aware formatting, safe error-code mapping, and native-dialog messages. The application language is persisted independently from each profile's website language; there are no remote locale requests.
 
 ### 3.2 IPC
 

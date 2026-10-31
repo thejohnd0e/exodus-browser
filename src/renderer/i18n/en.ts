@@ -1,6 +1,1 @@
-export const en={
- 'language.label':'Interface language',
- 'language.en':'English',
- 'language.ru':'Russian',
- 'settings.saved':'Settings saved: {{language}}',
-} as const;
+export {en} from '../../shared/i18n/en';

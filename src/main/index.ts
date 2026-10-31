@@ -20,6 +20,7 @@ import releases from './engines/releases.json';
 import {BUILD_INFO} from '../shared/build-info';
 import {SessionStore} from './sessions/store';
 import {AppSettingsService} from './settings/service';
+import {nativeMessage} from '../shared/i18n/messages';
 app.setName('Exodus Browser');
 // Keep the existing data directory independent of the visible product name.
 app.setPath('userData',join(app.getPath('appData'),'Local Profiles'));
@@ -34,48 +35,50 @@ else void app.whenReady().then(async()=>{
   });
   const sessions=new SessionStore(root);const settings=new AppSettingsService(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions});await supervisor.recover();
   const backups=new BackupService(profiles,supervisor,undefined,sessions);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
+  let currentLanguage=(await settings.getSettings()).language;
   const cookies=new CookieService(profiles,supervisor,installer);
   const cookieOps=createCookieOperations({
     cookies,
+    language:()=>currentLanguage,
      showOpen:options=>dialog.showOpenDialog(win,options as Electron.OpenDialogOptions),
      showSave:options=>dialog.showSaveDialog(win,options as Electron.SaveDialogOptions),
-     showClearConfirm:async id=>{const profile=profiles.get(id);const result=await dialog.showMessageBox(win,{type:'warning',message:`Clear all cookies for “${profile.name}”? You will be signed out of websites. Local storage, IndexedDB and other site data will be kept.`,buttons:['Cancel','Clear cookies'],cancelId:0,defaultId:0});return result.response===1;},
+     showClearConfirm:async id=>{const profile=profiles.get(id);const result=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('cookie.clear.confirm',currentLanguage,{name:profile.name}),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('cookie.clear.button',currentLanguage)],cancelId:0,defaultId:0});return result.response===1;},
   });
   let quitting=false,closing=false;
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
-     remove:async id=>{const choice=await dialog.showMessageBox(win,{type:'warning',message:'Delete this profile and all its data?',buttons:['Cancel','Delete'],defaultId:0,cancelId:0});if(choice.response===1)await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
+      remove:async id=>{const choice=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('profile.delete.confirm',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.delete',currentLanguage)],defaultId:0,cancelId:0});if(choice.response===1)await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
     start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),engineStatus:()=>installer.status(),
     installEngine:async()=>{
       if(!releases.release)throw Error('ENGINE_RELEASE_UNPINNED');
-      const c=await dialog.showMessageBox(win,{type:'question',message:'Download a separate Chromium from the official Google server?',buttons:['Cancel','Download'],cancelId:0,defaultId:0});
+       const c=await dialog.showMessageBox(win,{type:'question',message:nativeMessage('engine.download.confirm',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('engine.download.button',currentLanguage)],cancelId:0,defaultId:0});
       if(c.response===1)await installer.install(releases.release as EngineRelease);
     },
     linkEngine:async()=>{
-      const c=await dialog.showMessageBox(win,{type:'question',message:'Use an existing Chromium installation? The application will pin the SHA-256 of chrome.exe and run it separately for each profile. Selecting the file means you trust its origin.',buttons:['Cancel','Choose chrome.exe'],cancelId:0,defaultId:0});
+       const c=await dialog.showMessageBox(win,{type:'question',message:nativeMessage('engine.link.confirm',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('engine.link.button',currentLanguage)],cancelId:0,defaultId:0});
       if(c.response!==1)return;
-      const r=await dialog.showOpenDialog(win,{title:'Choose chrome.exe from Chromium',properties:['openFile'],filters:[{name:'Chromium',extensions:['exe']}]});
+       const r=await dialog.showOpenDialog(win,{title:nativeMessage('engine.choose.title',currentLanguage),properties:['openFile'],filters:[{name:'Chromium',extensions:['exe']}]});
       if(!r.canceled)await installer.link(r.filePaths[0]);
     },
-    backup:async id=>{await supervisor.assertStopped(id);const c=await dialog.showMessageBox(win,{type:'warning',message:'The backup contains cookies and other sensitive data. Keep it in a safe place. The proxy password is not included.',buttons:['Cancel','Continue'],cancelId:0,defaultId:0});if(c.response!==1)return;const result=await dialog.showSaveDialog(win,{defaultPath:'profile-backup.zip',filters:[{name:'Profile backup',extensions:['zip']}]});if(result.filePath&&!result.canceled)await backups.create(id,result.filePath);},
-    restore:async()=>{const r=await dialog.showOpenDialog(win,{properties:['openFile'],filters:[{name:'Profile backup',extensions:['zip']}]});return r.canceled?null:backups.restore(r.filePaths[0]);},
+     backup:async id=>{await supervisor.assertStopped(id);const c=await dialog.showMessageBox(win,{type:'warning',message:nativeMessage('backup.warning',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.continue',currentLanguage)],cancelId:0,defaultId:0});if(c.response!==1)return;const result=await dialog.showSaveDialog(win,{defaultPath:'profile-backup.zip',filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});if(result.filePath&&!result.canceled)await backups.create(id,result.filePath);},
+     restore:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('backup.restore.title',currentLanguage),properties:['openFile'],filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});return r.canceled?null:backups.restore(r.filePaths[0]);},
     checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');return {...await checkProxy(input.proxy),service:IP_CHECK_SERVICE};},
     listProxies:async()=>profiles.listProxies(),createProxy:input=>profiles.createProxy(input),updateProxy:(id,input)=>profiles.updateProxy(id,input),removeProxy:id=>profiles.removeProxy(id),
     checkSavedProxy:async id=>({...await checkProxy(profiles.getProxyInput(id)),service:IP_CHECK_SERVICE}),runningProxyVersions:async()=>supervisor.runningProxyVersions(),
      importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies,clearCookies:cookieOps.clearCookies,
-     getSettings:()=>settings.getSettings(),updateSettings:input=>settings.updateSettings(input)
-  },event=>isTrustedSender(event as never,win.webContents,ui));
+      getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;return value;}
+   },event=>isTrustedSender(event as never,win.webContents,ui),()=>currentLanguage);
   for(const method of operations)ipcMain.handle('profiles:'+method,(event,...args)=>dispatcher(event,method,args));
   win.on('close',event=>{
     if(quitting)return;event.preventDefault();if(closing)return;closing=true;
     void(async()=>{
       try{const active=Object.values(supervisor.states()).some(s=>['running','starting','stopping','blocked'].includes(s));
-        if(active){const r=await dialog.showMessageBox(win,{type:'question',message:'Stop browsers and close the manager? Windows left after a crash must be closed manually.',buttons:['Cancel','Stop and exit'],cancelId:0,defaultId:0});if(r.response!==1)return;}
+        if(active){const r=await dialog.showMessageBox(win,{type:'question',message:nativeMessage('manager.close.confirm',currentLanguage),buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('manager.close.button',currentLanguage)],cancelId:0,defaultId:0});if(r.response!==1)return;}
         await cookies.closeAll();await supervisor.shutdown();quitting=true;profiles.close();app.quit();
-      }catch{await dialog.showMessageBox(win,{type:'error',message:'Could not stop the browser. Close its window manually and try exiting again.'});}
+      }catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});}
       finally{closing=false;}
     })();
-  });
+   });
   app.on('second-instance',()=>{if(win.isMinimized())win.restore();win.focus();});
   await win.loadFile(join(__dirname,'ui','index.html'));
 }).catch(()=>{dialog.showErrorBox('Exodus Browser','Could not open local storage. Check access to the application directory.');app.exit(1);});

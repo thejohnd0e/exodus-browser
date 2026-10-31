@@ -7,6 +7,8 @@ import Database from 'better-sqlite3';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {fileURLToPath} from 'node:url';
+import {nativeMessage} from '../../src/shared/i18n/messages';
+import {ru} from '../../src/shared/i18n/ru';
 const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
 it('loads the supplied wordmark, favicon and native icon from the built application',async()=>{
   const data=mkdtempSync(join(tmpdir(),'exodus-branding-'));
@@ -41,6 +43,27 @@ it('loads the supplied wordmark, favicon and native icon from the built applicat
       expect(version!.x+version!.width).toBeLessThanOrEqual(sidebar!.x+sidebar!.width);
     }
   }finally{await app.close();rmSync(data,{recursive:true,force:true});}
+ },30000);
+
+it('persists the Russian interface, localizes confirmation dialogs and makes no remote locale requests',async()=>{
+ const data=mkdtempSync(join(tmpdir(),'exodus-language-e2e-'));const launch=()=>electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});let app=await launch();
+ try{
+  await app.evaluate(({session})=>{const urls:string[]=[];(globalThis as any).__localeRequests=urls;session.defaultSession.webRequest.onBeforeRequest((details,callback)=>{urls.push(details.url);callback({});});});
+  const win=await app.firstWindow();await win.waitForSelector('h1');
+  await win.getByLabel('Interface language').selectOption('ru');await win.getByRole('heading',{name:ru['Browser profiles']}).waitFor();
+  const created=await win.evaluate(async()=>await (window as any).profileApi.create({name:'Lang test',note:'',startUrls:['about:blank'],languages:['en-US'],proxyId:null}));expect(created.ok).toBe(true);
+  await win.getByText('Lang test').waitFor();
+  await app.evaluate(({dialog})=>{(globalThis as any).__dialogOptions=null;dialog.showMessageBox=(async(_window,options)=>{(globalThis as any).__dialogOptions=options;return {response:0,checkboxChecked:false};}) as typeof dialog.showMessageBox;});
+  await win.getByRole('button',{name:ru['Clear cookies…']}).click();await win.waitForTimeout(100);
+  const dialogOptions=await app.evaluate(()=>(globalThis as any).__dialogOptions);
+  expect(dialogOptions.message).toContain('Lang test');expect(dialogOptions.message).toContain('IndexedDB');expect(dialogOptions.buttons).toEqual([nativeMessage('cookie.clear.cancel','ru'),nativeMessage('cookie.clear.button','ru')]);
+  expect(await win.evaluate(()=>document.documentElement.lang)).toBe('ru');
+  const requests=await app.evaluate(()=>(globalThis as any).__localeRequests as string[]);
+  expect(requests.filter(url=>!url.startsWith('file://')&&!url.startsWith('devtools://')&&!url.startsWith('data:'))).toEqual([]);
+ }finally{await app.close();}
+ app=await launch();
+ try{const win=await app.firstWindow();await win.getByRole('heading',{name:ru['Browser profiles']}).waitFor();expect(await win.evaluate(()=>document.documentElement.lang)).toBe('ru');expect(await win.getByLabel(ru['language.label']).inputValue()).toBe('ru');}
+ finally{await app.close();rmSync(data,{recursive:true,force:true});}
 },30000);
 
 it('keeps the fingerprint action opaque and readable without hovering in the profile editor',async()=>{

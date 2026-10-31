@@ -180,3 +180,8 @@ An independent branch review found a critical issue: without a pinned hash, the 
 **Decision:** store only the explicit interface language (`en` or `ru`) in a strict application-owned JSON settings file. Default to English, validate through trusted IPC, and use the English catalog as fallback for missing translations. Do not infer from Windows locale or download catalogs.
 **Rationale:** predictable first-run behavior and offline operation; website `languages` remain profile-specific and independent of UI language.
 **Cost of being wrong:** users must change the interface language manually; newly added keys remain English until translated.
+
+### 28. Complete EN/RU interface localization (2026-10-31)
+**Decision:** renderer text, accessibility labels, status/result/error messages, IPC validation errors, file dialogs and confirmation dialogs use local EN/RU catalogs selected by the persisted application language. English defines catalog keys and remains the fallback; locale-sensitive plural and numeric formatting uses `Intl`. User-provided names and paths remain unchanged. Russian text is confined to runtime translation data; project prose and GitHub metadata remain English.
+**Rationale:** language preference should affect the whole application, including native surfaces, without external locale requests or changing each profile's site language.
+**Cost of being wrong:** translations can be incomplete or awkward; English fallback and catalog key parity keep missing strings usable and detectable.

@@ -1,6 +1,7 @@
 import {it,expect} from 'vitest';
 import {createDispatcher} from '../../src/main/ipc';
 import {valid} from '../fixtures/profiles';
+import {messageForError} from '../../src/shared/i18n/messages';
 it('rejects untrusted frames and malformed arguments before invoking privileged operations',async()=>{
  let called=0;const dispatch=createDispatcher({start:async()=>{called++;}},(e)=>e==='trusted');
  expect((await dispatch('untrusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).ok).toBe(false);
@@ -8,6 +9,15 @@ it('rejects untrusted frames and malformed arguments before invoking privileged 
  expect((await dispatch('trusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a','extra'])).ok).toBe(false);
  expect(called).toBe(0);
  expect((await dispatch('trusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).ok).toBe(true);expect(called).toBe(1);
+});
+it('localizes trusted-frame, operation and input validation failures',async()=>{
+ let language:'en'|'ru'='en';const dispatch=createDispatcher({},()=>true,()=>language);
+ expect(await dispatch({},'unknown',[])).toMatchObject({ok:false,error:{code:'INVALID_REQUEST',message:'Unknown operation.'}});
+ language='ru';
+ expect(await dispatch({},'unknown',[])).toMatchObject({ok:false,error:{code:'INVALID_REQUEST',message:messageForError('INVALID_REQUEST','ru')}});
+ expect(await dispatch({},'start',['bad-id'])).toMatchObject({ok:false,error:{code:'INVALID_INPUT',message:messageForError('INVALID_INPUT','ru')}});
+ const untrusted=createDispatcher({},()=>false,()=> 'ru');
+ expect(await untrusted({},'start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).toMatchObject({ok:false,error:{code:'FORBIDDEN',message:messageForError('FORBIDDEN','ru')}});
 });
 it('does not echo unknown exceptions, paths or secrets to the renderer',async()=>{
  const dispatch=createDispatcher({create:async()=>{throw Error('password=secret C:/private');}},()=>true);
