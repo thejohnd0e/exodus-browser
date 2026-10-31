@@ -1,7 +1,8 @@
 import {mkdir,readdir,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {parseLatestRelease,parseSha256Sums,type LatestRelease} from './release';
-import {downloadInstaller} from './download';
+import {downloadInstaller,fetchAllowedRedirects} from './download';
+import {isAllowedHost} from './hosts';
 import type {UpdateState} from '../../shared/update';
 
 export const UPDATE_API_URL='https://api.github.com/repos/thejohnd0e/exodus-browser/releases/latest';
@@ -60,7 +61,7 @@ export class UpdateService {
     const destinationDir=join(this.options.root,'updates',offer.version);
     try{
       this.set({state:'downloading',version:offer.version,received:0,total:offer.installer.size});
-      const expectedSha256=parseSha256Sums(await this.fetchMetadataText(offer.checksumsUrl),offer.installer.name);
+      const expectedSha256=parseSha256Sums(await this.fetchChecksumsText(offer.checksumsUrl),offer.installer.name);
       const path=await downloadInstaller({
         url:offer.installer.url,
         expectedSize:offer.installer.size,
@@ -115,6 +116,15 @@ export class UpdateService {
   private async fetchMetadataText(url:string):Promise<string>{
     const response=await this.options.fetch(url,{signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS),redirect:'manual'}).catch(()=>{throw Error('UPDATE_CHECK_FAILED');});
     if(!response.ok)throw Error('UPDATE_CHECK_FAILED');
+    return this.readLimited(response);
+  }
+
+  private async fetchChecksumsText(url:string):Promise<string>{
+    const response=await fetchAllowedRedirects({url,signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS),fetch:this.options.fetch,isAllowedUrl:this.options.isAllowedUrl??isAllowedHost});
+    return this.readLimited(response);
+  }
+
+  private async readLimited(response:Response):Promise<string>{
     const bytes=Buffer.from(await response.arrayBuffer());
     if(bytes.length>METADATA_LIMIT_BYTES)throw Error('UPDATE_INVALID_RELEASE');
     return bytes.toString('utf8');

@@ -115,6 +115,26 @@ describe('UpdateService',()=>{
     await expect(access(join(root,'updates','1.1.78'))).rejects.toThrow();
   });
 
+  it('follows a SHA256SUMS redirect to an allowed GitHub host',async()=>{
+    const {svc}=service({fetch:async(url:string)=>{
+      if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===checksumsUrl)return new Response(null,{status:302,headers:{location:'https://objects.githubusercontent.com/sums'}});
+      if(url==='https://objects.githubusercontent.com/sums')return new Response(`${digest}  ExodusBrowser-Setup-1.1.78.exe\n`,{status:200});
+      return new Response(body(),{status:200});
+    }});
+    await svc.check();
+    expect(await svc.download()).toEqual({state:'ready',version:'1.1.78'});
+  });
+
+  it('refuses a SHA256SUMS redirect to an untrusted host',async()=>{
+    const {svc}=service({fetch:async(url:string)=>{
+      if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===checksumsUrl)return new Response(null,{status:302,headers:{location:'https://evil.example/sums'}});
+      return new Response(body(),{status:200});
+    }});
+    await svc.check();
+    expect(await svc.download()).toEqual({state:'error',code:'UPDATE_UNTRUSTED_REDIRECT'});
+  });
   it('refuses installation before a verified download',async()=>{
     const {svc,runInstaller}=service();
     await svc.check();

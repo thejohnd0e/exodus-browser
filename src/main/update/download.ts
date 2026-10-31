@@ -28,7 +28,7 @@ export async function downloadInstaller(options:DownloadOptions):Promise<string>
   const allowed=options.isAllowedUrl??isAllowedHost;
   if(!allowed(options.url))throw Error('UPDATE_UNTRUSTED_REDIRECT');
   if(options.signal.aborted)throw Error('UPDATE_CANCELLED');
-  const response=await fetchAllowed(options,allowed);
+  const response=await fetchAllowedRedirects({url:options.url,signal:options.signal,fetch:options.fetch,isAllowedUrl:allowed});
   const handle=await open(partialPath,'wx').catch(()=>{throw Error('UPDATE_DOWNLOAD_FAILED');});
   let finished=false;
   try{
@@ -67,17 +67,19 @@ export async function downloadInstaller(options:DownloadOptions):Promise<string>
   }
 }
 
-async function fetchAllowed(options:DownloadOptions,allowed:(url:string)=>boolean):Promise<Response>{
-  let target=options.url;
+export type DownloadFetch=(url:string,init:{signal:AbortSignal;redirect:'manual'})=>Promise<Response>;
+
+export async function fetchAllowedRedirects(request:{url:string;signal:AbortSignal;fetch:DownloadFetch;isAllowedUrl:(url:string)=>boolean}):Promise<Response>{
+  let target=request.url;
   for(let redirects=0;;redirects++){
-    const response=await options.fetch(target,{signal:options.signal,redirect:'manual'}).catch(()=>{
-      throw Error(options.signal.aborted?'UPDATE_CANCELLED':'UPDATE_DOWNLOAD_FAILED');
+    const response=await request.fetch(target,{signal:request.signal,redirect:'manual'}).catch(()=>{
+      throw Error(request.signal.aborted?'UPDATE_CANCELLED':'UPDATE_DOWNLOAD_FAILED');
     });
     if(response.status>=300&&response.status<400){
       const location=response.headers.get('location');
       if(!location||redirects>=MAX_REDIRECTS)throw Error('UPDATE_DOWNLOAD_FAILED');
       const next=new URL(location,target).toString();
-      if(!allowed(next))throw Error('UPDATE_UNTRUSTED_REDIRECT');
+      if(!request.isAllowedUrl(next))throw Error('UPDATE_UNTRUSTED_REDIRECT');
       target=next;
       continue;
     }
