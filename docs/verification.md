@@ -4,6 +4,24 @@ Date: 2026-10-30. Machine: Windows (x64), Node.js 22.23.4, npm 10.9.9, Electron 
 
 ## Automated checks
 
+### Update transport investigation (2026-10-31; unpublished 1.1.84 candidate)
+
+- User report: downloading the 1.1.83 update from installed 1.1.82 took almost ten minutes, then no installer appeared. Read-only inspection found the full 135,269,832-byte installer under the legacy update directory; SHA-256 was `609f58f4ee8052de5ceeb31af94f02ff083c27f77d67e508cc7ef380a9bd4398`. No real installer was run, no installed app was closed and no profile database was opened by this investigation.
+- Reproduced in disposable Electron processes: the old transport took 437.6 seconds; curl downloaded the same full asset in 6.34 seconds. A separate run of the original 1.1.82 writer took 70.9 seconds. These timings alone did not establish a writer bottleneck.
+- Bounded measurements counted bytes at the Chromium response and at the writer: both progressed slowly together (roughly 5-6 MB per 15 seconds). With HTTP/2 disabled only in the disposable diagnostic process, full Chromium downloads took 6.14/7.06 seconds. Node downloads in that comparison took 4.05/4.63 seconds. No protocol setting was changed in production.
+- Changed production to the default Node HTTPS transport, preserving redirect allowlisting and checksums. Two complete `UpdateService` runs **inside Electron, without injecting a test fetch implementation**, checked the live release and downloaded/verified the installer in 5.61 and 7.93 seconds. Connection diagnostics reported ALPN `http/1.1`. Both hashes matched the value above.
+- Limitations: an earlier Node metadata check failed and an earlier Node download hit a 30-second diagnostic cancellation. Network speed is not guaranteed. Chromium resolved DIRECT for GitHub and its asset host on this machine; Windows proxy/PAC and custom-certificate environments have not been accepted for the new Node transport.
+- A cancelled diagnostic of the old adapter exposed `ERR_INVALID_STATE: Controller is already closed` and an Electron error dialog. The obsolete adapter is removed rather than retained as a fallback. New tests check cancellation of the native response connection **before** forced test-server cleanup.
+- `tests/integration/update-node-transport.test.ts` uses an offline loopback server and the production default inside real Electron: metadata/checksum/installer redirect chain, HTTP/1.1 compatibility, verified bytes/readiness and installer-callback invocation, streamed cancellation without a partial file, and blocked untrusted redirects. The installer callback is a test stub: it does not prove real NSIS handoff. Replaces the old adapter-specific online GitHub test.
+- Unit regressions cover releasing streaming bodies discarded on allowed/rejected/malformed redirects and HTTP errors, cancelling a failed installer body, and the existing checksum/size/idle-timeout rules. `npm run verify` PASS (349 unit, typecheck, build); `npm run test:integration` PASS (60/60 across 16 files). The first full run exposed an index-based language inventory referencing the unstaged deleted adapter; staging its deletion and rerunning passed without changing the language policy test. Independent review identified discarded-body cleanup and a teardown-only socket-closure assertion; both were corrected and verified before the full runs.
+- Release 1.1.84 is not published. The missing installed-app install prompt and interactive NSIS handoff/restart remain unresolved and are not claimed fixed by these transport tests.
+
+### 1.1.84 release preparation (2026-10-31)
+
+- Fresh `npm run verify` PASS (349 unit, typecheck, build); `npm run test:integration` PASS (60/60). The first release-check run exposed a pre-existing race in the build-lock test: it started both reservations concurrently but assumed which one acquired the lock. The test now waits for the first build callback before checking rejection of the second reservation; production locking code is unchanged.
+- `npm run dist` PASS on the second packaging attempt: version 1.1.84, `app.asar` intact. The first NSIS attempt reported "Can't open output file"; subsequent inspection found no matching installer/compiler process and exclusive file access was available. No security product was disabled; an ordinary rebuild succeeded. The source of that transient lock is unproven.
+- Prepared `ExodusBrowser-Setup-1.1.84.exe` (135,269,002 bytes), SHA-256 `06f19ed2f75278cb97f4bf0f5eab102d4f4b4a70591f6e02bf7caef7bfd245aa`, plus `SHA256SUMS`. Installer execution remains unverified.
+
 ### Themed confirmations (2026-10-31)
 
 - Renderer unit tests cover cookie-clear cancel/approve, profile-delete cancel/approve, backup approval, Escape cancellation, and active-window close cancel/approve decisions.

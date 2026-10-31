@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {access,mkdtemp,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {downloadInstaller,isAllowedHost} from '../../src/main/update/download';
+import {downloadInstaller,fetchAllowedRedirects,isAllowedHost} from '../../src/main/update/download';
 
 const fileName='ExodusBrowser-Setup-1.1.78.exe';
 const payload=Buffer.from('installer-bytes-for-test');
@@ -121,5 +121,45 @@ describe('downloadInstaller',()=>{
     await expect(downloadInstaller(options({expectedSha256:'0'.repeat(64)}))).rejects.toThrow('UPDATE_CHECKSUM_MISMATCH');
     await access(join(dir,fileName));
     expect(await entries()).toEqual([fileName]);
+  });
+
+  it('stops when no data arrives before the idle timeout', async () => {
+    await expect(downloadInstaller(options({idleTimeoutMs: 50, fetch: async () => new Response(new ReadableStream({start() {}, pull() { return new Promise(() => undefined); }}), {status: 200})}))).rejects.toThrow('UPDATE_DOWNLOAD_STALLED');
+    expect(await entries()).toEqual([]);
+  });
+
+  it('cancels the response body when a size violation stops the download',async()=>{
+    let cancelled=false;
+    const body=new ReadableStream<Uint8Array>({
+      start(controller){controller.enqueue(new Uint8Array(100));},
+      cancel(){cancelled=true;},
+    });
+    await expect(downloadInstaller(options({expectedSize:4,fetch:async()=>new Response(body)}))).rejects.toThrow('UPDATE_TOO_LARGE');
+    expect(cancelled).toBe(true);
+    expect(await entries()).toEqual([]);
+  });
+});
+
+describe('fetchAllowedRedirects',()=>{
+  it.each([
+    {status:302,location:'https://objects.githubusercontent.com/asset',error:null},
+    {status:302,location:'https://evil.example/asset',error:'UPDATE_UNTRUSTED_REDIRECT'},
+    {status:302,location:undefined,error:'UPDATE_DOWNLOAD_FAILED'},
+    {status:503,location:undefined,error:'UPDATE_DOWNLOAD_FAILED'},
+  ])('cancels a discarded $status body before following or rejecting its response ($location)',async({status,location,error})=>{
+    let cancelled=false;
+    const stream=new ReadableStream<Uint8Array>({
+      start(controller){controller.enqueue(new Uint8Array(16));},
+      cancel(){cancelled=true;},
+    });
+    let calls=0;
+    const result=fetchAllowedRedirects({
+      url,signal:new AbortController().signal,isAllowedUrl:isAllowedHost,
+      fetch:async()=>++calls===1?new Response(stream,{status,headers:location?{location}:{}}):bodyResponse(payload),
+    });
+    if(error)await expect(result).rejects.toThrow(error);
+    else expect(await (await result).text()).toBe('installer-bytes-for-test');
+    expect(cancelled).toBe(true);
+    expect(calls).toBe(error?1:2);
   });
 });

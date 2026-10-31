@@ -10,13 +10,14 @@ const REQUEST_TIMEOUT_MS=10000;
 const METADATA_LIMIT_BYTES=64*1024;
 
 type Available=Extract<LatestRelease,{kind:'available'}>;
+type UpdateFetch=(url:string,init:{signal:AbortSignal;redirect:'manual'})=>Promise<Response>;
 
 export type UpdateServiceOptions={
   appVersion:string;
   root:string;
   apiUrl?:string;
   isAllowedUrl?:(url:string)=>boolean;
-  fetch:(url:string,init:{signal:AbortSignal;redirect:'manual'})=>Promise<Response>;
+  fetch?:UpdateFetch;
   busy:()=>Promise<boolean>;
   runInstaller:(path:string)=>Promise<void>;
   onState:(state:UpdateState)=>void;
@@ -27,8 +28,13 @@ export class UpdateService {
   private offer:Available|null=null;
   private controller:AbortController|null=null;
   private readyPath:string|null=null;
+  private readonly fetch:UpdateFetch;
 
-  constructor(private readonly options:UpdateServiceOptions){}
+  constructor(private readonly options:UpdateServiceOptions){
+    // Node's HTTP/1.1 transport avoids Chromium HTTP/2 download stalls without
+    // changing Electron's network settings or any profile browser configuration.
+    this.fetch=options.fetch??globalThis.fetch;
+  }
 
   state():UpdateState{
     return this.current;
@@ -68,7 +74,7 @@ export class UpdateService {
         expectedSha256,
         destinationDir,
         fileName:offer.installer.name,
-        fetch:this.options.fetch,
+        fetch:this.fetch,
         isAllowedUrl:this.options.isAllowedUrl,
         signal:controller.signal,
         onProgress:({received,total})=>{this.set({state:'downloading',version:offer.version,received,total});},
@@ -114,13 +120,16 @@ export class UpdateService {
   }
 
   private async fetchMetadataText(url:string):Promise<string>{
-    const response=await this.options.fetch(url,{signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS),redirect:'manual'}).catch(()=>{throw Error('UPDATE_CHECK_FAILED');});
-    if(!response.ok)throw Error('UPDATE_CHECK_FAILED');
+    const response=await this.fetch(url,{signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS),redirect:'manual'}).catch(()=>{throw Error('UPDATE_CHECK_FAILED');});
+    if(!response.ok){
+      await response.body?.cancel().catch(()=>undefined);
+      throw Error('UPDATE_CHECK_FAILED');
+    }
     return this.readLimited(response);
   }
 
   private async fetchChecksumsText(url:string):Promise<string>{
-    const response=await fetchAllowedRedirects({url,signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS),fetch:this.options.fetch,isAllowedUrl:this.options.isAllowedUrl??isAllowedHost});
+    const response=await fetchAllowedRedirects({url,signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS),fetch:this.fetch,isAllowedUrl:this.options.isAllowedUrl??isAllowedHost});
     return this.readLimited(response);
   }
 

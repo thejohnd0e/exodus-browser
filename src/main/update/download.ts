@@ -49,7 +49,7 @@ export async function downloadInstaller(options:DownloadOptions):Promise<string>
   try{
     for(;;){
       if(options.signal.aborted)throw Error('UPDATE_CANCELLED');
-      const {done,value}=await readWithIdleTimeout(reader,idleTimeoutMs,options.signal) as {done:boolean;value:Uint8Array};
+      const {done,value}=await readWithIdleTimeout(reader,idleTimeoutMs,options.signal);
       if(done)break;
       received+=value.length;
       if(received>options.expectedSize||received>MAX_INSTALLER_BYTES)throw Error('UPDATE_TOO_LARGE');
@@ -79,12 +79,13 @@ export async function downloadInstaller(options:DownloadOptions):Promise<string>
   }finally{
     options.signal.removeEventListener('abort',onAbort);
     if(!finished){
+      await reader.cancel().catch(()=>undefined);
       await rm(partialPath,{force:true}).catch(()=>undefined);
     }
   }
 }
 
-async function readWithIdleTimeout(reader:ReadableStreamDefaultReader<Uint8Array>,idleTimeoutMs:number,signal:AbortSignal):Promise<{done:boolean;value:Uint8Array}> {
+async function readWithIdleTimeout(reader:ReadableStreamDefaultReader<Uint8Array>,idleTimeoutMs:number,signal:AbortSignal):Promise<ReadableStreamReadResult<Uint8Array>>{
   let timer:ReturnType<typeof setTimeout>|undefined;
   const timeoutPromise=new Promise<never>((_resolve,reject)=>{
     timer=setTimeout(()=>reject(new Error('UPDATE_DOWNLOAD_STALLED')),idleTimeoutMs);
@@ -92,7 +93,7 @@ async function readWithIdleTimeout(reader:ReadableStreamDefaultReader<Uint8Array
   try{
     const result=await Promise.race([reader.read(),timeoutPromise]);
     if(timer)clearTimeout(timer);
-    return result as {done:boolean;value:Uint8Array};
+    return result;
   }catch(error){
     if(timer)clearTimeout(timer);
     if(signal.aborted)throw new Error('UPDATE_CANCELLED');
@@ -107,6 +108,7 @@ export async function fetchAllowedRedirects(request:{url:string;signal:AbortSign
     const response=await request.fetch(target,{signal:request.signal,redirect:'manual'}).catch(()=>{throw Error(request.signal.aborted?'UPDATE_CANCELLED':'UPDATE_DOWNLOAD_FAILED');});
     if(response.status>=300&&response.status<400){
       const location=response.headers.get('location');
+      await response.body?.cancel().catch(()=>undefined);
       if(!location||redirects>=MAX_REDIRECTS)throw Error('UPDATE_DOWNLOAD_FAILED');
       const next=new URL(location,target).toString();
       if(!request.isAllowedUrl(next))throw Error('UPDATE_UNTRUSTED_REDIRECT');
@@ -114,7 +116,10 @@ export async function fetchAllowedRedirects(request:{url:string;signal:AbortSign
       redirects++;
       continue;
     }
-    if(!response.ok)throw Error('UPDATE_DOWNLOAD_FAILED');
+    if(!response.ok){
+      await response.body?.cancel().catch(()=>undefined);
+      throw Error('UPDATE_DOWNLOAD_FAILED');
+    }
     return response;
   }
 }

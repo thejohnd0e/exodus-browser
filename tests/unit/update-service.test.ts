@@ -81,6 +81,17 @@ describe('UpdateService',()=>{
     expect(await svc.check()).toEqual({state:'error',code:'UPDATE_CHECK_FAILED'});
   });
 
+  it('cancels the discarded body when the release API returns an error',async()=>{
+    let cancelled=false;
+    const stream=new ReadableStream<Uint8Array>({
+      start(controller){controller.enqueue(new Uint8Array(16));},
+      cancel(){cancelled=true;},
+    });
+    const {svc}=service({fetch:async()=>new Response(stream,{status:503})});
+    expect(await svc.check()).toEqual({state:'error',code:'UPDATE_CHECK_FAILED'});
+    expect(cancelled).toBe(true);
+  });
+
   it('keeps the invalid-release code for malformed metadata',async()=>{
     const {svc}=service({fetch:async()=>new Response('{"tag_name":"nope"}',{status:200})});
     expect(await svc.check()).toEqual({state:'error',code:'UPDATE_INVALID_RELEASE'});

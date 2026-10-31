@@ -52,8 +52,11 @@ it('rejects another build while the first build owns the output lock',async()=>{
   const root=await buildRoot();
   let release!:()=>void;
   const gate=new Promise<void>(resolve=>{release=resolve;});
+  let acquired!:()=>void;
+  const ready=new Promise<void>(resolve=>{acquired=resolve;});
   try{
-    const first=withBuildVersion({root,run:async()=>gate});
+    const first=withBuildVersion({root,run:async()=>{acquired();await gate;}});
+    await ready;
     await expect(withBuildVersion({root,run:async()=>{}})).rejects.toThrow('BUILD_ALREADY_RUNNING');
     release();
     await expect(first).resolves.toMatchObject({version:'0.1.1'});
