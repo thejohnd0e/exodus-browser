@@ -200,3 +200,13 @@ The post-handoff “New fingerprint” button fix is recorded in `STATUS.md`: `n
 
 
 
+
+## Release 1.1.83 (2026-10-31)
+
+- Test release to verify the in-app download flow from an installed build.
+- 
+pm run verify PASS (342 unit); 
+pm run test:integration PASS (58/58); 
+pm run dist PASS with "Packaged application verified: version 1.1.83, app.asar intact".
+- Published 1.1.83 with ExodusBrowser-Setup-1.1.83.exe (135,269,832 bytes) and SHA256SUMS; SHA-256 609f58f4ee8052de5ceeb31af94f02ff083c27f77d67e508cc7ef380a9bd4398. Unauthenticated eleases/latest returns 1.1.83.
+- Live update check from version 1.1.82 (temporary test, not committed): vailable → downloaded → checksum matched.
