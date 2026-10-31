@@ -10,6 +10,15 @@ it('rejects untrusted frames and malformed arguments before invoking privileged 
  expect(called).toBe(0);
  expect((await dispatch('trusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).ok).toBe(true);expect(called).toBe(1);
 });
+it('accepts exactly one store link and rejects other argument shapes',async()=>{
+  let links:string[]=[];const dispatch=createDispatcher({addExtensionFromStore:async(link:string)=>{links.push(link);return null;}},(e)=>e==='trusted');
+  expect((await dispatch('trusted','addExtensionFromStore',['https://chromewebstore.google.com/detail/eagle/lieogkinebikhdchceieedcigeafdkid'])).ok).toBe(true);
+  expect((await dispatch('trusted','addExtensionFromStore',[])).ok).toBe(false);
+  expect((await dispatch('trusted','addExtensionFromStore',[42])).ok).toBe(false);
+  expect((await dispatch('trusted','addExtensionFromStore',['a','b'])).ok).toBe(false);
+  expect(links).toHaveLength(1);
+});
+
 it('validates extension operation arguments before touching the library',async()=>{
   let calls=0;const dispatch=createDispatcher({listExtensions:async()=>{calls++;return [];},addExtensionFolder:async()=>{calls++;return null;},removeExtension:async()=>{calls++;}},(e)=>e==='trusted');
   expect((await dispatch('trusted','listExtensions',[])).ok).toBe(true);

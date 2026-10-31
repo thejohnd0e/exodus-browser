@@ -2,7 +2,7 @@ import {app,ipcMain,dialog,safeStorage,net} from 'electron';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createWriteStream} from 'node:fs';
-import {Readable} from 'node:stream';
+import {Readable,Transform} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {ProfileService} from './profiles/service';
 import {SecretStore} from './security/secrets';
@@ -37,7 +37,14 @@ else void app.whenReady().then(async()=>{
     const response=await net.fetch(url,{signal:AbortSignal.timeout(180000)});if(!response.ok||!response.body)throw Error('ENGINE_DOWNLOAD_FAILED');
     await pipeline(Readable.fromWeb(response.body as any),createWriteStream(destination,{flags:'wx'}));
   });
-  const extensions=new ExtensionLibrary(root,profiles.database);
+  const extensionVersion=(releases.release as EngineRelease|undefined)?.version??'156.0.8078.80';
+  const downloadExtension=async(url:string,destination:string)=>{
+    const response=await net.fetch(url,{signal:AbortSignal.timeout(60000)}).catch(()=>{throw Error('EXTENSION_DOWNLOAD_FAILED');});
+    if(!response.ok||!response.body||!response.url.startsWith('https://'))throw Error('EXTENSION_DOWNLOAD_FAILED');
+    let received=0;const limit=100*1024**2;
+    await pipeline(Readable.fromWeb(response.body as never),new Transform({transform(chunk,_encoding,callback){received+=chunk.length;callback(received>limit?Error('EXTENSION_TOO_LARGE'):null,chunk);}}),createWriteStream(destination,{flags:'wx'}));
+  };
+  const extensions=new ExtensionLibrary(root,profiles.database,downloadExtension,extensionVersion);
   const sessions=new SessionStore(root);const settings=new AppSettingsService(root);const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions,extensionDirectory:id=>extensions.directoryFor(id)});await supervisor.recover();
   const backups=new BackupService(profiles,supervisor,undefined,sessions);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
   let currentLanguage=(await settings.getSettings()).language;
@@ -76,7 +83,8 @@ else void app.whenReady().then(async()=>{
       listExtensions:async()=>extensions.list(),
       addExtensionFolder:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.addFromFolder(r.filePaths[0]);},
       addExtensionZip:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.zip',currentLanguage),properties:['openFile'],filters:[{name:'Extension archive',extensions:['zip']}]});return r.canceled||!r.filePaths[0]?null:extensions.addFromZip(r.filePaths[0]);},
-      updateExtension:async extensionId=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.updateFromFolder(extensionId,r.filePaths[0]);},
+      updateExtension:async extensionId=>{if(extensions.list().find(entry=>entry.id===extensionId)?.source==='store')return extensions.updateFromStore(extensionId);const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.updateFromFolder(extensionId,r.filePaths[0]);},
+      addExtensionFromStore:async link=>extensions.addFromStore(link),
       removeExtension:async extensionId=>{await extensions.remove(extensionId);},
       getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;return value;}
    },event=>isTrustedSender(event as never,win.webContents,ui),()=>currentLanguage);

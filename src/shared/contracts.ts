@@ -44,6 +44,7 @@ export interface ProfileApi {
   listExtensions():Promise<Result<ExtensionEntry[]>>;
   addExtensionFolder():Promise<ExtensionResult>;
   addExtensionZip():Promise<ExtensionResult>;
+  addExtensionFromStore(link:string):Promise<ExtensionResult>;
   updateExtension(id:string):Promise<ExtensionResult>;
   removeExtension(id:string):Promise<Result<void>>;
   onCloseRequested(callback:()=>void):()=>void;

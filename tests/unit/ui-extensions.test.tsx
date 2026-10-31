@@ -19,7 +19,7 @@ function api(overrides:Partial<ProfileApi>={}):ProfileApi{return {
   remove:async()=>({ok:true,value:undefined}),start:async()=>({ok:true,value:undefined}),stop:async()=>({ok:true,value:undefined}),installEngine:async()=>({ok:true,value:undefined}),linkEngine:async()=>({ok:true,value:undefined}),
   backup:async()=>({ok:true,value:undefined}),restore:async()=>({ok:true,value:null}),exportProfile:async()=>({ok:true,value:null}),importProfile:async()=>({ok:true,value:null}),
   checkProxy:async()=>({ok:true,value:{ip:'192.0.2.1',countryCode:'US',service:'test'}}),importCookies:async()=>({ok:true,value:null}),exportCookies:async()=>({ok:true,value:null}),clearCookies:async()=>({ok:true,value:null}),
-  listExtensions:async()=>({ok:true,value:[entry]}),addExtensionFolder:async()=>({ok:true,value:null}),addExtensionZip:async()=>({ok:true,value:null}),updateExtension:async()=>({ok:true,value:null}),removeExtension:async()=>({ok:true,value:undefined}),
+  listExtensions:async()=>({ok:true,value:[entry]}),addExtensionFolder:async()=>({ok:true,value:null}),addExtensionZip:async()=>({ok:true,value:null}),addExtensionFromStore:async()=>({ok:true,value:null}),updateExtension:async()=>({ok:true,value:null}),removeExtension:async()=>({ok:true,value:undefined}),
   onCloseRequested:()=>()=>undefined,confirmClose:async()=>true,...overrides};
 }
 
