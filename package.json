@@ -1,0 +1,90 @@
+{
+  "name": "exodus-browser",
+  "productName": "Exodus Browser",
+  "author": "thejohnd0e",
+  "license": "GPL-3.0-only",
+  "version": "1.2.6",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "start": "electron .",
+    "build": "node scripts/build.mjs",
+    "dist": "node scripts/dist.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run tests/unit",
+    "test:integration": "node scripts/build.mjs && vitest run tests/integration",
+    "verify": "node scripts/verify.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "ipaddr.js": "2.2.0",
+    "maxmind": "5.0.7",
+    "proxy-chain": "3.0.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@testing-library/react": "16.3.3",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
+    "flag-icons": "7.6.0",
+    "jsdom": "26.1.0",
+    "playwright": "1.64.1",
+    "typescript": "7.0.2",
+    "vite": "6.4.5",
+    "vitest": "3.2.7",
+    "ws": "8.22.0"
+  },
+  "build": {
+    "appId": "com.exodusbrowser.desktop",
+    "productName": "Exodus Browser",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "npmRebuild": false,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "directories": {
+      "output": "dist-install"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "ico/exodus-icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createStartMenuShortcut": true,
+      "createDesktopShortcut": false,
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "en_US"
+      ],
+      "include": "build/installer.nsh",
+      "installerIcon": "ico/exodus-icon.ico",
+      "uninstallerIcon": "ico/exodus-icon.ico",
+      "artifactName": "ExodusBrowser-Setup-${version}.${ext}"
+    }
+  }
+}

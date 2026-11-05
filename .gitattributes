@@ -1,0 +1,4 @@
+# The stdio MCP entry point is executed directly by Node and imported by tests through Vite.
+# CRLF conversion breaks its ESM parse on Windows checkouts, so keep these files with LF.
+tools/mcp/*.mjs text eol=lf
+tools/mcp/*.mts text eol=lf

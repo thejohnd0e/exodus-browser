@@ -1,0 +1,73 @@
+import {useState,useEffect,useCallback,useRef} from 'react';
+import type {CookieFormat,Profile,ProfileApi,ProfileState,EngineStatus,LaunchWarning,Result,SavedProxy,SavedProxyInput,ExtensionEntry} from '../shared/contracts';
+import {ExtensionLibrary} from './ExtensionLibrary';
+import {ProfileEditor} from './ProfileEditor';
+import {ProfileList,profileCheckVersion,type ProxyCheckResult} from './ProfileList';
+import {EngineSettings} from './EngineSettings';
+import {ProxyLibrary} from './ProxyLibrary';
+import {ProxyEditor} from './ProxyEditor';
+import wordmark from '../../ico/exodus-wordmark.png';
+import {BUILD_INFO} from '../shared/build-info';
+import {SidebarFooter} from './SidebarFooter';
+import {I18nProvider,translate} from './i18n/provider';
+import type {AppLanguage} from '../shared/settings';
+import {messageForError} from '../shared/i18n/messages';
+import {nativeMessage} from '../shared/i18n/messages';
+import {ConfirmDialog} from './ConfirmDialog';
+import {AgentApiView} from './AgentApiView';
+import {nextZoom} from './zoom';
+export function App({api=window.profileApi}:{api?:ProfileApi}){
+ const [profiles,setProfiles]=useState<Profile[]>([]);const [proxies,setProxies]=useState<SavedProxy[]>([]);const [states,setStates]=useState<Record<string,ProfileState>>({});const [warnings,setWarnings]=useState<Record<string,LaunchWarning>>({});const [runningVersions,setRunningVersions]=useState<Record<string,string|null>>({});const [engine,setEngine]=useState<EngineStatus>({state:'missing'});const [query,setQuery]=useState('');const [editor,setEditor]=useState<Profile|null|undefined>();const [proxyEditor,setProxyEditor]=useState<SavedProxy|null|undefined>();const [busy,setBusy]=useState(false);const [message,setMessage]=useState<string|null>(null);const [extensions,setExtensions]=useState<ExtensionEntry[]>([]);const [view,setView]=useState<'profiles'|'proxies'|'extensions'|'agent'>('profiles');const [language,setLanguage]=useState<AppLanguage>('en');
+  const [proxyResults,setProxyResults]=useState<Record<string,ProxyCheckResult|undefined>>({});const [savedResults,setSavedResults]=useState<Record<string,ProxyCheckResult|undefined>>({});const [cookieResults,setCookieResults]=useState<Record<string,{kind:'import'|'export'|'clear';count:number;fileName:string;version:string}|undefined>>({});const [portableResults,setPortableResults]=useState<Record<string,{fileName:string;version:string}|undefined>>({});const [confirmation,setConfirmation]=useState<{message:string;confirmLabel:string;danger?:boolean;action:()=>void;cancelAction?:()=>void}|null>(null);const refreshSequence=useRef(0);
+ const t=(key:string,params?:Record<string,string|number>)=>translate(language,key,params);
+   const refresh=useCallback(async()=>{const sequence=++refreshSequence.current;try{const [p,s,w,e,x,v,ext]=await Promise.all([api.list(),api.states(),api.warnings(),api.engineStatus(),api.listProxies(),api.runningProxyVersions(),api.listExtensions()]);if(sequence!==refreshSequence.current)return;if(p.ok)setProfiles(p.value);else setMessage(p.error.code);if(s.ok)setStates(s.value);if(w.ok)setWarnings(w.value);if(e.ok)setEngine(e.value);if(x.ok)setProxies(x.value);else setMessage(x.error.code);if(v.ok)setRunningVersions(v.value);if(ext.ok)setExtensions(ext.value);}catch{if(sequence===refreshSequence.current)setMessage('OPERATION_FAILED');}},[api]);
+    useEffect(()=>{document.title=`Exodus Browser v${BUILD_INFO.version}`;},[]);
+     // UI zoom lives in the renderer: CSS zoom works in the packaged build without menu accelerators.
+     useEffect(()=>{
+       let factor=1;
+       const handler=(event:KeyboardEvent)=>{
+         if(!event.ctrlKey&&!event.metaKey)return;
+         const next=nextZoom(event.key,factor);
+         if(next===null)return;
+         event.preventDefault();
+         factor=next;
+         document.documentElement.style.zoom=String(factor);
+       };
+       window.addEventListener('keydown',handler);
+       return()=>window.removeEventListener('keydown',handler);
+     },[]);
+    useEffect(()=>{document.documentElement.lang=language==='ru'?'ru':'en';},[language]);
+    useEffect(()=>{let active=true;void api.getSettings().then(result=>{if(active&&result.ok)setLanguage(result.value.language);}).catch(()=>undefined);return()=>{active=false;};},[api]);
+     useEffect(()=>api.onCloseRequested(()=>{askConfirmation('manager.close.confirm','manager.close.button',true,()=>{void api.confirmClose(true);},undefined,()=>{void api.confirmClose(false);});}),[api]);
+  useEffect(()=>{void refresh();const timer=setInterval(()=>void refresh(),1000);return()=>clearInterval(timer);},[refresh]);
+   async function run<T>(action:()=>Promise<Result<T>>):Promise<T|false>{setBusy(true);setMessage(null);try{const result=await action();if(!result.ok){setMessage(result.error.code);return false;}return result.value;}catch{setMessage('OPERATION_FAILED');return false;}finally{await refresh();setBusy(false);}}
+   function updateLanguage(next:AppLanguage){setBusy(true);void api.updateSettings({language:next}).then(result=>{if(result.ok)setLanguage(result.value.language);else setMessage(result.error.code);}).catch(()=>setMessage('OPERATION_FAILED')).finally(()=>setBusy(false));}
+  const filtered=profiles.filter(p=>(p.name+' '+p.note).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+ async function createProxy(input:SavedProxyInput){return run(()=>api.createProxy(input));}
+   function cookieAction(id:string,kind:'import'|'export',format?:CookieFormat){
+   const p=profiles.find(item=>item.id===id);if(!p)return;const version=p.updatedAt;
+   void run(()=>kind==='import'?api.importCookies(id):api.exportCookies(id,format??'json')).then(value=>{
+    if(!value)return;
+     setCookieResults(prev=>({...prev,[id]:{kind,count:value.count,fileName:value.fileName,version}}));
+   });
+   }
+      function askConfirmation(messageKey:Parameters<typeof nativeMessage>[0],confirmKey:Parameters<typeof nativeMessage>[0],danger:boolean,action:()=>void,params?:Record<string,string>,cancelAction?:()=>void){setConfirmation({message:nativeMessage(messageKey,language,params),confirmLabel:nativeMessage(confirmKey,language),danger,action,cancelAction});}
+     function clearCookies(id:string){const p=profiles.find(item=>item.id===id);if(!p)return;const version=p.updatedAt;askConfirmation('cookie.clear.confirm','cookie.clear.button',true,()=>{void run(()=>api.clearCookies(id)).then(value=>{if(value)setCookieResults(prev=>({...prev,[id]:{kind:'clear',count:0,fileName:'',version}}));});},{name:p.name});}
+   async function importPortableProfile(){const imported=await run(()=>api.importProfile());if(imported)setMessage('PORTABLE_PROFILE_IMPORTED');}
+   async function exportPortableProfile(id:string){const profile=profiles.find(item=>item.id===id);if(!profile)return;const result=await run(()=>api.exportProfile(id));if(result)setPortableResults(prev=>({...prev,[id]:{fileName:result.fileName,version:profile.updatedAt}}));}
+    return <I18nProvider language={language} onLanguageChange={updateLanguage}><div className="shell"><aside><div className="brand"><div className="brand-logo-viewport"><img src={wordmark} alt="Exodus Browser" width={1200} height={300}/></div></div><nav><button className={view==='profiles'?'nav-active':''} aria-label={t('Profiles')} disabled={busy} onClick={()=>setView('profiles')}>▦ {t('Browser profiles')}</button><button className={view==='proxies'?'nav-active':''} aria-label={t('Proxies')} disabled={busy} onClick={()=>setView('proxies')}>⇄ {t('Proxies')}</button><button className={view==='extensions'?'nav-active':''} aria-label={t('Extensions')} disabled={busy} onClick={()=>setView('extensions')}>⧉ {t('Extensions')}</button><button className={view==='agent'?'nav-active':''} aria-label={t('Agent API')} disabled={busy} onClick={()=>setView('agent')}>⌘ {t('Agent API')}</button></nav><SidebarFooter disabled={busy} api={api}/></aside><main>
+  {message&&<div className="notice" role="alert"><span>{messageForError(message,language)}</span><button onClick={()=>setMessage(null)} aria-label={t('Dismiss message')}>✕</button></div>}
+     {view==='profiles'?<><header className="page-header"><div><h1>{t('Browser profiles')}</h1></div><button className="primary" onClick={()=>setEditor(null)} disabled={busy}>＋ {t('New profile')}</button></header><section className="summary-row"><div className="summary-counts"><span><strong>{profiles.length}</strong> {t('Total profiles')}</span><span><strong>{Object.values(states).filter(s=>s==='running').length}</strong> {t('Currently running')}</span></div><EngineSettings status={engine} busy={busy} onInstall={()=>askConfirmation('engine.download.confirm','engine.download.button',false,()=>void run(()=>api.installEngine()))} onLink={()=>askConfirmation('engine.link.confirm','engine.link.button',false,()=>void run(()=>api.linkEngine()))}/></section><div className="toolbar"><input placeholder={t('Search profiles')} aria-label={t('Search profiles')} value={query} onChange={e=>setQuery(e.target.value)}/><button disabled={busy} onClick={()=>void run(()=>api.restore())}>{t('Restore from backup')}</button><button disabled={busy||engine.state!=='ready'} onClick={()=>void importPortableProfile()}>{t('portable.import.button')}</button></div>
+     {filtered.length?<ProfileList language={language} profiles={filtered} states={states} warnings={warnings} proxyResults={proxyResults} runningVersions={runningVersions} cookieResults={cookieResults} portableResults={portableResults} engineReady={engine.state==='ready'} busy={busy} onEdit={setEditor} onImportCookies={id=>cookieAction(id,'import')} onExportCookies={(id,format)=>cookieAction(id,'export',format)} onClearCookies={clearCookies} onAction={(action,id)=>{
+   if(action==='checkProxy'){const p=profiles.find(p=>p.id===id);if(!p)return;const version=profileCheckVersion(p);setProxyResults(prev=>({...prev,[id]:undefined}));void run(async()=>{const result=await api.checkProxy(id);if(result.ok&&result.value){const {ip,countryCode}=result.value;setProxyResults(prev=>({...prev,[id]:{ip,countryCode,version}}));}return result;});return;}
+    if(action==='exportProfile'){const p=profiles.find(p=>p.id===id);if(p)askConfirmation('portable.export.confirm','common.continue',true,()=>void exportPortableProfile(id));return;}
+    if(action==='remove'){askConfirmation('profile.delete.confirm','common.delete',true,()=>void run(()=>api.remove(id)));return;}
+    if(action==='backup'){askConfirmation('backup.warning','common.continue',false,()=>void run(()=>api.backup(id)));return;}
+    void run(()=>action==='start'?api.start(id):api.stop(id));
+  }}/>:<section className="empty"><div>▧</div><h2>{t(query?'No profiles found':'Start with your first profile')}</h2><p>{t(query?'Try a different name.':'Each profile will have its own cookies, site data and settings.')}</p>{!query&&<button onClick={()=>setEditor(null)}>{t('Create profile')}</button>}</section>}</>:view==='extensions'?<ExtensionLibrary entries={extensions} busy={busy} onAddFolder={()=>void run(()=>api.addExtensionFolder())} onAddZip={()=>void run(()=>api.addExtensionZip())} onAddStore={link=>void run(()=>api.addExtensionFromStore(link))} onUpdate={id=>void run(()=>api.updateExtension(id))} onRemove={id=>void run(()=>api.removeExtension(id))}/>:view==='agent'?<AgentApiView api={api} profiles={profiles} proxies={proxies} busy={busy} onResult={result=>{if(!result.ok)setMessage(result.error.code);}}/>:<ProxyLibrary language={language} proxies={proxies} profiles={profiles} busy={busy} results={savedResults} onCreate={()=>setProxyEditor(null)} onEdit={setProxyEditor} onRemove={id=>void run(()=>api.removeProxy(id))} onCheck={p=>{const version=p.updatedAt;setSavedResults(prev=>({...prev,[p.id]:undefined}));void run(async()=>{const result=await api.checkSavedProxy(p.id);if(result.ok){const {ip,countryCode}=result.value;setSavedResults(prev=>({...prev,[p.id]:{ip,countryCode,version}}));}return result;});}}/>}
+  <footer className="disclaimer">{t('Profile isolation is not anti-detection. A browser proxy is not a VPN; prevention of all DNS/WebRTC/UDP leaks is not guaranteed.')}</footer></main>
+ {editor!==undefined&&<ProfileEditor key={editor?.id??'new'} profile={editor??undefined} proxies={proxies} extensions={extensions} busy={busy} chromeVersion={engine.version??null} hostGpuVendors={engine.hostGpuVendors} hostGpuModels={engine.hostGpuModels} onCancel={()=>setEditor(undefined)} onSaveProxy={createProxy} onSave={async input=>{const result=await run(()=>editor?api.update(editor.id,input):api.create(input));if(result!==false)setEditor(undefined);}}/>}
+ {proxyEditor!==undefined&&<ProxyEditor proxy={proxyEditor??undefined} busy={busy} onCancel={()=>setProxyEditor(undefined)} onSave={async input=>(await run(()=>proxyEditor?api.updateProxy(proxyEditor.id,input):api.createProxy(input)))!==false}/>}
+   {confirmation&&<ConfirmDialog title={t('Confirm action')} message={confirmation.message} cancelLabel={nativeMessage('cookie.clear.cancel',language)} confirmLabel={confirmation.confirmLabel} danger={confirmation.danger} onCancel={()=>{const action=confirmation.cancelAction;setConfirmation(null);action?.();}} onConfirm={()=>{const action=confirmation.action;setConfirmation(null);action();}}/>}
+   </div></I18nProvider>;
+}

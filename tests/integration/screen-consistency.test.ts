@@ -1,0 +1,177 @@
+import {it,expect} from 'vitest';
+import {createServer} from 'node:http';
+import {once} from 'node:events';
+import type {AddressInfo} from 'node:net';
+import {existsSync,readdirSync} from 'node:fs';
+import {join} from 'node:path';
+import {ChromiumAdapter} from '../../src/main/engines/chromium';
+import {CdpClient} from '../../src/main/cdp/client';
+import {deriveScreenAvailability} from '../../src/main/engines/spoof-script';
+import {tempRoot,cleanup} from '../fixtures/profiles';
+import {DEFAULT_FINGERPRINT,type Fingerprint} from '../../src/shared/fingerprint';
+
+const base=join(process.env.LOCALAPPDATA??'','ms-playwright');const candidates=existsSync(base)?readdirSync(base).filter(n=>n.startsWith('chromium-')).sort().reverse():[];const exe=process.env.LOCAL_PROFILES_TEST_CHROMIUM??join(base,candidates[0]??'missing','chrome-win64','chrome.exe');
+
+interface RealScreen{width:number;height:number;availWidth:number;availHeight:number;dpr:number}
+interface ScreenReport{
+  tag:string;
+  screen:[number,number,number,number];
+  dpr:number;
+  inner:[number,number];
+  vv:[number,number,number];
+  mqSpoof:boolean;
+  mqReal:boolean;
+  mqMinSpoof:boolean;
+  mqResolution:boolean;
+}
+
+/**
+ * The page reports values relative to the requested spoof: the spoof width/height are embedded by
+ * the test, so nothing depends on a particular monitor resolution or scale factor.
+ */
+function pageFor(tag:string,spoof:{width:number;height:number},realWidth:number,dpr:number,frame?:string){
+  const attributes=`screen:[screen.width,screen.height,screen.availWidth,screen.availHeight],dpr:devicePixelRatio,inner:[innerWidth,innerHeight],vv:[visualViewport.width,visualViewport.height,visualViewport.scale],mqSpoof:matchMedia('(device-width: ${spoof.width}px)').matches,mqReal:matchMedia('(device-width: ${realWidth}px)').matches,mqMinSpoof:matchMedia('(min-device-width: ${spoof.width}px)').matches,mqResolution:matchMedia('(resolution: ${dpr}dppx)').matches`;
+  const report=`const measure=()=>fetch('/report?value='+encodeURIComponent(JSON.stringify({tag:'${tag}',${attributes}})));measure();addEventListener('resize',measure);`;
+  return `<!doctype html><body>${frame??''}<script>${report}</script>`;
+}
+
+function listen(server:ReturnType<typeof createServer>){return new Promise<number>(resolve=>{server.listen(0,'127.0.0.1',()=>resolve((server.address() as AddressInfo).port));});}
+function withTimeout(deadline:number){return {get expired(){return Date.now()>deadline;}};}
+
+/** Reads the host display of a fresh profile so tests never assume a fixed resolution. */
+async function readRealScreen():Promise<RealScreen>{
+  const reports:Array<{screen:[number,number,number,number];dpr:number}>=[];
+  const server=createServer((req,res)=>{if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><script>fetch('/report?value='+encodeURIComponent(JSON.stringify({screen:[screen.width,screen.height,screen.availWidth,screen.availHeight],dpr:devicePixelRatio})));</script>`);});
+  const port=await listen(server);const root=tempRoot();
+  try{
+    const p=await new ChromiumAdapter(exe).launch({profileId:'screen-real-reference',userDataDir:root,languages:['en-US'],startUrls:[`http://127.0.0.1:${port}`],fingerprint:{...DEFAULT_FINGERPRINT,screen:{mode:'real'}}});
+    try{for(let i=0;i<100&&reports.length===0;i++)await new Promise(r=>setTimeout(r,100));expect(reports,'the host screen did not report').toHaveLength(1);}
+    finally{await p.stop();}
+  }finally{cleanup(root);server.closeAllConnections();server.close();}
+  const [width,height,availWidth,availHeight]=reports[0]!.screen;
+  return {width,height,availWidth,availHeight,dpr:reports[0]!.dpr};
+}
+
+/** Picks an emulated screen that provably differs from the host display. */
+function pickSpoof(real:RealScreen){return {width:real.width-640>=800?real.width-640:real.width+640,height:real.height-360>=600?real.height-360:real.height+360};}
+
+it('manual screen mode keeps JS, CSS media queries and the real viewport consistent',async()=>{
+  if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
+  const real=await readRealScreen();
+  const spoof=pickSpoof(real);
+  const expected=deriveScreenAvailability(spoof,real);
+  const dpr=real.dpr===1?2:1;
+  const fingerprint:Fingerprint={...DEFAULT_FINGERPRINT,screen:{mode:'manual',width:spoof.width,height:spoof.height,dpr}};
+  const reports:ScreenReport[]=[];
+  const child=pageFor('child',spoof,real.width,dpr);
+  const parent=pageFor('parent',spoof,real.width,dpr,'<iframe src="/child"></iframe>');
+  const server=createServer((req,res)=>{
+    if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}
+    res.setHeader('Content-Type','text/html');res.end(req.url?.startsWith('/child')?child:parent);
+  });
+  const port=await listen(server);const url=`http://127.0.0.1:${port}`;
+  const root=tempRoot();let client:CdpClient|null=null;
+  const engine=new ChromiumAdapter(exe,(inStream,outStream)=>{client=CdpClient.fromPipe(inStream,outStream);return client;});
+  const last=(tag:string)=>reports.filter(r=>r.tag===tag).at(-1);
+  try{
+    const p=await engine.launch({profileId:'screen-consistency',userDataDir:root,languages:['en-US'],startUrls:[url],fingerprint});
+    try{
+      for(let i=0;i<100&&!last('parent');i++)await new Promise(r=>setTimeout(r,100));
+      const first=last('parent');expect(first,'page did not report').toBeTruthy();
+      expect(first!.screen.slice(0,2)).toEqual([spoof.width,spoof.height]);
+      expect(first!.screen.slice(2)).toEqual([expected.width,expected.height]);
+      expect(first!.dpr).toBe(dpr);
+      expect(first!.mqSpoof).toBe(true);
+      expect(first!.mqReal).toBe(false);
+      expect(first!.mqMinSpoof).toBe(true);
+      expect(first!.mqResolution).toBe(true);
+      expect(first!.vv.slice(0,2)).toEqual(first!.inner.slice(0,2));
+      expect(first!.vv[2]).toBe(1);
+      const frame=last('child');expect(frame,'same-origin frame did not report').toBeTruthy();
+      expect(frame!.screen.slice(0,2)).toEqual([spoof.width,spoof.height]);
+      expect(frame!.mqSpoof).toBe(true);
+      const baseline=first!.inner[0];
+      const {targetInfos}=await client!.send<{targetInfos:Array<{targetId:string;type:string}>}>('Target.getTargets',{});
+      const page=targetInfos.find(t=>t.type==='page')!;
+      const {windowId}=await client!.send<{windowId:number}>('Browser.getWindowForTarget',{targetId:page.targetId});
+      await client!.send('Browser.setWindowBounds',{windowId,bounds:{width:900,height:650}});
+      const deadline=withTimeout(Date.now()+6000);
+      let resized=first;
+      while(resized!.inner[0]>=baseline&&!deadline.expired){await new Promise(r=>setTimeout(r,100));resized=last('parent');}
+      expect(resized!.inner[0],'the emulated screen must not freeze the viewport').toBeLessThan(baseline);
+      expect(resized!.vv.slice(0,2)).toEqual(resized!.inner.slice(0,2));
+      expect(resized!.screen.slice(0,2)).toEqual([spoof.width,spoof.height]);
+      expect(resized!.mqSpoof).toBe(true);
+      const beforeReload=reports.filter(r=>r.tag==='parent').length;
+      const {sessionId}=await client!.send<{sessionId:string}>('Target.attachToTarget',{targetId:page.targetId,flatten:true});
+      await client!.send('Page.reload',{},sessionId);
+      for(let i=0;i<100&&reports.filter(r=>r.tag==='parent').length<=beforeReload;i++)await new Promise(r=>setTimeout(r,100));
+      const reloaded=last('parent');
+      expect(reports.filter(r=>r.tag==='parent').length).toBeGreaterThan(beforeReload);
+      expect(reloaded!.screen.slice(0,2)).toEqual([spoof.width,spoof.height]);
+      expect(reloaded!.mqSpoof).toBe(true);
+    }finally{await p.stop();}
+    const beforeRestart=reports.filter(r=>r.tag==='parent').length;
+    const restarted=await engine.launch({profileId:'screen-consistency',userDataDir:root,languages:['en-US'],startUrls:[url],fingerprint});
+    try{
+      for(let i=0;i<100&&reports.filter(r=>r.tag==='parent').length<=beforeRestart;i++)await new Promise(r=>setTimeout(r,100));
+      const after=last('parent');
+      expect(reports.filter(r=>r.tag==='parent').length).toBeGreaterThan(beforeRestart);
+      expect(after!.screen.slice(0,2)).toEqual([spoof.width,spoof.height]);
+      expect(after!.mqSpoof).toBe(true);
+    }finally{await restarted.stop();}
+  }finally{cleanup(root);server.closeAllConnections();server.close();}
+},120000);
+
+it('real screen mode keeps JS and CSS media queries consistent without emulation',async()=>{
+  if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
+  const reports:ScreenReport[]=[];
+  const server=createServer((req,res)=>{if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><script>(()=>{const v={tag:'parent',screen:[screen.width,screen.height,screen.availWidth,screen.availHeight],dpr:devicePixelRatio,inner:[innerWidth,innerHeight],vv:[visualViewport.width,visualViewport.height,visualViewport.scale],mqSpoof:matchMedia('(device-width: '+screen.width+'px)').matches,mqReal:false,mqMinSpoof:true,mqResolution:matchMedia('(resolution: '+devicePixelRatio+'dppx)').matches};fetch('/report?value='+encodeURIComponent(JSON.stringify(v)))})()</script>`);});
+  const port=await listen(server);const url=`http://127.0.0.1:${port}`;
+  const root=tempRoot();
+  try{
+    const p=await new ChromiumAdapter(exe).launch({profileId:'screen-real',userDataDir:root,languages:['en-US'],startUrls:[url],fingerprint:{...DEFAULT_FINGERPRINT,screen:{mode:'real'}}});
+    try{
+      for(let i=0;i<100&&reports.length===0;i++)await new Promise(r=>setTimeout(r,100));
+      expect(reports,'page did not report').toHaveLength(1);
+      expect(reports[0]!.mqSpoof,'the real screen must match its own media query').toBe(true);
+      expect(reports[0]!.mqResolution,'device pixel ratio must match its own media query').toBe(true);
+      expect(reports[0]!.screen[2]).toBeLessThanOrEqual(reports[0]!.screen[0]);
+      expect(reports[0]!.screen[3]).toBeLessThanOrEqual(reports[0]!.screen[1]);
+    }finally{await p.stop();}
+  }finally{cleanup(root);server.closeAllConnections();server.close();}
+},120000);
+
+/**
+ * Known Chromium limitation: page-level device emulation is not propagated to out-of-process
+ * iframes, and Emulation.setDeviceMetricsOverride is rejected on an iframe target. The injected
+ * script still spoofs window.screen there, so a cross-origin frame sees JS and CSS disagree.
+ * This test records the limitation instead of hiding it; it must be removed when Chromium
+ * propagates emulated screen metrics to OOPIFs.
+ */
+it('cross-origin iframe CSS media queries still use the host screen',async()=>{
+  if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
+  const real=await readRealScreen();
+  const spoof=pickSpoof(real);
+  const reports:ScreenReport[]=[];
+  const childServer=createServer((req,res)=>{
+    if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}
+    res.setHeader('Content-Type','text/html');res.end(pageFor('child',spoof,real.width,1));
+  });
+  const childPort=await listen(childServer);
+  const parentServer=createServer((req,res)=>{
+    if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}
+    res.setHeader('Content-Type','text/html');res.end(pageFor('parent',spoof,real.width,1,`<iframe src="http://localhost:${childPort}/child"></iframe>`));
+  });
+  const parentPort=await listen(parentServer);const url=`http://127.0.0.1:${parentPort}`;
+  const root=tempRoot();
+  try{
+    const p=await new ChromiumAdapter(exe).launch({profileId:'screen-oopif',userDataDir:root,languages:['en-US'],startUrls:[url],fingerprint:{...DEFAULT_FINGERPRINT,screen:{mode:'manual',width:spoof.width,height:spoof.height}}});
+    try{
+      for(let i=0;i<100&&!reports.some(r=>r.tag==='child');i++)await new Promise(r=>setTimeout(r,100));
+      const frame=reports.filter(r=>r.tag==='child').at(-1);expect(frame,'cross-origin frame did not report').toBeTruthy();
+      expect(frame!.screen.slice(0,2)).toEqual([spoof.width,spoof.height]);
+      expect(frame!.mqSpoof,'limitation changed: the frame now inherits the emulated screen').toBe(false);
+    }finally{await p.stop();}
+  }finally{cleanup(root);parentServer.closeAllConnections();parentServer.close();childServer.closeAllConnections();childServer.close();}
+},120000);

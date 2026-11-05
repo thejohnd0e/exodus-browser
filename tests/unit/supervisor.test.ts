@@ -1,0 +1,168 @@
+import {it,expect,vi} from 'vitest';
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {Supervisor} from '../../src/main/runtime/supervisor';
+import {ProfileService} from '../../src/main/profiles/service';
+import {tempRoot,testSecrets,valid,cleanup} from '../fixtures/profiles';
+import {DEFAULT_FINGERPRINT} from '../../src/shared/fingerprint';
+import type {BrowserEngineAdapter} from '../../src/main/engines/types';
+import {SessionStore} from '../../src/main/sessions/store';
+function fixture(){const ends:Array<()=>void>=[];let launches=0;
+  const engine:BrowserEngineAdapter={capabilities:{fingerprints:false},validate:async()=>{},launch:async()=>{launches++;let finish!:()=>void;const exit=new Promise<{code:number|null;signal:string|null}>(r=>{finish=()=>r({code:0,signal:null});});ends.push(finish);return {pid:100+launches,executable:'fixture.exe',startedAt:new Date().toISOString(),exit,stop:async()=>finish()};}};
+  return {engine,launches:()=>launches,exit:(i=0)=>ends[i]()};}
+const wait=async(fn:()=>void)=>{for(let i=0;i<50;i++){try{fn();return;}catch{await new Promise(r=>setTimeout(r,10));}}fn();};
+it('prevents duplicate starts, allows different profiles and releases them on exit',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const s=new Supervisor(profiles,f.engine,{probe:async()=>[]});
+  try{const a=await profiles.create(valid);const b=await profiles.create(valid);const result=await Promise.allSettled([s.start(a.id),s.start(a.id)]);expect(result.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(f.launches()).toBe(1);await s.start(b.id);expect(s.states()[b.id]).toBe('running');await expect(s.assertStopped(a.id)).rejects.toThrow();await s.stop(a.id);expect(s.states()[a.id]).toBe('stopped');await s.stop(b.id);expect(s.states()[b.id]).toBe('stopped');await s.shutdown();}finally{profiles.close();cleanup(root);}
+});
+it('holds an exclusive stopped-profile lease for backup and editing',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const s=new Supervisor(profiles,f.engine,{probe:async()=>[]});
+  try{const a=await profiles.create(valid);await s.withStopped(a.id,async()=>{await expect(s.start(a.id)).rejects.toThrow();});expect(f.launches()).toBe(0);}finally{profiles.close();cleanup(root);}
+});
+it('keeps a failed stop blocked and does not claim the browser has stopped',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const launch=f.engine.launch;f.engine.launch=async i=>({...await launch(i),stop:async()=>{throw Error('timeout');}});const s=new Supervisor(profiles,f.engine,{probe:async()=>[]});
+  try{const a=await profiles.create(valid);await s.start(a.id);await expect(s.stop(a.id)).rejects.toThrow();expect(s.states()[a.id]).toBe('blocked');await expect(s.assertStopped(a.id)).rejects.toThrow();f.exit(0);await new Promise(r=>setTimeout(r,20));}finally{profiles.close();cleanup(root);}
+});
+it('closes the proxy lease when browser launch fails',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const close=vi.fn(async()=>{});
+  const engine:BrowserEngineAdapter={capabilities:{fingerprints:false},validate:async()=>{},launch:async()=>{throw Error('LAUNCH_FAILED');}};
+  const s=new Supervisor(profiles,engine,{probe:async()=>[],bridge:async()=>({url:'http://127.0.0.1:1',close}),exitLocation:async()=>({country:'DE',zone:null})});
+  try{const p=await profiles.createProxy({name:'P',kind:'http',host:'localhost',port:8080});const a=await profiles.create({...valid,proxyId:p.id});await expect(s.start(a.id)).rejects.toThrow();expect(close).toHaveBeenCalledTimes(1);}finally{profiles.close();cleanup(root);}
+});
+it('closes the proxy lease when the browser exits on its own',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const close=vi.fn(async()=>{});const f=fixture();
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[],bridge:async()=>({url:'http://127.0.0.1:1',close}),exitLocation:async()=>({country:'DE',zone:null})});
+  try{const p=await profiles.createProxy({name:'P',kind:'http',host:'localhost',port:8080});const a=await profiles.create({...valid,proxyId:p.id});await s.start(a.id);f.exit(0);await wait(()=>expect(close).toHaveBeenCalledTimes(1));expect(s.states()[a.id]).toBe('stopped');}finally{profiles.close();cleanup(root);}
+});
+it('treats a leftover runtime journal as blocked only while its browser is still running',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());
+  try{
+    const a=await profiles.create(valid);await writeFile(join(root,'runtime-'+a.id+'.json'),'{}');
+    const live=new Supervisor(profiles,fixture().engine,{probe:async()=>[{pid:5,executable:'chrome.exe',createdAt:'',commandLine:`--user-data-dir=${join(root,'profiles',a.id)}`}]});
+    await live.recover();expect(live.states()[a.id]).toBe('blocked');
+    expect(await readFile(join(root,'runtime-'+a.id+'.json'),'utf8')).toBe('{}');
+  }finally{profiles.close();cleanup(root);}
+});
+
+it('clears a stale journal instead of blocking the profile forever',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());
+  try{
+    const a=await profiles.create(valid);await writeFile(join(root,'runtime-'+a.id+'.json'),'{}');
+    const s=new Supervisor(profiles,fixture().engine,{probe:async()=>[]});
+    await s.recover();
+    expect(s.states()[a.id]).toBe('stopped');
+    await expect(readFile(join(root,'runtime-'+a.id+'.json'),'utf8')).rejects.toThrow();
+  }finally{profiles.close();cleanup(root);}
+});
+
+it('keeps all profiles blocked when the process inventory is unavailable',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());
+  try{
+    const a=await profiles.create(valid);await writeFile(join(root,'runtime-'+a.id+'.json'),'{}');
+    const s=new Supervisor(profiles,fixture().engine,{probe:async()=>{throw Error('inventory');}});
+    await s.recover();expect(s.states()[a.id]).toBe('blocked');
+  }finally{profiles.close();cleanup(root);}
+});
+it('keeps running proxy snapshots and uses an edited shared proxy only for new launches',async()=>{
+ const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const snapshots:Array<{host:string;password?:string}>=[];
+ const s=new Supervisor(profiles,f.engine,{probe:async()=>[],bridge:async input=>{snapshots.push({...input});return {url:'http://127.0.0.1:1',close:async()=>{}};},exitLocation:async()=>({country:'DE',zone:null})});
+ try{const p=await profiles.createProxy({name:'P',kind:'http',host:'old.example',port:8080,password:'old-secret'});const a=await profiles.create({...valid,proxyId:p.id});const b=await profiles.create({...valid,proxyId:p.id});await s.start(a.id);
+ await profiles.updateProxy(p.id,{name:'P',kind:'http',host:'new.example',port:8080,password:'new-secret'});await s.start(b.id);
+ expect(snapshots.map(p=>p.host)).toEqual(['old.example','new.example']);expect(snapshots[0].password).toBe('old-secret');expect(s.runningProxyVersions()[a.id]).toBe(p.id+':'+p.updatedAt);expect(s.runningProxyVersions()[b.id]).not.toBe(s.runningProxyVersions()[a.id]);await s.shutdown();
+ }finally{profiles.close();cleanup(root);}
+});
+it('passes the stored fingerprint to the engine',async()=>{
+ const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const seen:Array<unknown>=[];
+ const engine:BrowserEngineAdapter={capabilities:{fingerprints:true},validate:async()=>{},launch:async input=>{seen.push(input.fingerprint);let finish!:()=>void;const exit=new Promise<{code:number|null;signal:string|null}>(r=>{finish=()=>r({code:0,signal:null});});await Promise.resolve();return {pid:1,executable:'fixture.exe',startedAt:new Date().toISOString(),exit,stop:async()=>finish()};}};
+ const s=new Supervisor(profiles,engine,{probe:async()=>[]});
+ try{const fingerprint={...DEFAULT_FINGERPRINT,canvas:'noise' as const,timezone:{mode:'manual' as const,value:'Europe/Paris'}};const a=await profiles.create({...valid,fingerprint});await s.start(a.id);expect(seen[0]).toEqual(fingerprint);await s.stop(a.id);}finally{profiles.close();cleanup(root);}
+});
+
+it('uses saved tab URLs only when session restore is enabled and passes the stable fingerprint seed',async()=>{
+ const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const sessions=new SessionStore(root);const inputs:Array<any>=[];
+ const engine:BrowserEngineAdapter={capabilities:{fingerprints:true},validate:async()=>{},launch:async input=>{
+  inputs.push(input);let finish!:()=>void;const exit=new Promise<{code:number|null;signal:string|null}>(resolve=>{finish=()=>resolve({code:0,signal:null});});
+  return {pid:1,executable:'fixture.exe',startedAt:new Date().toISOString(),exit,stop:async()=>finish()};
+ }};
+ const supervisor=new Supervisor(profiles,engine,{probe:async()=>[],sessions});
+ try{
+  const profile=await profiles.create({...valid,restoreLastSession:true});
+  await sessions.write(profile.id,{version:1,urls:['https://saved.example/','https://second.example/'],updatedAt:new Date().toISOString()});
+  await supervisor.start(profile.id);
+  expect(inputs[0].startUrls).toEqual(['https://saved.example/','https://second.example/']);
+  expect(inputs[0].fingerprintSeed).toBe(profile.fingerprintSeed);
+  await supervisor.stop(profile.id);
+  const fallback=await profiles.create({...valid,restoreLastSession:true});await supervisor.start(fallback.id);
+  expect(inputs[1].startUrls).toEqual(valid.startUrls);
+  await supervisor.stop(fallback.id);
+ }finally{profiles.close();cleanup(root);}
+});
+
+it('reports active work only while a profile is starting or running',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const s=new Supervisor(profiles,f.engine,{probe:async()=>[]});
+  try{const a=await profiles.create(valid);expect(s.hasActiveWork()).toBe(false);await s.start(a.id);expect(s.hasActiveWork()).toBe(true);await s.stop(a.id);expect(s.hasActiveWork()).toBe(false);await s.shutdown();}finally{profiles.close();cleanup(root);}
+});
+
+it('resolves a proxy-based time zone at launch, passes it to the engine and reports warnings without blocking',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());
+  try{
+    const proxy=await profiles.createProxy({name:'P',kind:'http',host:'localhost',port:8080});
+    const launched:Array<unknown>=[];
+    const run=async(country:string|null,zone:string|null)=>{
+      const f=fixture();const base=f.engine.launch;f.engine.launch=async i=>{launched.push(i.fingerprint.timezone);return base(i);};
+       const s=new Supervisor(profiles,f.engine,{probe:async()=>[],bridge:async()=>({url:'http://127.0.0.1:1',close:async()=>{}}),exitLocation:async()=>({country,zone}),confirmTimezone:async()=>true});
+      const p=await profiles.create({...valid,proxyId:proxy.id});
+      await s.start(p.id);return {s,id:p.id};
+    };
+    let r=await run('DE',null);expect(launched.at(-1)).toEqual({mode:'manual',value:'Europe/Berlin'});expect(r.s.warnings()[r.id]).toBeUndefined();
+    r=await run('US','America/Chicago');expect(launched.at(-1)).toEqual({mode:'manual',value:'America/Chicago'});expect(r.s.warnings()[r.id]).toBeUndefined();
+    r=await run('US',null);expect(launched.at(-1)).toEqual({mode:'auto'});expect(r.s.states()[r.id]).toBe('running');expect(r.s.warnings()[r.id]).toEqual({code:'TIMEZONE_UNRESOLVED'});
+    r=await run(null,null);expect(r.s.warnings()[r.id]).toEqual({code:'TIMEZONE_UNRESOLVED'});
+  }finally{profiles.close();cleanup(root);}
+});
+
+it('resolves the time zone from the proxy for Auto profiles that use one',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const launched:Array<unknown>=[];
+  const base=f.engine.launch;f.engine.launch=async input=>{launched.push(input.fingerprint.timezone);return base(input);};
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[],bridge:async()=>({url:'http://127.0.0.1:1',close:async()=>{}}),exitLocation:async()=>({country:'PL',zone:'Europe/Warsaw'})});
+  try{
+    const proxy=await profiles.createProxy({name:'P',kind:'http',host:'localhost',port:8080});
+    const profile=await profiles.create({...valid,proxyId:proxy.id});
+    expect(profile.fingerprint.timezone.mode).toBe('auto');
+    await s.start(profile.id);
+    expect(launched.at(-1)).toEqual({mode:'manual',value:'Europe/Warsaw'});
+    expect(s.warnings()[profile.id]).toBeUndefined();
+    await s.stop(profile.id);
+  }finally{profiles.close();cleanup(root);}
+});
+
+it('keeps the host time zone for an auto profile without a proxy',async()=>{  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[],exitLocation:async()=>{throw Error('must not be called');},confirmTimezone:async()=>true});
+  try{const p=await profiles.create({...valid,fingerprint:{...DEFAULT_FINGERPRINT,timezone:{mode:'auto'}}});await s.start(p.id);expect(s.warnings()[p.id]).toBeUndefined();expect(s.states()[p.id]).toBe('running');await s.stop(p.id);}finally{profiles.close();cleanup(root);}
+});
+
+it('holds a single launch until an unresolved timezone is explicitly confirmed',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const close=vi.fn(async()=>{});const lookup=vi.fn(async()=>({country:null,zone:null}));
+  let answer!:(value:boolean)=>void;const confirm=vi.fn(()=>new Promise<boolean>(resolve=>{answer=resolve;}));
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[],bridge:async()=>({url:'http://127.0.0.1:1',close}),exitLocation:lookup,confirmTimezone:confirm} as any);
+  try{const proxy=await profiles.createProxy({name:'P',kind:'http',host:'localhost',port:8080});const p=await profiles.create({...valid,proxyId:proxy.id,fingerprint:{...DEFAULT_FINGERPRINT,timezone:{mode:'auto'}}});
+    const start=s.start(p.id);await wait(()=>expect(confirm).toHaveBeenCalledTimes(1));expect(f.launches()).toBe(0);await expect(s.start(p.id)).rejects.toThrow('PROFILE_BUSY');answer(false);await start;expect(f.launches()).toBe(0);expect(close).toHaveBeenCalledTimes(1);expect(lookup).toHaveBeenCalledTimes(1);
+  }finally{profiles.close();cleanup(root);}
+});
+
+it('starts the same attempt after approval without repeating proxy timezone lookup',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const close=vi.fn(async()=>{});const lookup=vi.fn(async()=>({country:null,zone:null}));
+  const confirm=vi.fn(async()=>true);
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[],bridge:async()=>({url:'http://127.0.0.1:1',close}),exitLocation:lookup,confirmTimezone:confirm});
+  try{const proxy=await profiles.createProxy({name:'P',kind:'http',host:'localhost',port:8080});const p=await profiles.create({...valid,proxyId:proxy.id,fingerprint:{...DEFAULT_FINGERPRINT,timezone:{mode:'auto'}}});
+    await s.start(p.id);expect(confirm).toHaveBeenCalledTimes(1);expect(lookup).toHaveBeenCalledTimes(1);expect(f.launches()).toBe(1);expect(s.states()[p.id]).toBe('running');expect(close).not.toHaveBeenCalled();await s.stop(p.id);expect(close).toHaveBeenCalled();
+  }finally{profiles.close();cleanup(root);}
+});
+
+it('leaves the profile stopped when the bridge refuses to close after a declined timezone prompt',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[],bridge:async()=>({url:'http://127.0.0.1:1',close:async()=>{throw Error('CLOSE_FAILED');}}),exitLocation:async()=>({country:null,zone:null}),confirmTimezone:async()=>{throw Error('WINDOW_GONE');}});
+  try{const proxy=await profiles.createProxy({name:'P',kind:'http',host:'localhost',port:8080});const p=await profiles.create({...valid,proxyId:proxy.id,fingerprint:{...DEFAULT_FINGERPRINT,timezone:{mode:'auto'}}});
+    await s.start(p.id);expect(f.launches()).toBe(0);expect(s.states()[p.id]).toBe('stopped');expect(s.hasActiveWork()).toBe(false);
+  }finally{profiles.close();cleanup(root);}
+});
