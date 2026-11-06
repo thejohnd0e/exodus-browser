@@ -6,7 +6,7 @@ import {extractArchive} from '../backups/archive';
 import {installBrandedEngine,type BrandedDeps,type BrandedEngineRecord} from './branded';
 import type {EngineStatus} from '../../shared/contracts';
 export type EngineRelease={version:string;url:string;sha256:string};
-export type Download=(url:string,destination:string)=>Promise<void>;
+export type Download=(url:string,destination:string,onBytes?:(received:number,total:number|null)=>void)=>Promise<void>;
 type External={executable:string;sha256:string};
 async function sha256File(file:string){const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');}
 export class EngineInstaller {
@@ -55,12 +55,12 @@ export class EngineInstaller {
    * the engine directory. Nothing is installed system-wide; the browser is only used by
    * this application, so users do not need Chrome on the machine.
    */
-  async installBranded(sevenZip:string,verify?:BrandedDeps['verify']):Promise<BrandedEngineRecord>{
+  async installBranded(sevenZip:string,onProgress?:BrandedDeps['onProgress'],verify?:BrandedDeps['verify']):Promise<BrandedEngineRecord>{
     if(this.installing)throw Error('ENGINE_INSTALLING');
     this.installing=true;
     try{
       await mkdir(this.root,{recursive:true});
-      return await installBrandedEngine(this.root,{download:this.download,sevenZip,verify});
+      return await installBrandedEngine(this.root,{download:this.download,sevenZip,verify,onProgress});
     }finally{this.installing=false;}
   }
   async install(release:EngineRelease){

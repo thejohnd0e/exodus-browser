@@ -12,10 +12,11 @@ const MAX_ARCHIVE_BYTES=400*1024**2;
 export type BrandedEngineRecord={version:string;executable:string;sha256:string};
 
 export type BrandedDeps={
-  download:(url:string,destination:string)=>Promise<void>;
+  download:(url:string,destination:string,onBytes?:(received:number,total:number|null)=>void)=>Promise<void>;
   sevenZip:string;
   run?:(executable:string,args:string[])=>Promise<void>;
   verify?:(executable:string)=>Promise<{trusted:boolean;version:string|null}>;
+  onProgress?:(progress:{stage:'download'|'extract'|'verify';received?:number;total?:number|null})=>void;
 };
 
 async function sha256File(file:string){
@@ -70,9 +71,10 @@ export async function installBrandedEngine(root:string,deps:BrandedDeps):Promise
     const run=deps.run??runProcess;
     const verify=deps.verify??verifySignature;
     const msi=join(stage,'chrome.msi');
-    await deps.download(BRANDED_ENGINE_URL,msi);
+    await deps.download(BRANDED_ENGINE_URL,msi,(received,total)=>deps.onProgress?.({stage:'download',received,total}));
     const size=(await stat(msi)).size;
     if(size<MIN_ARCHIVE_BYTES||size>MAX_ARCHIVE_BYTES)throw Error('ENGINE_DOWNLOAD_FAILED');
+    deps.onProgress?.({stage:'extract'});
 
     const payload=join(stage,'payload');await mkdir(payload);
     await run(deps.sevenZip,['e',msi,`-o${payload}`,'-y','Binary.GoogleChromeInstaller']);
@@ -88,6 +90,7 @@ export async function installBrandedEngine(root:string,deps:BrandedDeps):Promise
     const executable=join(appDir,'Chrome-bin','chrome.exe');
     await access(executable);
 
+    deps.onProgress?.({stage:'verify'});
     const {trusted,version}=await verify(executable);
     if(!trusted)throw Error('ENGINE_UNTRUSTED');
     const resolved=version??versionFromName;

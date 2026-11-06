@@ -7,6 +7,7 @@ import {pipeline} from 'node:stream/promises';
 import {ProfileService} from './profiles/service';
 import {SecretStore} from './security/secrets';
 import {EngineInstaller,type EngineRelease} from './engines/installation';
+import type {EngineStatus} from '../shared/contracts';
 import {ChromiumAdapter} from './engines/chromium';
 import {gpuModelsFromDevices,gpuVendorsFromDevices} from './engines/gpu-vendor';
 import {Supervisor} from './runtime/supervisor';
@@ -38,10 +39,15 @@ if(process.env.LOCAL_PROFILES_DATA&&!app.isPackaged)app.setPath('userData',proce
 if(!app.requestSingleInstanceLock())app.quit();
 else void app.whenReady().then(async()=>{
   const root=app.getPath('userData');const secrets=new SecretStore(safeStorage);const profiles=new ProfileService(root,secrets);
-  const installer=new EngineInstaller(join(root,'engine'),async(url,destination)=>{
-    const response=await net.fetch(url,{signal:AbortSignal.timeout(180000)});if(!response.ok||!response.body)throw Error('ENGINE_DOWNLOAD_FAILED');
-    await pipeline(Readable.fromWeb(response.body as any),createWriteStream(destination,{flags:'wx'}));
+  const installer=new EngineInstaller(join(root,'engine'),async(url,destination,onBytes)=>{
+    const response=await net.fetch(url,{signal:AbortSignal.timeout(600000)});if(!response.ok||!response.body)throw Error('ENGINE_DOWNLOAD_FAILED');
+    const total=Number(response.headers.get('content-length')??0)||null;
+    let received=0;
+    const counter=new Transform({transform(chunk,_encoding,callback){received+=chunk.length;onBytes?.(received,total);callback(null,chunk);}});
+    await pipeline(Readable.fromWeb(response.body as any),counter,createWriteStream(destination,{flags:'wx'}));
   });
+  // Polled by the renderer once per second, so the download never looks frozen.
+  let engineInstall:EngineStatus['progress']|null=null;
   const extensionVersion=(releases.release as EngineRelease|undefined)?.version??'156.0.8078.80';
   // Seven-Zip is needed to unpack Google's nested installer archives. The app ships
   // 7za.exe; a system installation is only a development fallback.
@@ -102,9 +108,15 @@ else void app.whenReady().then(async()=>{
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
        remove:async id=>{await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
-    start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),warnings:async()=>supervisor.warnings(),engineStatus:async()=>({...await installer.status(),hostGpuVendors:(await hostGpuVendors)?.vendors,hostGpuModels:(await hostGpuVendors)?.models}),
+    start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),warnings:async()=>supervisor.warnings(),engineStatus:async()=>{
+       const status=await installer.status();
+       const merged:EngineStatus=engineInstall?{...status,state:'installing',progress:engineInstall}:status;
+       return {...merged,hostGpuVendors:(await hostGpuVendors)?.vendors,hostGpuModels:(await hostGpuVendors)?.models};
+     },
     installEngine:async()=>{
-      await installer.installBranded(resolveSevenZip());
+      engineInstall={stage:'download',received:0,total:null};
+      try{await installer.installBranded(resolveSevenZip(),progress=>{engineInstall=progress;});}
+      finally{engineInstall=null;}
     },
     linkEngine:async()=>{
         const r=await dialog.showOpenDialog(win,{title:nativeMessage('engine.choose.title',currentLanguage),properties:['openFile'],filters:[{name:'Chromium',extensions:['exe']}]});
