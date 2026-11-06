@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { CdpClient, CdpMessage } from './client';
 import type { Fingerprint } from '../../shared/fingerprint';
 import { buildSpoofScript, buildWorkerSpoofScript, deriveScreenAvailability, type ScreenAvailability } from '../engines/spoof-script';
@@ -64,6 +65,13 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       : '';
   const metadata = effectiveUa ? metadataFor(fingerprint.userAgent ?? effectiveUa, fingerprint.os, options.engineVersion ?? options.engineUserAgent) : null;
   const pageSessions = new Map<string, { sessionId: string; ready: Promise<void> }>();
+  const geoGuardUrl = `exodus-geo-guard://${randomUUID()}`;
+  // Only the newest guard script of a session can pause a live document; keeping one id
+  // per session bounds memory for long-lived tabs.
+  const geoGuardScripts = new Map<string, string>();
+  // Internal pages are instrumented so a later web document is covered, but a tab the user
+  // opened for chrome://settings must never be closed because instrumentation failed there.
+  const internalTargets = new Set<string>();
   // Other consumers may attach their own browser sessions on this pipe. Only follow
   // attachment trees rooted in this installer's page/worker sessions.
   const ownedSessions = new Map<string, { targetId: string; parent?: string }>();
@@ -71,6 +79,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     const owned = ownedSessions.get(sessionId);
     if (!owned) return;
     ownedSessions.delete(sessionId);
+    geoGuardScripts.delete(sessionId);
     for (const [child, info] of ownedSessions) if (info.parent === sessionId) revokeSession(child);
     if (pageSessions.get(owned.targetId)?.sessionId === sessionId) pageSessions.delete(owned.targetId);
     workerEvaluations.delete(owned.targetId);
@@ -112,10 +121,14 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
 
   const runApplyToPage = async (sessionId: string, targetId: string, topLevel: boolean): Promise<void> => {
     await client.send('Page.enable', {}, sessionId);
+    if (topLevel && fingerprint.geolocation.mode === 'manual') {
+      await client.send('Debugger.enable', {}, sessionId);
+      await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:') debugger;\n//# sourceURL=${geoGuardUrl}` }, sessionId);
+    }
     await client.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true,filter:[{type:'service_worker',exclude:true},{}] }, sessionId);
     if (topLevel && fingerprint.screen.mode === 'manual') await applyScreenEmulation(sessionId);
     const script = pageScript();
-    if (script) await client.send('Page.addScriptToEvaluateOnNewDocument', { source: script }, sessionId);
+    if (script) await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:'){${script}\n}` }, sessionId);
     if (effectiveUa && metadata)
       await client.send('Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage: languages.join(','), platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }, sessionId);
     if (fingerprint.timezone.mode === 'manual') await client.send('Emulation.setTimezoneOverride', { timezoneId: fingerprint.timezone.value }, sessionId);
@@ -138,6 +151,9 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       // close a target that may already have a replacement session. It must still
       // never leave the target paused.
       if (!ownedSessions.has(existing.sessionId)) { await client.send('Runtime.runIfWaitingForDebugger', {}, existing.sessionId).catch(() => undefined); return; }
+      // An internal page belongs to the user, not to the fingerprint: release it instead of
+      // closing the tab they opened.
+      if (internalTargets.has(targetId)) { await client.send('Runtime.runIfWaitingForDebugger', {}, existing.sessionId).catch(() => undefined); return; }
       try { await client.send('Target.closeTarget', { targetId }); } catch { /* target may already be gone */ }
       options.onPageFailure?.(error instanceof Error ? error.message : 'unknown');
     }
@@ -171,6 +187,35 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
 
   client.onEvent(message => {
     if (message.sessionId && !ownedSessions.has(message.sessionId)) return;
+    if (message.method === 'Debugger.scriptParsed' && message.sessionId) {
+      const parsed = message.params as { url?: string; scriptId?: string } | undefined;
+      if (parsed?.url === geoGuardUrl && parsed.scriptId) geoGuardScripts.set(message.sessionId, parsed.scriptId);
+      return;
+    }
+    if (message.method === 'Debugger.paused' && message.sessionId) {
+      const paused = message.params as { callFrames?: Array<{ location?: { scriptId?: string } }> } | undefined;
+      const scriptId = paused?.callFrames?.[0]?.location?.scriptId;
+      const sessionId = message.sessionId;
+      const geo = fingerprint.geolocation;
+      // A page's own `debugger;` statement or any other pause is not ours to hold: enabling the
+      // Debugger domain must stay transparent, exactly as when no debugger is attached.
+      if (geo.mode !== 'manual' || scriptId === undefined || geoGuardScripts.get(sessionId) !== scriptId) {
+        void client.send('Debugger.resume', {}, sessionId).catch(() => undefined);
+        return;
+      }
+      const targetId = ownedSessions.get(sessionId)?.targetId;
+      void (async () => {
+        try {
+          await client.send('Emulation.setGeolocationOverride', { latitude: geo.latitude, longitude: geo.longitude, accuracy: geo.accuracy }, sessionId);
+        } catch {
+          if (targetId && ownedSessions.get(sessionId)?.targetId === targetId) await client.send('Target.closeTarget', { targetId }).catch(() => undefined);
+          options.onPageFailure?.('FINGERPRINT_UNAVAILABLE');
+          return;
+        }
+        if (ownedSessions.get(sessionId)?.targetId === targetId) await client.send('Debugger.resume', {}, sessionId).catch(() => undefined);
+      })();
+      return;
+    }
     if(message.method==='Target.targetDestroyed'){const targetId=(message.params as {targetId?:string}|undefined)?.targetId;if(targetId){for(const [sessionId,info] of ownedSessions)if(info.targetId===targetId)revokeSession(sessionId);workerEvaluations.delete(targetId);pageSessions.delete(targetId);}return;}
     if(message.method==='Target.detachedFromTarget'){
       const detached=message.params as {targetId?:string;sessionId?:string}|undefined;
@@ -181,12 +226,13 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     const attached = sessionIdOf(message.params);
     if (!attached) return;
     const installable = ['page','iframe','worker','shared_worker','service_worker'].includes(attached.target.type);
-    if (installable) ownedSessions.set(attached.sessionId,{targetId:attached.target.targetId,parent:message.sessionId});    if (attached.target.type === 'page' && !/^(devtools|chrome|chrome-extension|edge):/i.test(attached.target.url ?? '')) {
+    if (installable) ownedSessions.set(attached.sessionId,{targetId:attached.target.targetId,parent:message.sessionId});    if (attached.target.type === 'page' && !/^(devtools|chrome-extension|edge):/i.test(attached.target.url ?? '')) {
+      if (/^chrome:/i.test(attached.target.url ?? '')) internalTargets.add(attached.target.targetId);
       void applyToPage(attached.sessionId, attached.target.targetId, true).then(async () => {
         // A target that arrives with a navigation already in flight (popups, window.open) can run
         // page scripts before overrides apply. Reload it once so the visible document is spoofed.
         const url = attached.target.url ?? '';
-        if (url && url !== 'about:blank') {
+        if (url && url !== 'about:blank' && !/^chrome:/i.test(url)) {
           let reload = true;
           try {
             const history = await client.send<{ currentIndex: number; entries: Array<{ transitionType?: string }> }>('Page.getNavigationHistory', {}, attached.sessionId);

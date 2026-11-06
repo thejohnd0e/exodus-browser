@@ -9,15 +9,17 @@ interface Fake {
   params: Record<string, unknown>;
   emit(message: CdpMessage): void;
   rejectOn(method: string): void;
+  scriptSources: string[];
 }
 
 function fake(pages: Array<{ targetId: string; type: string; url?: string }> = [{ targetId: 't1', type: 'page' }], emptyTargetLists = 0): Fake {
-  const calls: string[] = [];const params: Record<string, unknown> = {};const listeners: Array<(m: CdpMessage) => void> = [];
+  const calls: string[] = [];const params: Record<string, unknown> = {};const listeners: Array<(m: CdpMessage) => void> = [];const scriptSources:string[]=[];
   let rejectMethod = '';let targetLists = 0;
   const fakeClient = {
     send: async (method: string, p: Record<string, unknown> = {}, sessionId?: string) => {
       if (method === rejectMethod) throw Error('boom');
       calls.push(sessionId ? `${method}:${sessionId}` : method);params[method] = p;
+      if(method==='Page.addScriptToEvaluateOnNewDocument')scriptSources.push(String(p.source));
       if (method === 'Target.setAutoAttach' && !sessionId) for (const page of pages) listeners.forEach(l => l({ method: 'Target.attachedToTarget', params: { sessionId: page.targetId.replace('t', 's'), targetInfo: page } }));
       if (method === 'Target.getTargets') { if (targetLists++ < emptyTargetLists) return { targetInfos: [] }; return { targetInfos: pages }; }
       if (method === 'Runtime.evaluate' && String(p.expression ?? '').includes('availHeight')) return { result: { value: { screen: { width: 2560, height: 1440, availWidth: 2560, availHeight: 1400 }, dpr: 1 } } };
@@ -30,7 +32,7 @@ function fake(pages: Array<{ targetId: string; type: string; url?: string }> = [
     onEvent: (cb: (m: CdpMessage) => void) => listeners.push(cb),
     close: () => {},
   };
-  return { client: fakeClient as unknown as CdpClient, calls, params, emit: m => listeners.forEach(l => l(m)), rejectOn: m => { rejectMethod = m; } };
+  return { client: fakeClient as unknown as CdpClient, calls, params, scriptSources, emit: m => listeners.forEach(l => l(m)), rejectOn: m => { rejectMethod = m; } };
 }
 
 const windowsEngine = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
@@ -39,6 +41,55 @@ const SPOOFED = { ...DEFAULT_FINGERPRINT, canvas: 'noise' as const };
 const macUa = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.80 Safari/537.36';
 
 describe('installFingerprint', () => {
+  it('resumes a pause that the page caused with its own debugger statement',async()=>{
+    const f=fake();const failures:string[]=[];
+    await installFingerprint(f.client,{fingerprint:{...SPOOFED,geolocation:{mode:'manual',latitude:40.7,longitude:-74,accuracy:25}},languages:['en-US'],seed:1,onPageFailure:r=>failures.push(r)});
+    await new Promise(r=>setTimeout(r,20));
+    f.emit({sessionId:'s1',method:'Debugger.paused',params:{callFrames:[{location:{scriptId:'page-own-script'}}]}});
+    await new Promise(r=>setTimeout(r,20));
+    expect(f.calls).toContain('Debugger.resume:s1');
+    expect(f.calls).not.toContain('Target.closeTarget');
+    expect(failures).toEqual([]);
+  });
+
+  it('does not close an internal page when its instrumentation fails',async()=>{
+    const f=fake();const failures:string[]=[];
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1,onPageFailure:r=>failures.push(r)});
+    f.rejectOn('Page.addScriptToEvaluateOnNewDocument');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s9',targetInfo:{targetId:'t9',type:'page',url:'chrome://settings/'}}});
+    await new Promise(r=>setTimeout(r,20));
+    expect(f.calls).not.toContain('Target.closeTarget');
+    expect(failures).toEqual([]);
+  });
+
+  it('keeps the page open when only the resume call fails',async()=>{
+    const f=fake();
+    await installFingerprint(f.client,{fingerprint:{...SPOOFED,geolocation:{mode:'manual',latitude:40.7,longitude:-74,accuracy:25}},languages:['en-US'],seed:1});
+    await new Promise(r=>setTimeout(r,20));
+    const guard=f.scriptSources.find(s=>s.includes('debugger;'))!;
+    const url=guard.split('sourceURL=')[1];
+    f.emit({sessionId:'s1',method:'Debugger.scriptParsed',params:{scriptId:'guard',url}});
+    f.rejectOn('Debugger.resume');
+    f.emit({sessionId:'s1',method:'Debugger.paused',params:{callFrames:[{location:{scriptId:'guard'}}]}});
+    await new Promise(r=>setTimeout(r,20));
+    expect(f.calls).toContain('Emulation.setGeolocationOverride:s1');
+    expect(f.calls).not.toContain('Target.closeTarget');
+  });
+
+  it('closes the guarded page rather than resuming when geolocation setup fails',async()=>{
+    const f=fake();const failures:string[]=[];
+    await installFingerprint(f.client,{fingerprint:{...SPOOFED,geolocation:{mode:'manual',latitude:40.7,longitude:-74,accuracy:25}},languages:['en-US'],seed:1,onPageFailure:r=>failures.push(r)});
+    await new Promise(r=>setTimeout(r,20));
+    const guard=f.scriptSources.find(s=>s.includes('debugger;'))!;
+    const url=guard.split('sourceURL=')[1];expect(url).toBeTruthy();
+    f.emit({sessionId:'s1',method:'Debugger.scriptParsed',params:{scriptId:'guard',url}});
+    f.rejectOn('Emulation.setGeolocationOverride');
+    f.emit({sessionId:'s1',method:'Debugger.paused',params:{callFrames:[{location:{scriptId:'guard'}}]}});
+    await new Promise(r=>setTimeout(r,20));
+    expect(f.calls).toContain('Target.closeTarget');
+    expect(f.calls).not.toContain('Debugger.resume:s1');
+    expect(failures).toEqual(['FINGERPRINT_UNAVAILABLE']);
+  });
   it('sets native parameters and a script for each page', async () => {
     const f = fake();
     await installFingerprint(f.client, {
@@ -420,13 +471,14 @@ describe('navigate', () => {
   });
 });
 describe('service targets',()=>{
- it('leaves internal devtools and chrome pages untouched',async()=>{
+ it('protects transitions from chrome pages without modifying devtools pages',async()=>{
    const f=fake([]);
    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['ru-RU'],seed:1});
    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s7',targetInfo:{targetId:'t7',type:'page',url:'devtools://devtools/bundled/inspector.html'}}});
    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s8',targetInfo:{targetId:'t8',type:'page',url:'chrome://settings/'}}});
    await new Promise(r=>setTimeout(r,20));
    expect(f.calls).not.toContain('Page.enable:s7');
-   expect(f.calls).not.toContain('Page.enable:s8');
+   expect(f.calls).toContain('Page.enable:s8');
+   expect(f.calls).not.toContain('Page.reload:s8');
  });
 });
