@@ -167,11 +167,11 @@ Exodus can expose a **local, authenticated API** for agent clients such as OpenC
 
 Open **Agent API** in the sidebar, click **Enable API**, create a key for each integration, and grant only the profiles and saved proxies that integration may use. The key is shown once; store it securely. Revoking a key takes effect immediately. The API is disabled again when you turn it off, no profile browser becomes reachable from the network, and a failed disable is remembered so the API cannot silently re-enable after a restart.
 
-The Agent API is on `master`; it is not part of the 1.2.2 installer, so it requires a source build (`npm run dev`). Current surface: API status, authorized profile list/read/create, launch and stop, fingerprint generation, authorized saved-proxy listing without passwords, and browser tools for a running profile — `tabs`, `navigate`, `snapshot`, `click`, `fill`, `screenshot` and `close`. The browser tools use Exodus's own DevTools sessions: there is no debugging port and no second controller.
+The Agent API is included in the 1.2.6 installer. Current surface: API status, authorized profile list/read/create, launch and stop, fingerprint generation, authorized saved-proxy listing without passwords, and browser tools for a running profile — `tabs`, `navigate`, `snapshot`, `click`, `fill`, `screenshot` and `close`. The browser tools use Exodus's own DevTools sessions: there is no debugging port and no second controller.
 
 Browser tool limits: actions address elements by the `ref` values returned from `snapshot` (they are re-read on every snapshot). Only `http(s)` and `about:blank` navigation is accepted. Same-origin iframes and open shadow roots are included in a snapshot; a cross-origin iframe is a separate target and is not traversed automatically. Screenshots are returned as base64 PNG up to 5 MB; there is no artifact store yet. Arbitrary JavaScript evaluation, file paths, cookie export and profile deletion are not exposed.
 
-The optional MCP adapter is a small stdio bridge at `tools/mcp/exodus-mcp.mjs`. Configure your client with the API address and key from the environment, never in tool arguments:
+The optional MCP adapter is a small stdio bridge at `tools/mcp/exodus-mcp.mjs` in the source repository; it is not included as a standalone file in the installer. Configure your client with the API address and key from the environment, never in tool arguments:
 
 ```json
 {
