@@ -97,9 +97,9 @@ Open the **[latest release](https://github.com/thejohnd0e/exodus-browser/release
 
 > The installer is not digitally signed yet, so Windows SmartScreen may display a warning. Only use releases from this repository; do not disable Windows security protections.
 
-### 2. Set up Chromium once
+### 2. Set up the browser once
 
-In Exodus, click **Download Chromium** to install the browser used by your profiles. Alternatively, choose **Link Chromium…** and select `chrome.exe` from an existing Chromium installation you trust.
+Click **Download Google Chrome**. Exodus downloads Google's own offline installer, unpacks the browser into its data folder and verifies the Authenticode signature (publisher: Google LLC). Nothing is installed system-wide, no administrator rights are needed, and your personal Chrome is not used or touched. The download is about 160 MB and the progress bar shows the speed and the unpacking stage.
 
 This browser runs separately from your personal browser. You can create profiles before setting it up, but launching them requires an available engine.
 
@@ -159,7 +159,7 @@ Click the **version number at the bottom of the sidebar** to check for a newer r
 
 There are **no background update checks or silent installations**. You can also install a newer release manually after closing Exodus and its profile browsers.
 
-Updating Exodus does not automatically replace a previously installed Chromium engine. If the built-in updater cannot complete, download the current installer from [Releases](https://github.com/thejohnd0e/exodus-browser/releases/latest) using your normal browser.
+Updating Exodus does not replace the browser engine that is already installed, and it does not touch your profiles or proxies. If you want a newer Chrome version, open the engine section and download it again; the previous copy stays on disk until you delete it.
 
 ## Agent API
 
@@ -183,7 +183,9 @@ Profiles, saved connections, settings, extensions and the managed browser are st
 %APPDATA%\Local Profiles
 ```
 
-The folder keeps its original name for compatibility. Installing or updating Exodus does not move it, and uninstalling the application leaves it intact. Back up important profiles before moving computers or making major changes.
+You do not need this folder to work with profiles: they are listed and managed in the application. The folder matters for one thing — making a copy of everything. Press `Win+R`, paste `%APPDATA%\Local Profiles` and copy the whole folder to back up or move every profile, proxy and login at once. AppData is hidden by default, which is why the folder is not visible in Explorer.
+
+The folder keeps its original name for compatibility. Installing or updating Exodus does not move it, and uninstalling the application leaves it intact.
 
 Saved proxy passwords are encrypted using Windows protection. **This does not mean that all profile data, backups or cookie exports are encrypted.** Profiles and exports can contain active logins and other sensitive information.
 
@@ -195,7 +197,7 @@ Saved proxy passwords are encrypted using Windows protection. **This does not me
 - **Process isolation via stdio pipe.** Browser control communicates via anonymous stdio pipes rather than open TCP ports, preventing local port scanning and unauthorized cross-process DevTools access.
 - **Local-first does not mean no network traffic.** Websites, proxy IP checks, downloads and manually requested updates contact their respective services.
 - **Windows only.** Other operating-system choices in the fingerprint editor adjust browser headers, legacy `navigator.platform`, and Client Hints, but do not replace the underlying Windows OS environment or system fonts.
-- **Chrome for Testing engine.** The managed browser is Google's Chrome for Testing: a pinned, checksum-verified build for automation that does not update itself. It is not a regular Google Chrome installation. Client Hints are always sent with `Google Chrome` brands (matching the profile's selected OS), and the testing banner is hidden; the engine still runs the same Chromium version shown in the app.
+- **Browser engine.** The engine is Google Chrome, downloaded from Google's own offline installer and unpacked into the application data folder; its Authenticode signature is checked before first use and nothing is installed system-wide. Chrome does not update itself here, so the engine stays on the version you downloaded (a pinned Chrome for Testing build remains supported for existing installations). Client Hints are always sent with `Google Chrome` brands matching the profile, and the automation banner is hidden.
 
 ## Help and feedback
 
