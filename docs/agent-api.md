@@ -33,7 +33,7 @@ icacls $secretDir /inheritance:r /grant:r "$($env:USERDOMAIN)\$($env:USERNAME):(
 Then run this as a single line. When the hidden prompt appears, enter the key there; do not replace the prompt text with the key:
 
 ```powershell
-$secure=Read-Host 'Paste the Exodus API key (input hidden)' -AsSecureString; $ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure); try {$plain=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr); [IO.File]::WriteAllText((Join-Path $secretDir 'exodus-api-token'),$plain,[Text.UTF8Encoding]::new($false)); 'Token saved locally'} finally {[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr); Remove-Variable plain,secure,ptr -ErrorAction SilentlyContinue}
+$secure=Read-Host 'Paste the Exodus API key (input hidden)' -AsSecureString; $ptr=[IntPtr]::Zero; $plain=$null; try {$ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure); $plain=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr); [IO.File]::WriteAllText((Join-Path $secretDir 'exodus-api-token'),$plain,[Text.UTF8Encoding]::new($false)); 'Token saved locally'} finally {if($ptr -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)}; Remove-Variable plain,secure,ptr -ErrorAction SilentlyContinue}
 ```
 
 The token file is at `%USERPROFILE%\.config\opencode\secrets\exodus-api-token`. Treat it as a password. Do not commit it or copy it into a project. To rotate a key, revoke the old key in Exodus and replace the local file using the same hidden-input steps.
