@@ -1,7 +1,7 @@
 import {app,ipcMain,dialog,safeStorage,net,clipboard} from 'electron';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {createWriteStream} from 'node:fs';
+import {createWriteStream,existsSync} from 'node:fs';
 import {Readable,Transform} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {ProfileService} from './profiles/service';
@@ -43,6 +43,14 @@ else void app.whenReady().then(async()=>{
     await pipeline(Readable.fromWeb(response.body as any),createWriteStream(destination,{flags:'wx'}));
   });
   const extensionVersion=(releases.release as EngineRelease|undefined)?.version??'156.0.8078.80';
+  // Seven-Zip is needed to unpack Google's nested installer archives. The app ships
+  // 7za.exe; a system installation is only a development fallback.
+  const resolveSevenZip=()=>{
+    if(process.env.LOCAL_PROFILES_SEVEN_ZIP)return process.env.LOCAL_PROFILES_SEVEN_ZIP;
+    const bundled=app.isPackaged?join(process.resourcesPath,'bin','7z.exe'):join(app.getAppPath(),'resources','bin','7z.exe');
+    if(existsSync(bundled))return bundled;
+    return 'C:\\Program Files\\7-Zip\\7z.exe';
+  };
   const downloadExtension=async(url:string,destination:string)=>{
     const response=await net.fetch(url,{signal:AbortSignal.timeout(60000)}).catch(()=>{throw Error('EXTENSION_DOWNLOAD_FAILED');});
     if(!response.ok||!response.body)throw Error('EXTENSION_DOWNLOAD_FAILED');
@@ -96,8 +104,7 @@ else void app.whenReady().then(async()=>{
        remove:async id=>{await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
     start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),warnings:async()=>supervisor.warnings(),engineStatus:async()=>({...await installer.status(),hostGpuVendors:(await hostGpuVendors)?.vendors,hostGpuModels:(await hostGpuVendors)?.models}),
     installEngine:async()=>{
-      if(!releases.release)throw Error('ENGINE_RELEASE_UNPINNED');
-       await installer.install(releases.release as EngineRelease);
+      await installer.installBranded(resolveSevenZip());
     },
     linkEngine:async()=>{
         const r=await dialog.showOpenDialog(win,{title:nativeMessage('engine.choose.title',currentLanguage),properties:['openFile'],filters:[{name:'Chromium',extensions:['exe']}]});

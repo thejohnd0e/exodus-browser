@@ -57,6 +57,12 @@
       "dist/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin"
+      }
+    ],
     "npmRebuild": false,
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**"

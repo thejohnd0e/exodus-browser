@@ -1,8 +1,9 @@
 import {createHash,randomUUID} from 'node:crypto';
-import {createReadStream} from 'node:fs';
 import {access,mkdir,readFile,writeFile,rename,rm,stat} from 'node:fs/promises';
 import {basename,join} from 'node:path';
+import {createReadStream} from 'node:fs';
 import {extractArchive} from '../backups/archive';
+import {installBrandedEngine,type BrandedDeps,type BrandedEngineRecord} from './branded';
 import type {EngineStatus} from '../../shared/contracts';
 export type EngineRelease={version:string;url:string;sha256:string};
 export type Download=(url:string,destination:string)=>Promise<void>;
@@ -13,7 +14,19 @@ export class EngineInstaller {
   constructor(readonly root:string,private download:Download){}
   get packagedExecutable(){return join(this.root,'current','chrome-win64','chrome.exe');}
   private get externalRecord(){return join(this.root,'external.json');}
+  private get brandedRecord(){return join(this.root,'branded.json');}
+  private async branded():Promise<BrandedEngineRecord|null>{
+    try{
+      const record=JSON.parse(await readFile(this.brandedRecord,'utf8')) as BrandedEngineRecord;
+      if(basename(record.executable).toLowerCase()!=='chrome.exe')return null;
+      await access(record.executable);
+      if(await sha256File(record.executable)!==record.sha256)return null;
+      return record;
+    }catch{return null;}
+  }
   async resolveExecutable(){
+    const branded=await this.branded();
+    if(branded)return branded.executable;
     try{const record=JSON.parse(await readFile(this.externalRecord,'utf8')) as External;
       if(basename(record.executable).toLowerCase()!=='chrome.exe')throw Error('UNSAFE_ENGINE');
       await access(record.executable);
@@ -22,6 +35,8 @@ export class EngineInstaller {
     }catch{return this.packagedExecutable;}
   }
   async status():Promise<EngineStatus>{
+    const branded=await this.branded();
+    if(branded)return {state:'ready',version:branded.version,source:'branded'};
     try{const executable=await this.resolveExecutable();await access(executable);
       if(executable===this.packagedExecutable){const r=JSON.parse(await readFile(join(this.root,'current','release.json'),'utf8')) as EngineRelease;return {state:'ready',version:r.version,source:'downloaded'};}
       return {state:'ready',version:'linked Chromium',source:'external'};
@@ -32,7 +47,21 @@ export class EngineInstaller {
     if(basename(executable).toLowerCase()!=='chrome.exe')throw Error('UNSAFE_ENGINE');
     const info=await stat(executable);if(!info.isFile())throw Error('UNSAFE_ENGINE');
     await mkdir(this.root,{recursive:true});
+    await rm(this.brandedRecord,{force:true});
     await writeFile(this.externalRecord,JSON.stringify({executable,sha256:await sha256File(executable)} satisfies External));
+  }
+  /**
+   * Downloads Google's own Chrome (official enterprise installer) and unpacks it into
+   * the engine directory. Nothing is installed system-wide; the browser is only used by
+   * this application, so users do not need Chrome on the machine.
+   */
+  async installBranded(sevenZip:string,verify?:BrandedDeps['verify']):Promise<BrandedEngineRecord>{
+    if(this.installing)throw Error('ENGINE_INSTALLING');
+    this.installing=true;
+    try{
+      await mkdir(this.root,{recursive:true});
+      return await installBrandedEngine(this.root,{download:this.download,sevenZip,verify});
+    }finally{this.installing=false;}
   }
   async install(release:EngineRelease){
     if(this.installing)throw Error('ENGINE_INSTALLING');
