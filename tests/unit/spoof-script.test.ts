@@ -150,9 +150,8 @@ describe('spoof script', () => {
     expect(script).toContain('DOMRect.fromRect');
   });
 
-  it('stealth: geolocation block mode hooks navigator.geolocation and permissions query', () => {
+  it('stealth: geolocation block mode leaves page APIs untouched (browser-level permission)', () => {
     const script = buildSpoofScript({ ...DEFAULT_FINGERPRINT, geolocation: { mode: 'block' } }, 1);
-    expect(script).toContain('geolocation');
-    expect(script).toContain('denied');
+    expect(script).toBe('');
   });
 });

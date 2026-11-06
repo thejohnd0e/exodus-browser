@@ -39,7 +39,6 @@ export interface SpoofConfig {
   hardware: { cores: number; memoryGb: number } | null;
   screen: { width: number; height: number; availWidth: number; availHeight: number } | null;
   webRtc: 'off' | null;
-  geolocationBlock: boolean;
 }
 
 export interface ScreenAvailability { width: number; height: number }
@@ -78,7 +77,6 @@ export function spoofConfig(fingerprint: Fingerprint, seed: number, available?: 
       availHeight: available?.height ?? fingerprint.screen.height,
     } : null,
     webRtc: fingerprint.webRtc === 'off' ? 'off' : null,
-    geolocationBlock: fingerprint.geolocation.mode === 'block',
   };
 }
 
@@ -116,7 +114,7 @@ const mask=(fn,orig)=>{
 const cleanStack=(e)=>{
   try{
     if(e&&typeof e.stack==='string'){
-      e.stack=e.stack.split('\\n').filter(l=>!/at Object\\.(apply|toString) \\(<anonymous>:\\d+:\\d+\\)/.test(l)).join('\\n').replace('at Object.toString (<anonymous>)','at Function.toString (<anonymous>)');
+      e.stack=e.stack.split('\\n').filter(l=>!/<anonymous>:\\d+:\\d+/.test(l)).join('\\n').replace('at Object.toString (<anonymous>)','at Function.toString (<anonymous>)');
     }
   }catch(_){}
   return e;
@@ -180,7 +178,7 @@ if(typeof HTMLIFrameElement!=='undefined'){
     }
   }catch(e){}
 }
-const keep=(o,p,w)=>{const f=o[p];if(!f)return;const wrapped=w(f);mask(wrapped,f);o[p]=wrapped;return f};
+const keep=(o,p,w)=>{const f=o[p];if(!f)return;const raw=w(f);const wrapped=function(){try{return raw.apply(this,arguments);}catch(e){throw cleanStack(e);}};mask(wrapped,f);o[p]=wrapped;return f};
 const rect=(r)=>{const d=H(Math.round(r.x*100),Math.round(r.y*100))*0.04-0.02;return DOMRect.fromRect({x:r.x+d,y:r.y+d,width:r.width+d*0.5,height:r.height+d*0.5})};
 const wrapRectList=(list)=>{
   if(!list)return list;
@@ -308,22 +306,15 @@ const SCREEN = `if(c.screen){const w=c.screen.width,h=c.screen.height;try{
   }
 }catch(e){}
 try{
-  Object.defineProperty(window,'outerWidth',{get:mask(function(){return w;},function outerWidth(){return w;}),configurable:true});
-  Object.defineProperty(window,'outerHeight',{get:mask(function(){return h;},function outerHeight(){return h;}),configurable:true});
+  const ow=Object.getOwnPropertyDescriptor(window,'outerWidth');
+  const oh=Object.getOwnPropertyDescriptor(window,'outerHeight');
+  const wg=mask(function(){return w;},(ow&&ow.get)||function outerWidth(){return w;});
+  const hg=mask(function(){return h;},(oh&&oh.get)||function outerHeight(){return h;});
+  Object.defineProperty(window,'outerWidth',{get:wg,configurable:true,enumerable:ow?ow.enumerable:true});
+  Object.defineProperty(window,'outerHeight',{get:hg,configurable:true,enumerable:oh?oh.enumerable:true});
 }catch(e){}}`;
 
-const GEOLOCATION = `if(c.geolocationBlock){try{
-  const err=()=>{const e=new Error('User denied Geolocation');Object.defineProperties(e,{code:{value:1},PERMISSION_DENIED:{value:1},POSITION_UNAVAILABLE:{value:2},TIMEOUT:{value:3},message:{value:'User denied Geolocation'}});return e;};
-  if(typeof navigator!=='undefined'&&navigator.geolocation){
-    keep(navigator.geolocation,'getCurrentPosition',()=>function(s,e){if(typeof e==='function')setTimeout(()=>e(err()),0);});
-    keep(navigator.geolocation,'watchPosition',()=>function(s,e){if(typeof e==='function')setTimeout(()=>e(err()),0);return 1;});
-  }
-  if(typeof Permissions!=='undefined'){
-    keep(Permissions.prototype,'query',f=>function(d){if(d&&d.name==='geolocation')return Promise.resolve({name:'geolocation',state:'denied',onchange:null,addEventListener:()=>{},removeEventListener:()=>{},dispatchEvent:()=>false});return f.call(this,d);});
-  }
-}catch(e){}}`;
-
-const WEBRTC = `if(c.webRtc==='off'){const kill=(n)=>{try{Object.defineProperty(window,n,{get:mask(()=>undefined,function(){return undefined;}),configurable:true});}catch(e){}};kill('RTCPeerConnection');kill('webkitRTCPeerConnection');kill('RTCSessionDescription');kill('RTCIceCandidate');}`;
+const WEBRTC = `if(c.webRtc==='off'){const kill=(n)=>{try{Object.defineProperty(window,n,{value:undefined,writable:true,configurable:true});}catch(e){}};kill('RTCPeerConnection');kill('webkitRTCPeerConnection');kill('RTCSessionDescription');kill('RTCIceCandidate');}`;
 export function buildSpoofScript(fingerprint: Fingerprint, seed: number, available?: ScreenAvailability): string {
   const config = spoofConfig(fingerprint, seed, available);
   const sections = [
@@ -338,7 +329,6 @@ export function buildSpoofScript(fingerprint: Fingerprint, seed: number, availab
     config.hardware ? HARDWARE : null,
     config.screen ? SCREEN : null,
     config.webRtc ? WEBRTC : null,
-    config.geolocationBlock ? GEOLOCATION : null,
   ].filter(Boolean);
   if (sections.length === 0) return '';
   const nonce = JSON.stringify(randomUUID());
