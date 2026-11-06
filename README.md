@@ -199,6 +199,8 @@ Saved proxy passwords are encrypted using Windows protection. **This does not me
 - **Windows only.** Other operating-system choices in the fingerprint editor adjust browser headers, legacy `navigator.platform`, and Client Hints, but do not replace the underlying Windows OS environment or system fonts.
 - **Browser engine.** The engine is Google Chrome, downloaded from Google's own offline installer and unpacked into the application data folder; its Authenticode signature is checked before first use and nothing is installed system-wide. Chrome does not update itself here, so the engine stays on the version you downloaded (a pinned Chrome for Testing build remains supported for existing installations). Client Hints are always sent with `Google Chrome` brands matching the profile, and the automation banner is hidden.
 
+How the engine is downloaded, unpacked and verified — and what was actually measured about Client Hints, third-party captchas and account-level anti-fraud — is written up in [Browser engine and anti-bot behaviour](docs/engine-and-antifraud.md).
+
 ## Help and feedback
 
 - **Browser not installed?** Use **Download Chromium** or **Link Chromium…** before launching a profile.
