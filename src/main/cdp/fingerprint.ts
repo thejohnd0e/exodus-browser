@@ -226,7 +226,8 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     const attached = sessionIdOf(message.params);
     if (!attached) return;
     const installable = ['page','iframe','worker','shared_worker','service_worker'].includes(attached.target.type);
-    if (installable) ownedSessions.set(attached.sessionId,{targetId:attached.target.targetId,parent:message.sessionId});    if (attached.target.type === 'page' && !/^(devtools|chrome-extension|edge):/i.test(attached.target.url ?? '')) {
+    if (installable) ownedSessions.set(attached.sessionId,{targetId:attached.target.targetId,parent:message.sessionId});
+    if (attached.target.type === 'page' && !/^(devtools|chrome-extension|edge):/i.test(attached.target.url ?? '')) {
       if (/^chrome:/i.test(attached.target.url ?? '')) internalTargets.add(attached.target.targetId);
       void applyToPage(attached.sessionId, attached.target.targetId, true).then(async () => {
         // A target that arrives with a navigation already in flight (popups, window.open) can run
