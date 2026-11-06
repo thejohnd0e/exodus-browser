@@ -50,7 +50,7 @@ else void app.whenReady().then(async()=>{
   let engineInstall:EngineStatus['progress']|null=null;
   const extensionVersion=(releases.release as EngineRelease|undefined)?.version??'156.0.8078.80';
   // Seven-Zip is needed to unpack Google's nested installer archives. The app ships
-  // 7za.exe; a system installation is only a development fallback.
+  // 7z.exe with 7z.dll (7za.exe cannot read MSI); a system installation is only a development fallback.
   const resolveSevenZip=()=>{
     if(process.env.LOCAL_PROFILES_SEVEN_ZIP)return process.env.LOCAL_PROFILES_SEVEN_ZIP;
     const bundled=app.isPackaged?join(process.resourcesPath,'bin','7z.exe'):join(app.getAppPath(),'resources','bin','7z.exe');

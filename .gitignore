@@ -66,6 +66,7 @@ runtime-*.json
 *.zip
 *.7z
 *.exe
+!resources/bin/7z.exe
 *.msi
 *.dmp
 
