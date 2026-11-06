@@ -42,9 +42,16 @@ Two related defects that were reproduced and then fixed or avoided:
 2. **Duplicate document load.** `Page.reload` was applied to such targets to
    force overrides onto the visible document. That produced two document
    requests for every link-opened tab, which is destructive for one-shot URLs
-   (magic links, password resets, OAuth callbacks). Removing the reload broke
-   user-agent and timezone overrides on the first document, so the reload stayed
-   for the Chrome for Testing engine.
+   (magic links, password resets, OAuth callbacks).
+
+   **Not solved.** The reload is still performed for every engine
+   (`src/main/cdp/fingerprint.ts`), including Google Chrome. Dropping it breaks
+   user-agent, timezone and script-based overrides on the first document of any
+   profile that overrides something. The branded engine only makes the first
+   request native for fields the profile leaves unchanged. A correct fix is to
+   skip the reload when the profile overrides nothing; it is tracked in
+   `TODO.md`. Until then, open one-shot links by pasting them into a tab that
+   already exists.
 
 ## How the engine is installed now
 
@@ -82,7 +89,8 @@ Operational notes:
   `%SystemRoot%\System32\WindowsPowerShell\v1.0\Modules` and a minimal
   environment.
 - `7za.exe` does not read MSI containers. The app ships `7z.exe` together with
-  `7z.dll` (about 2.4 MB) instead.
+  `7z.dll` (about 2.4 MB in total, `resources/bin`, committed explicitly because
+  `.gitignore` excludes other `*.exe`; license in `7-Zip-License.txt`) instead.
 - The engine never updates itself. Downloading again is the only way to move to
   a newer Chrome; the old copy stays on disk until it is removed manually.
 
@@ -122,6 +130,15 @@ So the browser was accepted at that step. No `missing_client_attestation`, no
 rejection. The account itself was then put **on hold** ("unusual activity") —
 a new account, created from datacenter IP ranges, with a custom-domain alias,
 after several sign-in attempts in a short window.
+
+## Google Search `/sorry` is a different problem
+
+An earlier, separate failure (Google Search redirecting to `/sorry/index` on a
+Kazakhstan proxy) was caused by `--remote-debugging-pipe`, which enables Blink's
+`AutomationControlled` feature and makes `navigator.webdriver` true. It was fixed
+by `--disable-blink-features=AutomationControlled` (Decision #58) and does not
+depend on the engine brand. See `kz-google-antifraud-diagnosis-2026-11-05.md`
+(local notes, not tracked) and DECISIONS.md #58-#60.
 
 ## What is not proven
 
