@@ -10,6 +10,16 @@ import {fileURLToPath} from 'node:url';
 import {nativeMessage} from '../../src/shared/i18n/messages';
 import {ru} from '../../src/shared/i18n/ru';
 const id='d31bb0d8-7bfa-4341-a12a-83a801e8cb4a';
+it('copies text through the trusted Electron clipboard API',async()=>{
+  const data=mkdtempSync(join(tmpdir(),'exodus-clipboard-'));
+  const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
+  try{
+    const win=await app.firstWindow();await win.waitForSelector('h1');
+    const result=await win.evaluate(async()=>await (window as any).profileApi.copyText('exa_synthetic_clipboard_test'));
+    expect(result).toEqual({ok:true,value:undefined});
+    expect(await app.evaluate(({clipboard})=>clipboard.readText())).toBe('exa_synthetic_clipboard_test');
+  }finally{await app.close();rmSync(data,{recursive:true,force:true});}
+},30000);
 it('loads the supplied wordmark, favicon and native icon from the built application',async()=>{
   const data=mkdtempSync(join(tmpdir(),'exodus-branding-'));
   const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
@@ -217,7 +227,7 @@ it('opens isolated local app, creates a profile offline, stores proxy secrets wi
     expect(created.ok).toBe(true);
     await win.getByText('Test profile').waitFor();
     const surface=await win.evaluate(()=>{const api=(window as any).profileApi;return {keys:Object.keys(api),noNode:(window as any).require===undefined&&(window as any).process===undefined};});
-      expect(surface.keys).toEqual(['list','create','update','remove','start','stop','states','warnings','engineStatus','installEngine','linkEngine','backup','restore','checkProxy','listProxies','createProxy','updateProxy','removeProxy','checkSavedProxy','runningProxyVersions','importCookies','exportCookies','clearCookies','exportProfile','importProfile','getSettings','updateSettings','agentApiStatus','setAgentApiEnabled','createAgentCredential','revokeAgentCredential','grantAgentCredential','revokeAgentGrant','listExtensions','addExtensionFolder','addExtensionZip','addExtensionFromStore','updateExtension','removeExtension','getUpdateState','checkForUpdate','downloadUpdate','cancelUpdate','installUpdate','onUpdateState','onCloseRequested','confirmClose']);
+      expect(surface.keys).toEqual(['list','create','update','remove','start','stop','states','warnings','engineStatus','installEngine','linkEngine','backup','restore','checkProxy','listProxies','createProxy','updateProxy','removeProxy','checkSavedProxy','runningProxyVersions','importCookies','exportCookies','clearCookies','exportProfile','importProfile','getSettings','updateSettings','agentApiStatus','setAgentApiEnabled','createAgentCredential','revokeAgentCredential','grantAgentCredential','revokeAgentGrant','listExtensions','addExtensionFolder','addExtensionZip','addExtensionFromStore','updateExtension','removeExtension','getUpdateState','checkForUpdate','downloadUpdate','cancelUpdate','installUpdate','onUpdateState','onCloseRequested','confirmClose','copyText']);
     expect(surface.noNode).toBe(true);
     expect(JSON.stringify(created)).not.toContain('proxy-password');
     const requests=await app.evaluate(()=>(globalThis as any).__requests as string[]);

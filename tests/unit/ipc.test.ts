@@ -2,6 +2,13 @@ import {it,expect} from 'vitest';
 import {createDispatcher} from '../../src/main/ipc';
 import {valid} from '../fixtures/profiles';
 import {messageForError} from '../../src/shared/i18n/messages';
+it('copies bounded text only through the trusted IPC dispatcher',async()=>{
+ let copied='';const dispatch=createDispatcher({copyText:async(text:string)=>{copied=text;}},event=>event==='trusted');
+ expect((await dispatch('untrusted','copyText',['synthetic'])).ok).toBe(false);
+ expect((await dispatch('trusted','copyText',[''])).ok).toBe(false);
+ expect((await dispatch('trusted','copyText',['synthetic'])).ok).toBe(true);
+ expect(copied).toBe('synthetic');
+});
 it('rejects untrusted frames and malformed arguments before invoking privileged operations',async()=>{
  let called=0;const dispatch=createDispatcher({start:async()=>{called++;}},(e)=>e==='trusted');
  expect((await dispatch('untrusted','start',['d31bb0d8-7bfa-4341-a12a-83a801e8cb4a'])).ok).toBe(false);

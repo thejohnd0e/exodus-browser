@@ -23,7 +23,7 @@ export function AgentApiView({api,profiles,proxies,busy,onResult}:{api:ProfileAp
 
   async function toggle(enabled:boolean){const result=await api.setAgentApiEnabled(enabled);if(result.ok)setStatus(result.value);else onResult(result);}
   async function create(){if(!label.trim())return;const result=await api.createAgentCredential(label.trim());onResult(result);if(result.ok){setIssued(result.value);setCopyStatus('idle');setLabel('');await load();}}
-  async function copyKey(){try{if(!issued||!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(issued.token);setCopyStatus('copied');}catch{setCopyStatus('error');}}
+  async function copyKey(){if(!issued)return;try{if(!api.copyText)throw Error('Clipboard unavailable');const result=await api.copyText(issued.token);setCopyStatus(result.ok?'copied':'error');}catch{setCopyStatus('error');}}
   async function revoke(id:string){const result=await api.revokeAgentCredential(id);onResult(result);if(result.ok)await load();}
   async function apply(credentialId:string){
     const picks=resources.filter(resource=>selected[resource.kind+':'+resource.id]);

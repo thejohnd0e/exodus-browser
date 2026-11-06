@@ -51,6 +51,7 @@ export interface ProfileApi {
   revokeAgentCredential(id:string):Promise<Result<void>>;
   grantAgentCredential(input:AgentCredentialGrantInput):Promise<Result<void>>;
   revokeAgentGrant(input:AgentCredentialGrantInput):Promise<Result<void>>;
+  copyText?(text:string):Promise<Result<void>>;
   runningProxyVersions():Promise<Result<Record<string,string|null>>>;
   listExtensions():Promise<Result<ExtensionEntry[]>>;
   addExtensionFolder():Promise<ExtensionResult>;

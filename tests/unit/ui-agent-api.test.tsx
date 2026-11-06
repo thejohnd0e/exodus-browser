@@ -65,20 +65,20 @@ it('starts cards collapsed and exposes their grant counts', async () => {
 });
 
 it('copies the issued token and reports success', async () => {
-  const writeText=vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText}});
-  render(<App api={api()} />); await screen.findByText('Work');
+  const copyText=vi.fn(async()=>({ok:true as const,value:undefined}));
+  Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined});
+  render(<App api={api({copyText})} />); await screen.findByText('Work');
   fireEvent.click(screen.getByRole('button',{name:'Agent API'}));
   fireEvent.change(await screen.findByLabelText('Integration name'),{target:{value:'OpenCode'}});
   fireEvent.click(screen.getByRole('button',{name:'Create key'}));
   fireEvent.click(await screen.findByRole('button',{name:'Copy key'}));
-  await waitFor(()=>expect(writeText).toHaveBeenCalledWith('exa_synthetic'));
+  await waitFor(()=>expect(copyText).toHaveBeenCalledWith('exa_synthetic'));
   expect(await screen.findByText('Copied')).toBeTruthy();
 });
 
 it('keeps the key available for manual copying when clipboard access fails', async () => {
-  Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:vi.fn().mockRejectedValue(new Error('denied'))}});
-  render(<App api={api()} />); await screen.findByText('Work');
+  Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined});
+  render(<App api={api({copyText:async()=>({ok:false as const,error:{code:'OPERATION_FAILED',message:'Could not complete the operation.'}})})} />); await screen.findByText('Work');
   fireEvent.click(screen.getByRole('button',{name:'Agent API'}));
   fireEvent.change(await screen.findByLabelText('Integration name'),{target:{value:'OpenCode'}});
   fireEvent.click(screen.getByRole('button',{name:'Create key'}));

@@ -1,4 +1,4 @@
-import {app,ipcMain,dialog,safeStorage,net} from 'electron';
+import {app,ipcMain,dialog,safeStorage,net,clipboard} from 'electron';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createWriteStream} from 'node:fs';
@@ -125,6 +125,7 @@ else void app.whenReady().then(async()=>{
       revokeAgentCredential:id=>agentApi.revoke(id),
       grantAgentCredential:input=>agentApi.grant(input.kind,input.credentialId,input.resourceId),
       revokeAgentGrant:input=>agentApi.revokeGrant(input.kind,input.credentialId,input.resourceId),
+      copyText:async text=>{clipboard.writeText(text);},
    },event=>isTrustedSender(event as never,win.webContents,ui),()=>currentLanguage);
    for(const method of operations)ipcMain.handle('profiles:'+method,(event,...args)=>dispatcher(event,method,args));
    ipcMain.handle('app:close-decision',(event,decision)=>{if(!isTrustedSender(event as never,win.webContents,ui)||typeof decision!=='boolean')return false;if(!closing)return false;if(!decision){closing=false;return true;}void finishShutdown();return true;});
