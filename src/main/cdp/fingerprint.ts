@@ -10,7 +10,17 @@ export interface InstallOptions {
   seed: number;
   engineUserAgent?: string;
   engineVersion?: string;
-  onPageFailure?: (reason: string) => void;
+  /**
+   * A target whose overrides could not be installed. `closed`: it was closed (or, in strict mode,
+   * held or closed with its page) before it could run with the host's values; `unprotected`: it
+   * ran with partial or no overrides. The reason is an error code and never contains page data.
+   */
+  onPageFailure?: (reason: string, outcome: 'closed' | 'unprotected') => void;
+  /**
+   * Strict protection (DECISIONS #80): a worker that Chromium refuses to close is never resumed.
+   * Its page is closed instead, or, without a page, it stays paused. Off by default.
+   */
+  strict?: boolean;
   /** Test-only override for the readiness deadline. */
   readyTimeoutMs?: number;
   /** Test-only override for how long a new page may take to answer before it is set up in one batch. */
@@ -92,7 +102,18 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
   const internalTargets = new Set<string>();
   // Other consumers may attach their own browser sessions on this pipe. Only follow
   // attachment trees rooted in this installer's page/worker sessions.
-  const ownedSessions = new Map<string, { targetId: string; parent?: string }>();
+  const ownedSessions = new Map<string, { targetId: string; type: string; parent?: string }>();
+  /** The top-level page whose attachment tree contains this session, if any. */
+  const ownerPageOf = (sessionId: string): string | null => {
+    let current = ownedSessions.get(sessionId)?.parent;
+    for (let depth = 0; current && depth < 32; depth++) {
+      const info = ownedSessions.get(current);
+      if (!info) return null;
+      if (info.type === 'page') return info.targetId;
+      current = info.parent;
+    }
+    return null;
+  };
   const revokeSession = (sessionId: string): void => {
     const owned = ownedSessions.get(sessionId);
     if (!owned) return;
@@ -235,7 +256,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       // closing the tab they opened.
       if (internalTargets.has(targetId)) { await client.send('Runtime.runIfWaitingForDebugger', {}, existing.sessionId).catch(() => undefined); return; }
       try { await client.send('Target.closeTarget', { targetId }); } catch { /* target may already be gone */ }
-      options.onPageFailure?.(error instanceof Error ? error.message : 'unknown');
+      options.onPageFailure?.(error instanceof Error ? error.message : 'unknown', 'closed');
     }
   };
 
@@ -258,11 +279,21 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       await client.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(() => undefined);
     } catch (error) {
       if (!ownedSessions.has(sessionId)) { await client.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(() => undefined); return; }
-      // A paused target must never be left paused: Chromium refuses to close dedicated workers,
-      // so a failed override falls back to resuming the target (fail-open) instead of hanging the page.
-      try { await client.send('Target.closeTarget', { targetId }); }
-      catch { await client.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(() => undefined); }
-      options.onPageFailure?.(error instanceof Error ? error.message : 'unknown');
+      const reason = error instanceof Error ? error.message : 'unknown';
+      try { await client.send('Target.closeTarget', { targetId }); options.onPageFailure?.(reason, 'closed'); return; }
+      catch { /* Chromium refuses to close dedicated workers */ }
+      if (options.strict) {
+        // Strict protection: the worker must not run with the host's values. Its page goes with it;
+        // a worker without a page (a shared or service worker) stays paused.
+        const owner = ownerPageOf(sessionId);
+        if (owner) await client.send('Target.closeTarget', { targetId: owner }).catch(() => undefined);
+        options.onPageFailure?.(reason, 'closed');
+        return;
+      }
+      // By default a paused worker is never left paused: a page that awaits it (payments, uploads)
+      // would hang, so it runs with partial overrides and the failure is shown (DECISIONS #51, #80).
+      await client.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(() => undefined);
+      options.onPageFailure?.(reason, 'unprotected');
     }
   };
 
@@ -293,7 +324,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
           await client.send('Emulation.setGeolocationOverride', { latitude: geo.latitude, longitude: geo.longitude, accuracy: geo.accuracy }, sessionId);
         } catch {
           if (targetId && ownedSessions.get(sessionId)?.targetId === targetId) await client.send('Target.closeTarget', { targetId }).catch(() => undefined);
-          options.onPageFailure?.('FINGERPRINT_UNAVAILABLE');
+          options.onPageFailure?.('FINGERPRINT_UNAVAILABLE', 'closed');
           return;
         }
         if (ownedSessions.get(sessionId)?.targetId === targetId) await client.send('Debugger.resume', {}, sessionId).catch(() => undefined);
@@ -316,7 +347,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     const attached = sessionIdOf(message.params);
     if (!attached) return;
     const installable = ['page','iframe','worker','shared_worker','service_worker'].includes(attached.target.type);
-    if (installable) ownedSessions.set(attached.sessionId,{targetId:attached.target.targetId,parent:message.sessionId});
+    if (installable) ownedSessions.set(attached.sessionId,{targetId:attached.target.targetId,type:attached.target.type,parent:message.sessionId});
     if (attached.target.type === 'page' && !/^(devtools|chrome-extension|edge):/i.test(attached.target.url ?? '')) {
       if (/^chrome:/i.test(attached.target.url ?? '')) internalTargets.add(attached.target.targetId);
       const url = attached.target.url ?? '';

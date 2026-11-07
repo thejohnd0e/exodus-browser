@@ -359,10 +359,42 @@ describe('installFingerprint', () => {
       if(method==='Runtime.evaluate'||method==='Target.closeTarget')throw Error('unsupported');
       return send(method,params,sessionId);
     };
-    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1});
+    const outcomes:string[]=[];
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1,onPageFailure:(_r,outcome)=>outcomes.push(outcome)});
     f.emit({method:'Target.attachedToTarget',params:{sessionId:'s3',targetInfo:{targetId:'t3',type:'worker'}}});
     await new Promise(r=>setTimeout(r,20));
     expect(f.calls).toContain('Runtime.runIfWaitingForDebugger:s3');
+    // The user is told that the worker ran without full protection.
+    expect(outcomes).toEqual(['unprotected']);
+  });
+
+  describe('strict protection',()=>{
+    /** A page t1 (session s1) with an iframe f1 (session sf) that starts a worker w1 (session sw) Chromium refuses to close. */
+    async function strictRun(strict:boolean,parent:string|undefined){
+      const f=fake([]);const send=f.client.send.bind(f.client);const closed:string[]=[];
+      f.client.send=async(method:string,params:Record<string,unknown>={},sessionId?:string)=>{
+        if(method==='Runtime.evaluate'&&sessionId==='sw')throw Error('unsupported');
+        if(method==='Target.closeTarget'){if(params.targetId==='w1')throw Error('unsupported');closed.push(String(params.targetId));}
+        return send(method,params,sessionId);
+      };
+      const outcomes:string[]=[];
+      await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1,strict,onPageFailure:(_r,outcome)=>outcomes.push(outcome)});
+      f.emit({method:'Target.attachedToTarget',params:{sessionId:'s1',targetInfo:{targetId:'t1',type:'page',url:'about:blank'}}});
+      f.emit({method:'Target.attachedToTarget',sessionId:'s1',params:{sessionId:'sf',targetInfo:{targetId:'f1',type:'iframe'}}});
+      await new Promise(r=>setTimeout(r,20));
+      f.emit({method:'Target.attachedToTarget',...(parent?{sessionId:parent}:{}),params:{sessionId:'sw',targetInfo:{targetId:'w1',type:'worker'}}});
+      await new Promise(r=>setTimeout(r,20));
+      return {closed,outcomes,resumed:f.calls.includes('Runtime.runIfWaitingForDebugger:sw')};
+    }
+    it('closes the page that owns a worker it cannot protect, through nested frames, and never resumes the worker',async()=>{
+      expect(await strictRun(true,'sf')).toEqual({closed:['t1'],outcomes:['closed'],resumed:false});
+    });
+    it('keeps a worker without a page paused',async()=>{
+      expect(await strictRun(true,undefined)).toEqual({closed:[],outcomes:['closed'],resumed:false});
+    });
+    it('is off by default: the worker runs and is reported as unprotected',async()=>{
+      expect(await strictRun(false,'sf')).toEqual({closed:[],outcomes:['unprotected'],resumed:true});
+    });
   });
 
   it('forgets cached worker evaluations when the target detaches',async()=>{

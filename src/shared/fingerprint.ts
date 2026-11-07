@@ -52,6 +52,8 @@ const fingerprintObject = z.object({
     z.object({ mode: z.literal('real') }).strict(),
     z.object({ mode: z.literal('manual'), width: z.number().int().min(800).max(7680), height: z.number().int().min(600).max(4320), dpr: z.number().min(1).max(3).optional() }).strict(),
   ]),
+  /** Strict protection: a worker whose overrides failed never runs; its page is closed instead (DECISIONS #80). */
+  strictProtection: z.boolean().optional(),
 }).strict().superRefine((value, ctx) => {
   if (typeof value.userAgent === 'string' && !value.userAgent.includes(osMarker[value.os]))
     ctx.addIssue({ code: 'custom', path: ['userAgent'], message: 'User-Agent does not match the selected OS' });

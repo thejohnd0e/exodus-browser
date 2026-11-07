@@ -115,7 +115,7 @@ else void app.whenReady().then(async()=>{
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
        remove:async id=>{await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
-    start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),warnings:async()=>supervisor.warnings(),engineStatus:async()=>{
+    start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),warnings:async()=>supervisor.warnings(),protectionIssues:async()=>supervisor.protectionIssues(),engineStatus:async()=>{
        const status=await installer.status();
        const merged:EngineStatus=engineInstall?{...status,state:'installing',progress:engineInstall}:status;
        return {...merged,hostGpuVendors:(await hostGpuVendors)?.vendors,hostGpuModels:(await hostGpuVendors)?.models};

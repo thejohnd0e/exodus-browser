@@ -77,7 +77,7 @@ export class ChromiumAdapter implements BrowserEngineAdapter {
       for(const target of targetInfos)tracker?.onEvent({method:'Target.targetCreated',params:{targetInfo:target}});
       let engineUserAgent:string|undefined;let engineVersion:string|undefined;
       try{const version=await client.send<{userAgent:string;product?:string}>('Browser.getVersion',{});engineUserAgent=version.userAgent;engineVersion=version.product?.split('/')[1];}catch{/* hints stay derived from the chosen UA */}
-      const installed=await installFingerprint(client,{fingerprint,languages:input.languages,seed:input.fingerprintSeed??seedFor(input.profileId),engineUserAgent,engineVersion});
+      const installed=await installFingerprint(client,{fingerprint,languages:input.languages,seed:input.fingerprintSeed??seedFor(input.profileId),engineUserAgent,engineVersion,strict:fingerprint.strictProtection===true,onPageFailure:(_reason,outcome)=>input.onProtectionFailure?.(outcome)});
       session=installed;
       await session.navigate(input.startUrls);
       await session.ready();

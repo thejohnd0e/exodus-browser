@@ -1,6 +1,6 @@
 import {writeFile,rm,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import type {LaunchWarning,ProfileState,ProxyInput} from '../../shared/contracts';
+import type {LaunchWarning,ProfileState,ProtectionIssues,ProxyInput} from '../../shared/contracts';
 import {ProfileService} from '../profiles/service';
 import {profilePath} from '../profiles/paths';
 import type {BrowserEngineAdapter,EngineProcess,ProxyLease} from '../engines/types';
@@ -20,6 +20,9 @@ export class Supervisor {
   private extensionDirectory:(id:string)=>string;
   states(){return {...this.state};}
   warnings(){return {...this.launchWarnings};}
+  private protection:Record<string,ProtectionIssues>={};
+  /** Fingerprint installation failures of the current or last run; kept after stop so they stay visible. */
+  protectionIssues(){return Object.fromEntries(Object.entries(this.protection).map(([id,issues])=>[id,{...issues}]));}
   hasActiveWork():boolean{return this.locks.size>0||this.running.size>0||Object.values(this.state).some(s=>['starting','running','stopping','blocked'].includes(s));}
   runningProxyVersions():Record<string,string|null>{return Object.fromEntries([...this.running].map(([id,run])=>[id,run.proxyVersion]));}
   /** Browser handle of a running profile; the Agent API never opens its own connection. */
@@ -39,7 +42,7 @@ export class Supervisor {
     catch{for(const p of profiles)if(!this.running.has(p.id))this.state[p.id]='blocked';}
   }
   async start(id:string){
-    await this.assertStopped(id);if(this.locks.has(id)||this.running.has(id))throw Error('PROFILE_BUSY');this.locks.add(id);this.state[id]='starting';delete this.launchWarnings[id];let lease:ProxyLease|undefined;
+    await this.assertStopped(id);if(this.locks.has(id)||this.running.has(id))throw Error('PROFILE_BUSY');this.locks.add(id);this.state[id]='starting';delete this.launchWarnings[id];delete this.protection[id];let lease:ProxyLease|undefined;
     try{
       const rows=await this.probe();const dir=profilePath(this.profiles.root,id);
       if(rows.some(r=>r.commandLine.toLowerCase().includes(dir.toLowerCase()))){this.state[id]='blocked';throw Error('ORPHAN_BROWSER');}
@@ -47,7 +50,7 @@ export class Supervisor {
        let startUrls=p.startUrls;
        if(p.restoreLastSession&&this.sessions){const snapshot=await this.sessions.read(id).catch(()=>null);if(snapshot?.urls.length)startUrls=snapshot.urls;}
        const timezone=await resolveTimezone(p.fingerprint,p.proxy?()=>this.exitLocation(p.proxy!):undefined);if(timezone.warning){this.launchWarnings[id]=timezone.warning;let approved=false;try{approved=await this.confirmTimezone(timezone.warning);}catch{approved=false;}if(!approved){const pending=lease;lease=undefined;await pending?.close().catch(()=>undefined);this.state[id]='stopped';return;}}
-        const process=await this.engine.launch({profileId:id,userDataDir:dir,startUrls,languages:p.languages,fingerprint:timezone.fingerprint,fingerprintSeed:p.fingerprintSeed,proxyUrl:lease?.url,extensionDirs:p.extensionIds.map(extensionId=>this.extensionDirectory(extensionId)),onSessionSnapshot:this.sessions?value=>this.sessions!.write(id,value):undefined});
+        const process=await this.engine.launch({profileId:id,userDataDir:dir,startUrls,languages:p.languages,fingerprint:timezone.fingerprint,fingerprintSeed:p.fingerprintSeed,proxyUrl:lease?.url,extensionDirs:p.extensionIds.map(extensionId=>this.extensionDirectory(extensionId)),onSessionSnapshot:this.sessions?value=>this.sessions!.write(id,value):undefined,onProtectionFailure:outcome=>{const issues=this.protection[id]??={closed:0,unprotected:0};issues[outcome]++;}});
       const run:Run={process,lease,proxyVersion:p.proxyVersion};this.running.set(id,run);
       void process.exit.then(async result=>{
         if(this.running.get(id)!==run)return;

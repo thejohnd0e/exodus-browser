@@ -70,6 +70,8 @@ Websites can recognize a browser using more than cookies: its reported platform,
 
 Noise modifies selected outputs; it does not recreate a different physical device or hide every fingerprint signal.
 
+If the fingerprint cannot be installed in a tab, that tab is closed. A worker that Chrome refuses to close runs without the full fingerprint instead, so the page keeps working. Both cases always appear as a warning on the profile card. Turn on **Strict protection** in the fingerprint settings to close the worker's page instead; pages can then close unexpectedly.
+
 ### Reduce tracking between browsing contexts
 
 - **Separate website storage.** Cookies and other saved website data are not shared between profiles. A tracking identifier saved in one profile's storage is not automatically available in another profile.

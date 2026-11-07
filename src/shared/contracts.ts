@@ -11,6 +11,8 @@ export type Profile = Omit<ProfileInput,'fingerprint'|'restoreLastSession'|'fing
 export type LaunchInput = Omit<ProfileInput,'proxyId'|'fingerprint'|'restoreLastSession'|'fingerprintSeed'|'extensionIds'> & {fingerprint:Fingerprint;restoreLastSession:boolean;fingerprintSeed:number;extensionIds:string[];proxy:ProxyInput|null;proxyVersion:string|null};
 export type ProfileState = 'stopped'|'starting'|'running'|'stopping'|'error'|'blocked';
 export type LaunchWarning = {code:'TIMEZONE_UNRESOLVED'};
+/** Targets of the current or last run whose fingerprint could not be installed (DECISIONS #80). */
+export type ProtectionIssues = {closed:number;unprotected:number};
 export type CookieOperationResult = {count:number;fileName:string};
 export type CookieFormat = 'json'|'netscape';
 export type Result<T> = {ok:true;value:T}|{ok:false;error:{code:string;message:string}};
@@ -28,6 +30,7 @@ export interface ProfileApi {
   stop(id:string):Promise<Result<void>>;
   states():Promise<Result<Record<string,ProfileState>>>;
   warnings():Promise<Result<Record<string,LaunchWarning>>>;
+  protectionIssues():Promise<Result<Record<string,ProtectionIssues>>>;
   engineStatus():Promise<Result<EngineStatus>>;
   installEngine():Promise<Result<void>>;
   linkEngine():Promise<Result<void>>;

@@ -10,7 +10,7 @@ const profile = { id: 'd31bb0d8-7bfa-4341-a12a-83a801e8cb4a', name: 'Work', note
 
 function api(overrides: Partial<ProfileApi> = {}): ProfileApi {
   const base = {
-    list: async () => ({ ok: true, value: [profile] }), states: async () => ({ ok: true, value: {} }), warnings: async () => ({ ok: true, value: {} }),
+    list: async () => ({ ok: true, value: [profile] }), states: async () => ({ ok: true, value: {} }), warnings: async () => ({ ok: true, value: {} }),protectionIssues:async()=>({ok:true,value:{}}),
     engineStatus: async () => ({ ok: true, value: { state: 'ready' } }), listProxies: async () => ({ ok: true, value: [] }), runningProxyVersions: async () => ({ ok: true, value: {} }),
     listExtensions: async () => ({ ok: true, value: [] }), getSettings: async () => ({ ok: true, value: { language: 'en' } }), updateSettings: async (value: never) => ({ ok: true, value }),
     onCloseRequested: () => () => undefined, confirmClose: async () => true,

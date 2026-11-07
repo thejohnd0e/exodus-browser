@@ -166,3 +166,16 @@ it('leaves the profile stopped when the bridge refuses to close after a declined
     await s.start(p.id);expect(f.launches()).toBe(0);expect(s.states()[p.id]).toBe('stopped');expect(s.hasActiveWork()).toBe(false);
   }finally{profiles.close();cleanup(root);}
 });
+
+it('counts fingerprint installation failures per run, keeps them after stop and clears them on the next start',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const reports:Array<(outcome:'closed'|'unprotected')=>void>=[];
+  const base=f.engine.launch;f.engine.launch=async input=>{reports.push(input.onProtectionFailure!);return base(input);};
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[]});
+  try{
+    const p=await profiles.create(valid);await s.start(p.id);expect(s.protectionIssues()[p.id]).toBeUndefined();
+    reports[0]('unprotected');reports[0]('closed');reports[0]('unprotected');
+    expect(s.protectionIssues()[p.id]).toEqual({closed:1,unprotected:2});
+    await s.stop(p.id);expect(s.protectionIssues()[p.id]).toEqual({closed:1,unprotected:2});
+    await s.start(p.id);expect(s.protectionIssues()[p.id]).toBeUndefined();await s.stop(p.id);
+  }finally{profiles.close();cleanup(root);}
+});
