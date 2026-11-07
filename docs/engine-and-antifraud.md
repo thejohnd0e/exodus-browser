@@ -140,6 +140,45 @@ by `--disable-blink-features=AutomationControlled` (Decision #58) and does not
 depend on the engine brand. See `kz-google-antifraud-diagnosis-2026-11-05.md`
 (local notes, not tracked) and DECISIONS.md #58-#60.
 
+## Tabs created by the browser expose the host OS for a moment
+
+Overrides are applied over the DevTools protocol, so they exist only after a tab
+has been attached. Tabs the application opens itself start at `about:blank` and
+are navigated afterwards, so they are spoofed from their first request. A tab
+that the browser creates with a URL already set starts loading before the
+overrides arrive. Measured on Google Chrome 157 with a macOS profile on a
+Windows host, for a tab created with a URL over the DevTools protocol and for an
+external link handed to a running profile (a second launch with the same
+user-data directory). Popups opened by a page (`window.open`, `target=_blank`)
+use the same attach path but were not measured.
+
+| What | First request and first document | After the automatic reload |
+|---|---|---|
+| `User-Agent` header | spoofed | spoofed |
+| Client Hints brands | correct (`Google Chrome` present) | correct |
+| `Sec-CH-UA-Platform`, `navigator.userAgentData.platform` | host OS (`Windows`) | profile OS (`macOS`) |
+| `navigator.platform` | host value (`Win32`) | profile value (`MacIntel`) |
+| `platformVersion` | empty | profile value |
+
+Consequences:
+
+- The exposure exists only when the profile OS differs from the host OS. A
+  Windows profile on a Windows host sees no difference.
+- A script in the first document can read the host values before the reload and
+  the server receives the host `Sec-CH-UA-Platform` in the first request. The
+  reload corrects the page, not the request that was already sent.
+- The reload is skipped when the profile overrides nothing, so one-shot URLs
+  (magic links, OAuth callbacks) are not requested twice in that case. With any
+  override active the reload remains, and such a URL is requested twice.
+- It is not fixable from the DevTools protocol after attach: enabling `Fetch` on
+  the paused tab only intercepted the second, post-reload request.
+  `--disable-features=UserAgentClientHint` had no effect on Chromium 149.
+
+Guidance: for a non-Windows profile, avoid handing sensitive URLs to a running
+profile from outside. Typing an address into a tab the profile already opened
+should be safe because the overrides are in place before that navigation, but
+this was not measured.
+
 ## What is not proven
 
 - That Client Hints brands ever influenced the outcome. The front end never
