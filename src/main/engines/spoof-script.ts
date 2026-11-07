@@ -122,6 +122,19 @@ const cleanStack=(e)=>{
   }catch(_){}
   return e;
 };
+const strValueOf=String.prototype.valueOf;
+// The cross-frame handshake is a String wrapper. String.prototype.valueOf checks the internal slot
+// natively, so an arbitrary object passed to Function.prototype.toString never runs page code.
+const isHandshake=(v)=>{if(!v||typeof v!=='object')return false;try{return Reflect.apply(strValueOf,v,[])===HANDSHAKE;}catch(e){return false;}};
+// Accessor syntax gives a getter that, like the browser's own, cannot be constructed and has no
+// prototype. Calling the original first keeps its receiver check (TypeError: Illegal invocation).
+const asGetter=(orig,compute,name)=>{
+  const g=Object.getOwnPropertyDescriptor({get x(){if(orig){try{Reflect.apply(orig,this,[]);}catch(e){throw cleanStack(e);}}return Reflect.apply(compute,this,[]);}},'x').get;
+  if(!orig&&name)try{Object.defineProperty(g,'name',{value:name,configurable:true});}catch(e){}
+  return mask(g,orig);
+};
+// Method syntax: not constructible and no prototype, like a native method.
+const asMethod=(orig,impl)=>mask({x(){try{return Reflect.apply(impl,this,arguments);}catch(e){throw cleanStack(e);}}}.x,orig);
 const resolveOrig=(fn)=>{
   const m=getMap();
   let cur=fn;
@@ -137,7 +150,7 @@ const resolveOrig=(fn)=>{
 const makeToString=(fts)=>{
   const p=new Proxy(fts,{
     apply(target,thisArg,args){
-      if(thisArg&&typeof thisArg==='object'&&thisArg.valueOf&&thisArg.valueOf()===HANDSHAKE)return ownMap;
+      if(isHandshake(thisArg))return ownMap;
       try{
         return Reflect.apply(target,resolveOrig(thisArg),args);
       }catch(e){
@@ -164,7 +177,7 @@ const patchFrame=(w)=>{
       w.Function.prototype.toString=makeToString(fts);
     }
     if(c.hardware&&w.Navigator){
-      const d=(k,v)=>{const o=w.Object.getOwnPropertyDescriptor(w.Navigator.prototype,k);if(o&&o.get&&!m.has(o.get)&&!ownMap.has(o.get)){const g=mask(function(){return v;},o.get);w.Object.defineProperty(w.Navigator.prototype,k,{get:g,configurable:true,enumerable:true});}};
+      const d=(k,v)=>{const o=w.Object.getOwnPropertyDescriptor(w.Navigator.prototype,k);if(o&&o.get&&!m.has(o.get)&&!ownMap.has(o.get)){const g=asGetter(o.get,()=>v);w.Object.defineProperty(w.Navigator.prototype,k,{get:g,configurable:true,enumerable:true});}};
       d('hardwareConcurrency',c.hardware.cores);
       d('deviceMemory',c.hardware.memoryGb);
     }
@@ -176,12 +189,12 @@ if(typeof HTMLIFrameElement!=='undefined'){
     const cwDesc=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');
     if(cwDesc&&cwDesc.get){
       const origCw=cwDesc.get;
-      const getCw=mask(function(){const w=origCw.call(this);patchFrame(w);return w;},origCw);
+      const getCw=asGetter(origCw,function(){const w=origCw.call(this);patchFrame(w);return w;});
       Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{get:getCw,configurable:true,enumerable:true});
     }
   }catch(e){}
 }
-const keep=(o,p,w)=>{const f=o[p];if(!f)return;const raw=w(f);const wrapped=function(){try{return raw.apply(this,arguments);}catch(e){throw cleanStack(e);}};mask(wrapped,f);o[p]=wrapped;return f};
+const keep=(o,p,w)=>{const f=o[p];if(!f)return;o[p]=asMethod(f,w(f));return f};
 const rect=(r)=>{const d=H(Math.round(r.x*100),Math.round(r.y*100))*0.04-0.02;return DOMRect.fromRect({x:r.x+d,y:r.y+d,width:r.width+d*0.5,height:r.height+d*0.5})};
 const wrapRectList=(list)=>{
   if(!list)return list;
@@ -224,7 +237,7 @@ frameHooks.push(w=>patchCanvas(w.CanvasRenderingContext2D,w.HTMLCanvasElement));
 const WEBGL = `if(c.webgl==='off'){
  keep(HTMLCanvasElement.prototype,'getContext',f=>function(t){if(t==='webgl'||t==='webgl2'||t==='experimental-webgl')return null;return f.apply(this,arguments);});
 }else{
- if(c.webglInfo){const gp=(proto)=>{const real=proto.getParameter;proto.getParameter=mask(function(p){if(p===37445)return c.webglInfo.vendor;if(p===37446)return c.webglInfo.renderer;return real.call(this,p);},real);};gp(WebGLRenderingContext.prototype);if(window.WebGL2RenderingContext)gp(WebGL2RenderingContext.prototype);}
+ if(c.webglInfo){const gp=(proto)=>{const real=proto.getParameter;proto.getParameter=asMethod(real,function(p){if(p===37445)return c.webglInfo.vendor;if(p===37446)return c.webglInfo.renderer;return real.call(this,p);});};gp(WebGLRenderingContext.prototype);if(window.WebGL2RenderingContext)gp(WebGL2RenderingContext.prototype);}
  if(c.webgl==='noise'){const read=(proto)=>keep(proto,'readPixels',f=>function(x,y,w,h,fm,ty,pix){f.call(this,x,y,w,h,fm,ty,pix);if(pix&&pix.length&&w>0)for(let i=0;i<pix.length;i+=4)if(H(x+((i>>2)%w),y+Math.floor((i>>2)/w))<0.5)pix[i]^=1;});read(WebGLRenderingContext.prototype);if(window.WebGL2RenderingContext)read(WebGL2RenderingContext.prototype);}
  }`;
 
@@ -233,7 +246,7 @@ const OFFSCREEN_WEBGL_OFF = `if(c.webgl==='off'&&typeof OffscreenCanvas!=='undef
 }`;
 
 const WORKER_WEBGL = `if(c.webgl!=='off'&&typeof WebGLRenderingContext!=='undefined'){
- if(c.webglInfo){const gp=(proto)=>{const real=proto.getParameter;proto.getParameter=mask(function(p){if(p===37445)return c.webglInfo.vendor;if(p===37446)return c.webglInfo.renderer;return real.call(this,p);},real);};gp(WebGLRenderingContext.prototype);if(typeof WebGL2RenderingContext!=='undefined')gp(WebGL2RenderingContext.prototype);}
+ if(c.webglInfo){const gp=(proto)=>{const real=proto.getParameter;proto.getParameter=asMethod(real,function(p){if(p===37445)return c.webglInfo.vendor;if(p===37446)return c.webglInfo.renderer;return real.call(this,p);});};gp(WebGLRenderingContext.prototype);if(typeof WebGL2RenderingContext!=='undefined')gp(WebGL2RenderingContext.prototype);}
  if(c.webgl==='noise'){const read=(proto)=>keep(proto,'readPixels',f=>function(x,y,w,h,fm,ty,pix){f.call(this,x,y,w,h,fm,ty,pix);if(pix&&pix.length&&w>0)for(let i=0;i<pix.length;i+=4)if(H(x+((i>>2)%w),y+Math.floor((i>>2)/w))<0.5)pix[i]^=1;});read(WebGLRenderingContext.prototype);if(typeof WebGL2RenderingContext!=='undefined')read(WebGL2RenderingContext.prototype);}
 }`;
 
@@ -249,7 +262,7 @@ const OFFSCREEN_CANVAS = `if(c.canvas!=='real'&&typeof OffscreenCanvasRenderingC
 }`;
 
 const WEBGPU_INFO = `if(c.webgpuInfo&&typeof GPUAdapterInfo!=='undefined'){try{
-  const def=(p,v)=>{const o=Object.getOwnPropertyDescriptor(GPUAdapterInfo.prototype,p);if(o&&o.get){const g=mask(function(){return v;},o.get);Object.defineProperty(GPUAdapterInfo.prototype,p,{get:g,configurable:true,enumerable:true});}};
+  const def=(p,v)=>{const o=Object.getOwnPropertyDescriptor(GPUAdapterInfo.prototype,p);if(o&&o.get){const g=asGetter(o.get,()=>v);Object.defineProperty(GPUAdapterInfo.prototype,p,{get:g,configurable:true,enumerable:true});}};
   def('vendor',c.webgpuInfo.vendor);
   def('architecture',c.webgpuInfo.architecture);
 }catch(e){}}`;
@@ -280,7 +293,7 @@ const AUDIO = `if(c.audioNoise){
 const HARDWARE = `if(c.hardware){try{
   const defProp=(proto,p,v)=>{try{
     const orig=Object.getOwnPropertyDescriptor(proto,p);
-    const getter=mask(function(){return v;},orig?.get||function(){return v;});
+    const getter=asGetter(orig&&orig.get,()=>v,'get '+p);
     Object.defineProperty(proto,p,{get:getter,configurable:true,enumerable:true});
   }catch(e){}};
   if(typeof Navigator!=='undefined'){
@@ -296,7 +309,7 @@ const HARDWARE = `if(c.hardware){try{
 const SCREEN = `if(c.screen){const w=c.screen.width,h=c.screen.height;try{
   const defProp=(proto,p,v)=>{try{
     const orig=Object.getOwnPropertyDescriptor(proto,p);
-    const getter=mask(function(){return v;},orig?.get||function(){return v;});
+    const getter=asGetter(orig&&orig.get,()=>v,'get '+p);
     Object.defineProperty(proto,p,{get:getter,configurable:true,enumerable:true});
   }catch(e){}};
   if(typeof Screen!=='undefined'){
@@ -309,8 +322,8 @@ const SCREEN = `if(c.screen){const w=c.screen.width,h=c.screen.height;try{
 try{
   const ow=Object.getOwnPropertyDescriptor(window,'outerWidth');
   const oh=Object.getOwnPropertyDescriptor(window,'outerHeight');
-  const wg=mask(function(){return w;},(ow&&ow.get)||function outerWidth(){return w;});
-  const hg=mask(function(){return h;},(oh&&oh.get)||function outerHeight(){return h;});
+  const wg=asGetter(ow&&ow.get,()=>w,'get outerWidth');
+  const hg=asGetter(oh&&oh.get,()=>h,'get outerHeight');
   Object.defineProperty(window,'outerWidth',{get:wg,configurable:true,enumerable:ow?ow.enumerable:true});
   Object.defineProperty(window,'outerHeight',{get:hg,configurable:true,enumerable:oh?oh.enumerable:true});
 }catch(e){}}`;
@@ -327,7 +340,7 @@ const FRAME_SCREEN = `if(c.frameScreen&&c.screen){try{
   const dd=Object.getOwnPropertyDescriptor(window,'devicePixelRatio');
   const realD=dd&&dd.get?dd.get.call(window):1;
   const W=c.screen.width,Hs=c.screen.height,D=c.frameScreen.dpr||realD;
-  if(dd&&dd.get&&D!==realD)Object.defineProperty(window,'devicePixelRatio',{get:mask(function(){return D;},dd.get),set:dd.set,configurable:true,enumerable:dd.enumerable});
+  if(dd&&dd.get&&D!==realD)Object.defineProperty(window,'devicePixelRatio',{get:asGetter(dd.get,()=>D),set:dd.set,configurable:true,enumerable:dd.enumerable});
   const fmt=v=>String(Math.round(v*1e6)/1e6);
   const toHost=(feature,value)=>feature.indexOf('width')>=0?value*realW/W:feature.indexOf('height')>=0?value*realH/Hs:value*realD/D;
   const rewrite=q=>q.replace(/[(][ ]*((?:-webkit-)?(?:min-|max-)?(?:-webkit-)?(?:device-width|device-height|resolution|device-pixel-ratio))[ ]*:[ ]*([0-9]*[.]?[0-9]+)[ ]*([a-zA-Z]*)[ ]*[)]/gi,(m,f,v,u)=>{
@@ -343,9 +356,9 @@ const FRAME_SCREEN = `if(c.frameScreen&&c.screen){try{
     return list;
   });
   const md=Object.getOwnPropertyDescriptor(MediaQueryList.prototype,'media');
-  if(md&&md.get)Object.defineProperty(MediaQueryList.prototype,'media',{get:mask(function(){const v=md.get.call(this);return written.has(this)?written.get(this):v;},md.get),configurable:true,enumerable:md.enumerable});
+  if(md&&md.get)Object.defineProperty(MediaQueryList.prototype,'media',{get:asGetter(md.get,function(){const v=md.get.call(this);return written.has(this)?written.get(this):v;}),configurable:true,enumerable:md.enumerable});
   if(typeof MediaQueryListEvent!=='undefined'){const ed=Object.getOwnPropertyDescriptor(MediaQueryListEvent.prototype,'media');
-    if(ed&&ed.get)Object.defineProperty(MediaQueryListEvent.prototype,'media',{get:mask(function(){const v=ed.get.call(this);return back.has(v)?back.get(v):v;},ed.get),configurable:true,enumerable:ed.enumerable});}
+    if(ed&&ed.get)Object.defineProperty(MediaQueryListEvent.prototype,'media',{get:asGetter(ed.get,function(){const v=ed.get.call(this);return back.has(v)?back.get(v):v;}),configurable:true,enumerable:ed.enumerable});}
 }catch(e){}}`;
 
 const WEBRTC = `if(c.webRtc==='off'){const kill=(n)=>{try{Object.defineProperty(window,n,{value:undefined,writable:true,configurable:true});}catch(e){}};kill('RTCPeerConnection');kill('webkitRTCPeerConnection');kill('RTCSessionDescription');kill('RTCIceCandidate');}`;
@@ -382,7 +395,7 @@ export function buildWorkerSpoofScript(fingerprint: Fingerprint, seed: number): 
     config.webgl === 'off' ? OFFSCREEN_WEBGL_OFF : null,
     config.webgl !== 'real' || config.webglInfo ? WORKER_WEBGL : null,
     config.webgpuInfo ? WEBGPU_INFO : null,
-    needPlatform ? `try{const defProp=(proto,p,v)=>{try{const orig=Object.getOwnPropertyDescriptor(proto,p);const getter=mask(function(){return v;},orig?.get||function(){return v;});Object.defineProperty(proto,p,{get:getter,configurable:true,enumerable:true});}catch(e){}};if(typeof WorkerNavigator!=='undefined')defProp(WorkerNavigator.prototype,'platform',${JSON.stringify(platform)});}catch(e){}` : null,
+    needPlatform ? `try{const defProp=(proto,p,v)=>{try{const orig=Object.getOwnPropertyDescriptor(proto,p);const getter=asGetter(orig&&orig.get,()=>v,'get '+p);Object.defineProperty(proto,p,{get:getter,configurable:true,enumerable:true});}catch(e){}};if(typeof WorkerNavigator!=='undefined')defProp(WorkerNavigator.prototype,'platform',${JSON.stringify(platform)});}catch(e){}` : null,
   ].filter(Boolean);
   if (sections.length === 0) return '';
   const nonce = JSON.stringify(randomUUID());
