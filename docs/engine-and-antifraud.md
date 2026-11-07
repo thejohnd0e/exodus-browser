@@ -140,44 +140,77 @@ by `--disable-blink-features=AutomationControlled` (Decision #58) and does not
 depend on the engine brand. See `kz-google-antifraud-diagnosis-2026-11-05.md`
 (local notes, not tracked) and DECISIONS.md #58-#60.
 
-## Tabs created by the browser expose the host OS for a moment
+## Tabs created by the browser can run their first document with the real fingerprint
 
 Overrides are applied over the DevTools protocol, so they exist only after a tab
 has been attached. Tabs the application opens itself start at `about:blank` and
 are navigated afterwards, so they are spoofed from their first request. A tab
 that the browser creates with a URL already set starts loading before the
-overrides arrive. Measured on Google Chrome 157 with a macOS profile on a
-Windows host, for a tab created with a URL over the DevTools protocol and for an
-external link handed to a running profile (a second launch with the same
-user-data directory). Popups opened by a page (`window.open`, `target=_blank`)
-use the same attach path but were not measured.
+overrides arrive. Measured on Google Chrome 157 with a macOS profile (manual
+hardware, time zone, screen and GPU) on a Windows host, for a tab created with a
+URL over the DevTools protocol (`Target.createTarget`) against a local server that
+answers instantly:
 
-| What | First request and first document | After the automatic reload |
+| What | First document | After the automatic reload |
 |---|---|---|
+| `navigator.platform`, `userAgentData.platform`, `Sec-CH-UA-Platform` | host (`Win32`, `Windows`) | profile (`MacIntel`, `macOS`) |
+| `platformVersion`, architecture, full version list | empty | profile values |
+| `hardwareConcurrency`, `deviceMemory` | host values | profile values |
+| time zone | the real one | profile value |
+| WebGL vendor and renderer | the real GPU | profile value |
+| `screen`, `devicePixelRatio` | the real display | profile values |
 | `User-Agent` header | spoofed | spoofed |
 | Client Hints brands | correct (`Google Chrome` present) | correct |
-| `Sec-CH-UA-Platform`, `navigator.userAgentData.platform` | host OS (`Windows`) | profile OS (`macOS`) |
-| `navigator.platform` | host value (`Win32`) | profile value (`MacIntel`) |
-| `platformVersion` | empty | profile value |
 
-Consequences:
+The earlier version of this section listed only the platform values and said the
+exposure existed only for a profile whose OS differs from the host. That was
+wrong: every value that the profile overrides is real in that first document.
 
-- The exposure exists only when the profile OS differs from the host OS. A
-  Windows profile on a Windows host sees no difference.
-- A script in the first document can read the host values before the reload and
-  the server receives the host `Sec-CH-UA-Platform` in the first request. The
+What is and is not known:
+
+- A script in the first document can read all of the values above before the
+  reload, and the first request carries the host `Sec-CH-UA-Platform`. The
   reload corrects the page, not the request that was already sent.
+- The window is a race. With a server that answered after 500 ms the first
+  document was already spoofed, so the exposure is real for instant responses
+  and shrinks with network latency. How often it occurs against real remote
+  sites was not measured.
+- Pages opened by `window.open(url)` or `rel=opener` links attach with a blank
+  URL and are navigated after the overrides, and were spoofed in the first
+  document. An external link handed to a running profile showed the same first
+  request exposure as `Target.createTarget`; its first document was not
+  measured separately.
 - The reload is skipped when the profile overrides nothing, so one-shot URLs
   (magic links, OAuth callbacks) are not requested twice in that case. With any
   override active the reload remains, and such a URL is requested twice.
-- It is not fixable from the DevTools protocol after attach: enabling `Fetch` on
+- It is not fixable by rewriting the request after attach: enabling `Fetch` on
   the paused tab only intercepted the second, post-reload request.
   `--disable-features=UserAgentClientHint` had no effect on Chromium 149.
+- Aborting the in-flight navigation at attach and navigating again after the
+  overrides (`Page.stopLoading`, then `Page.navigate`) removed the exposed first
+  document in a single run against the instant local server. It was not repeated,
+  not tried on slow or redirecting pages and not shipped.
 
-Guidance: for a non-Windows profile, avoid handing sensitive URLs to a running
-profile from outside. Typing an address into a tab the profile already opened
-should be safe because the overrides are in place before that navigation, but
-this was not measured.
+Guidance: avoid handing sensitive URLs to a running profile from outside.
+Typing an address into a tab the profile already opened should be safe because
+the overrides are in place before that navigation, but this was not measured.
+
+## Links that open a new tab by `target="_blank"` (open defect)
+
+Found on 2026-11-07 while measuring the above. In a managed profile a link
+`<a href="/page" target="_blank">` (which browsers treat as `noopener`, so the
+new tab gets its own renderer process) does not open a usable tab: the new
+target is created, none of its page-level commands (`Page.enable`,
+`Network.setUserAgentOverride`, `Page.addScriptToEvaluateOnNewDocument`) is
+answered while it waits for the debugger, the installer's 5-second timeout fires
+and, failing closed, it closes the tab. The requested page is never fetched.
+Reproduced on Google Chrome 157 with the default fingerprint and with manual
+overrides, and on Playwright Chromium 149. The same happens for a form with
+`target="_blank"`. The same link with `rel="opener"` and `window.open(url)` work.
+Commands that are answered by the browser process (`Target.setAutoAttach`,
+`Runtime.runIfWaitingForDebugger`) respond within milliseconds, so the tab is
+waiting for resume, which the installer only sends after the overrides were
+acknowledged. See TODO.md for the open item.
 
 ## What is not proven
 
