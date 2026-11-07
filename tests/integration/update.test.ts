@@ -1,6 +1,6 @@
 import {afterAll,beforeAll,beforeEach,afterEach,expect,it} from 'vitest';
 import http from 'node:http';
-import {createHash} from 'node:crypto';
+import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {access,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -10,6 +10,8 @@ import {isAllowedHost} from '../../src/main/update/hosts';
 
 const payload=Buffer.alloc(256*1024,7);
 const digest=createHash('sha256').update(payload).digest('hex');
+const keys=generateKeyPairSync('ed25519');
+const publicKey=keys.publicKey.export({type:'spki',format:'pem'}).toString();
 const loopback=(url:string)=>url.startsWith('http://127.0.0.1:')||isAllowedHost(url);
 
 let server:http.Server;
@@ -23,11 +25,13 @@ beforeAll(async()=>{
     if(path==='/api'){
       const installer={name:'ExodusBrowser-Setup-1.1.78.exe',browser_download_url:`${origin}/asset/ExodusBrowser-Setup-1.1.78.exe`,size:payload.length};
       response.setHeader('content-type','application/json');
-      response.end(JSON.stringify({tag_name:'v1.1.78',draft:false,prerelease:false,assets:[installer,{name:'SHA256SUMS',browser_download_url:`${origin}/asset/SHA256SUMS`,size:90}]}));
+      response.end(JSON.stringify({tag_name:'v1.1.78',draft:false,prerelease:false,assets:[installer,{name:'SHA256SUMS',browser_download_url:`${origin}/asset/SHA256SUMS`,size:90},{name:'SHA256SUMS.sig',browser_download_url:`${origin}/asset/SHA256SUMS.sig`,size:88}]}));
       return;
     }
-    if(path==='/asset/SHA256SUMS'){
-      response.end(`${mode==='bad-digest'?'0'.repeat(64):digest}  ExodusBrowser-Setup-1.1.78.exe\n`);
+    if(path==='/asset/SHA256SUMS'||path==='/asset/SHA256SUMS.sig'){
+      // A bad digest is still correctly signed, so this scenario keeps exercising the SHA-256 check.
+      const text=`${mode==='bad-digest'?'0'.repeat(64):digest}  ExodusBrowser-Setup-1.1.78.exe\n`;
+      response.end(path.endsWith('.sig')?sign(null,Buffer.from(text),keys.privateKey).toString('base64'):text);
       return;
     }
     if(path==='/asset/ExodusBrowser-Setup-1.1.78.exe'){
@@ -57,6 +61,7 @@ function service(overrides:{appVersion?:string}={}){
     appVersion:overrides.appVersion??'0.1.78',
     root,
     apiUrl:`${origin}/api`,
+    publicKey,
     isAllowedUrl:loopback,
     fetch:(url,init)=>fetch(url,init),
     busy:async()=>false,

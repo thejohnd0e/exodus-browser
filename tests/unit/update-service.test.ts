@@ -1,5 +1,5 @@
 import {afterEach,beforeEach,describe,expect,it} from 'vitest';
-import {createHash} from 'node:crypto';
+import {createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {access,mkdir,mkdtemp,readdir,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -13,11 +13,18 @@ const apiUrl='https://api.github.com/repos/thejohnd0e/exodus-browser/releases/la
 const base='https://github.com/thejohnd0e/exodus-browser/releases/download/v1.1.78/';
 const installerUrl=base+'ExodusBrowser-Setup-1.1.78.exe';
 const checksumsUrl=base+'SHA256SUMS';
+const signatureUrl=base+'SHA256SUMS.sig';
+const keys=generateKeyPairSync('ed25519');
+const publicKey=keys.publicKey.export({type:'spki',format:'pem'}).toString();
+const sumsText=`${digest}  ExodusBrowser-Setup-1.1.78.exe
+`;
+const signature=sign(null,Buffer.from(sumsText),keys.privateKey).toString('base64');
 
 function releaseJson(){
   return {tag_name:'v1.1.78',draft:false,prerelease:false,assets:[
     {name:'ExodusBrowser-Setup-1.1.78.exe',browser_download_url:installerUrl,size:payload.length},
     {name:'SHA256SUMS',browser_download_url:checksumsUrl,size:80},
+    {name:'SHA256SUMS.sig',browser_download_url:signatureUrl,size:88},
   ]};
 }
 
@@ -32,8 +39,10 @@ function service(overrides:Partial<ConstructorParameters<typeof UpdateService>[0
     appVersion:'0.1.78',
     root,
     apiUrl,
+    publicKey,
     fetch:async(url:string)=>{
       if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(signature,{status:200});
       if(url===checksumsUrl)return new Response(`${digest}  ExodusBrowser-Setup-1.1.78.exe\n`,{status:200});
       if(url===installerUrl)return new Response(body(),{status:200});
       throw new Error('unexpected '+url);
@@ -102,6 +111,7 @@ describe('UpdateService',()=>{
     const {svc}=service({fetch:async(url:string)=>{
       if(url===installerUrl)return new Response(new ReadableStream({start(){},pull(){return new Promise<void>(resolve=>{release=resolve;});}}),{status:200});
       if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(signature,{status:200});
       return new Response(`${digest}  ExodusBrowser-Setup-1.1.78.exe\n`,{status:200});
     }});
     await svc.check();
@@ -117,6 +127,7 @@ describe('UpdateService',()=>{
     const {svc}=service({fetch:async(url:string)=>{
       if(url===installerUrl)return new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(4));},pull(){return new Promise(()=>undefined);}}),{status:200});
       if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(signature,{status:200});
       return new Response(`${digest}  ExodusBrowser-Setup-1.1.78.exe\n`,{status:200});
     }});
     await svc.check();
@@ -129,6 +140,7 @@ describe('UpdateService',()=>{
   it('follows a SHA256SUMS redirect to an allowed GitHub host',async()=>{
     const {svc}=service({fetch:async(url:string)=>{
       if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(signature,{status:200});
       if(url===checksumsUrl)return new Response(null,{status:302,headers:{location:'https://objects.githubusercontent.com/sums'}});
       if(url==='https://objects.githubusercontent.com/sums')return new Response(`${digest}  ExodusBrowser-Setup-1.1.78.exe\n`,{status:200});
       return new Response(body(),{status:200});
@@ -140,12 +152,76 @@ describe('UpdateService',()=>{
   it('refuses a SHA256SUMS redirect to an untrusted host',async()=>{
     const {svc}=service({fetch:async(url:string)=>{
       if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(signature,{status:200});
       if(url===checksumsUrl)return new Response(null,{status:302,headers:{location:'https://evil.example/sums'}});
       return new Response(body(),{status:200});
     }});
     await svc.check();
     expect(await svc.download()).toEqual({state:'error',code:'UPDATE_UNTRUSTED_REDIRECT'});
   });
+  it('stops before downloading the installer when the checksums signature is wrong',async()=>{
+    const requested:string[]=[];
+    const other=generateKeyPairSync('ed25519');
+    const {svc,runInstaller}=service({fetch:async(url:string)=>{
+      requested.push(url);
+      if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(sign(null,Buffer.from(sumsText),other.privateKey).toString('base64'),{status:200});
+      if(url===checksumsUrl)return new Response(sumsText,{status:200});
+      return new Response(body(),{status:200});
+    }});
+    await svc.check();
+    expect(await svc.download()).toEqual({state:'error',code:'UPDATE_SIGNATURE_INVALID'});
+    expect(requested).not.toContain(installerUrl);
+    await expect(svc.install()).rejects.toThrow('UPDATE_NOT_READY');
+    expect(runInstaller).toEqual([]);
+    await expect(access(join(root,'updates','1.1.78'))).rejects.toThrow();
+  });
+
+  it('rejects replaced checksums that still carry the old valid signature',async()=>{
+    const requested:string[]=[];
+    const evil=createHash('sha256').update('malware').digest('hex');
+    const {svc}=service({fetch:async(url:string)=>{
+      requested.push(url);
+      if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(signature,{status:200});
+      if(url===checksumsUrl)return new Response(`${evil}  ExodusBrowser-Setup-1.1.78.exe
+`,{status:200});
+      return new Response(Buffer.from('malware'),{status:200});
+    }});
+    await svc.check();
+    expect(await svc.download()).toEqual({state:'error',code:'UPDATE_SIGNATURE_INVALID'});
+    expect(requested).not.toContain(installerUrl);
+  });
+
+  it('fails closed when the signature cannot be downloaded',async()=>{
+    const requested:string[]=[];
+    const {svc}=service({fetch:async(url:string)=>{
+      requested.push(url);
+      if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response('missing',{status:404});
+      if(url===checksumsUrl)return new Response(sumsText,{status:200});
+      return new Response(body(),{status:200});
+    }});
+    await svc.check();
+    const state=await svc.download();
+    expect(state.state).toBe('error');
+    expect(requested).not.toContain(installerUrl);
+  });
+
+  it('refuses every download when no trusted key is configured',async()=>{
+    const requested:string[]=[];
+    const {svc}=service({publicKey:'',fetch:async(url:string)=>{
+      requested.push(url);
+      if(url===apiUrl)return new Response(JSON.stringify(releaseJson()),{status:200});
+      if(url===signatureUrl)return new Response(signature,{status:200});
+      if(url===checksumsUrl)return new Response(sumsText,{status:200});
+      return new Response(body(),{status:200});
+    }});
+    await svc.check();
+    expect(await svc.download()).toEqual({state:'error',code:'UPDATE_SIGNATURE_INVALID'});
+    expect(requested).not.toContain(installerUrl);
+  });
+
   it('refuses installation before a verified download',async()=>{
     const {svc,runInstaller}=service();
     await svc.check();

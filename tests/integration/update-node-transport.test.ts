@@ -19,7 +19,7 @@ const {app}=require('electron');
 const fs=require('node:fs');
 const path=require('node:path');
 const {createServer}=require('node:http');
-const {createHash}=require('node:crypto');
+const {createHash,generateKeyPairSync,sign}=require('node:crypto');
 const {UpdateService}=require(${JSON.stringify(bundle)});
 app.setPath('userData',${JSON.stringify(join(dir,'electron'))});
 const scenario=${JSON.stringify(scenario)};
@@ -34,14 +34,18 @@ app.whenReady().then(async()=>{
   const name='ExodusBrowser-Setup-1.1.83.exe';
   const payload=Buffer.alloc(8*1024*1024,97);
   const digest=createHash('sha256').update(payload).digest('hex');
+  const keys=generateKeyPairSync('ed25519');
+  const sumsText=digest+'  '+name+'\\n';
   const server=createServer((req,res)=>{
     result.requests.push({url:req.url,version:req.httpVersion});
     if(req.url==='/latest')return res.end(JSON.stringify({tag_name:'v1.1.83',draft:false,prerelease:false,assets:[
       {name,browser_download_url:base+'/installer',size:payload.length},
-      {name:'SHA256SUMS',browser_download_url:base+'/checksums',size:100}
+      {name:'SHA256SUMS',browser_download_url:base+'/checksums',size:100},
+      {name:'SHA256SUMS.sig',browser_download_url:base+'/checksums.sig',size:88}
     ]}));
     if(req.url==='/checksums'){res.writeHead(302,{location:base+'/sums'});return res.end();}
-    if(req.url==='/sums')return res.end(digest+'  '+name+'\\n');
+    if(req.url==='/sums')return res.end(sumsText);
+    if(req.url==='/checksums.sig')return res.end(sign(null,Buffer.from(sumsText),keys.privateKey).toString('base64'));
     if(req.url==='/installer'){res.writeHead(302,{location:scenario==='untrusted'?'http://127.0.0.1:1/forbidden':base+'/payload'});return res.end();}
     if(req.url==='/payload'){
       res.writeHead(200,{'content-length':payload.length});
@@ -56,7 +60,7 @@ app.whenReady().then(async()=>{
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
     base='http://127.0.0.1:'+server.address().port;
     const service=new UpdateService({
-      appVersion:'1.1.82',root:${JSON.stringify(join(dir,'data'))},apiUrl:base+'/latest',
+      appVersion:'1.1.82',publicKey:keys.publicKey.export({type:'spki',format:'pem'}).toString(),root:${JSON.stringify(join(dir,'data'))},apiUrl:base+'/latest',
       isAllowedUrl:url=>new URL(url).origin===base,
       busy:async()=>false,runInstaller:async()=>{result.installed=true;},
       onState:state=>{if(scenario==='cancel'&&state.state==='downloading'&&state.received>0)void service.cancel();}
@@ -103,7 +107,7 @@ it('uses the production default transport inside Electron for HTTP/1.1 redirects
   expect(result.download).toEqual({state:'ready',version:'1.1.83'});
   expect(result.matches).toBe(true);
   expect(result.installed).toBe(true);
-  expect(result.requests.map((request:{url:string})=>request.url)).toEqual(['/latest','/checksums','/sums','/installer','/payload']);
+  expect(result.requests.map((request:{url:string})=>request.url)).toEqual(['/latest','/checksums','/sums','/checksums.sig','/installer','/payload']);
   expect(result.requests.every((request:{version:string})=>request.version==='1.1')).toBe(true);
 },30000);
 

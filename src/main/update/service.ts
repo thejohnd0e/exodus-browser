@@ -3,6 +3,8 @@ import {join} from 'node:path';
 import {parseLatestRelease,parseSha256Sums,type LatestRelease} from './release';
 import {downloadInstaller,fetchAllowedRedirects} from './download';
 import {isAllowedHost} from './hosts';
+import {verifyChecksumsSignature} from './signature';
+import {UPDATE_PUBLIC_KEY_PEM} from './signing-key';
 import type {UpdateState} from '../../shared/update';
 
 export const UPDATE_API_URL='https://api.github.com/repos/thejohnd0e/exodus-browser/releases/latest';
@@ -16,6 +18,8 @@ export type UpdateServiceOptions={
   appVersion:string;
   root:string;
   apiUrl?:string;
+  /** Trusted Ed25519 public key (PEM). Tests inject their own; production uses the embedded key. */
+  publicKey?:string;
   isAllowedUrl?:(url:string)=>boolean;
   fetch?:UpdateFetch;
   busy:()=>Promise<boolean>;
@@ -67,7 +71,12 @@ export class UpdateService {
     const destinationDir=join(this.options.root,'updates',offer.version);
     try{
       this.set({state:'downloading',version:offer.version,received:0,total:offer.installer.size});
-      const expectedSha256=parseSha256Sums(await this.fetchChecksumsText(offer.checksumsUrl),offer.installer.name);
+      // The checksums are trusted only after their detached signature verifies against the embedded
+      // key, and the installer is not requested before that. An unusable key also fails closed.
+      const checksums=await this.fetchLimitedBytes(offer.checksumsUrl);
+      const signature=(await this.fetchLimitedBytes(offer.signatureUrl)).toString('utf8');
+      if(!verifyChecksumsSignature(checksums,signature,this.options.publicKey??UPDATE_PUBLIC_KEY_PEM))throw Error('UPDATE_SIGNATURE_INVALID');
+      const expectedSha256=parseSha256Sums(checksums.toString('utf8'),offer.installer.name);
       const path=await downloadInstaller({
         url:offer.installer.url,
         expectedSize:offer.installer.size,
@@ -128,9 +137,11 @@ export class UpdateService {
     return this.readLimited(response);
   }
 
-  private async fetchChecksumsText(url:string):Promise<string>{
+  private async fetchLimitedBytes(url:string):Promise<Buffer>{
     const response=await fetchAllowedRedirects({url,signal:AbortSignal.timeout(REQUEST_TIMEOUT_MS),fetch:this.fetch,isAllowedUrl:this.options.isAllowedUrl??isAllowedHost});
-    return this.readLimited(response);
+    const bytes=Buffer.from(await response.arrayBuffer());
+    if(bytes.length>METADATA_LIMIT_BYTES)throw Error('UPDATE_INVALID_RELEASE');
+    return bytes;
   }
 
   private async readLimited(response:Response):Promise<string>{

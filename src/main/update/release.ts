@@ -19,7 +19,7 @@ const releaseSchema=z.object({
 
 export type LatestRelease=
   |{kind:'up-to-date'}
-  |{kind:'available';version:string;installer:{name:string;url:string;size:number};checksumsUrl:string};
+  |{kind:'available';version:string;installer:{name:string;url:string;size:number};checksumsUrl:string;signatureUrl:string};
 
 export function parseLatestRelease(json:unknown,appVersion:string,isAllowedUrl:(url:string)=>boolean=isAllowedHost):LatestRelease{
   const parsed=releaseSchema.safeParse(json);
@@ -32,10 +32,11 @@ export function parseLatestRelease(json:unknown,appVersion:string,isAllowedUrl:(
   if(!isNewer(version,appVersion))return {kind:'up-to-date'};
   const installers=release.assets.filter(asset=>INSTALLER_PATTERN.test(asset.name));
   const checksums=release.assets.filter(asset=>asset.name==='SHA256SUMS');
-  if(installers.length!==1||checksums.length!==1)throw Error('UPDATE_INVALID_RELEASE');
+  const signatures=release.assets.filter(asset=>asset.name==='SHA256SUMS.sig');
+  if(installers.length!==1||checksums.length!==1||signatures.length!==1)throw Error('UPDATE_INVALID_RELEASE');
   const installer=installers[0];
   if(installer.name!==`ExodusBrowser-Setup-${version}.exe`)throw Error('UPDATE_INVALID_RELEASE');
-  for(const asset of [installer,checksums[0]]){
+  for(const asset of [installer,checksums[0],signatures[0]]){
     if(!isAllowedUrl(asset.browser_download_url))throw Error('UPDATE_INVALID_RELEASE');
   }
   return {
@@ -43,6 +44,7 @@ export function parseLatestRelease(json:unknown,appVersion:string,isAllowedUrl:(
     version,
     installer:{name:installer.name,url:installer.browser_download_url,size:installer.size},
     checksumsUrl:checksums[0].browser_download_url,
+    signatureUrl:signatures[0].browser_download_url,
   };
 }
 
