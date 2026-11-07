@@ -144,10 +144,12 @@ describe('spoof script', () => {
     expect(script).toContain('getChannelData');
   });
 
-  it('stealth: clientRects noise covers Range.prototype and returns DOMRect instances', () => {
+  it('stealth: clientRects noise covers Range.prototype and noises the rects the browser returned, in place', () => {
     const script = buildSpoofScript({ ...DEFAULT_FINGERPRINT, clientRects: 'noise' }, 1);
     expect(script).toContain('Range.prototype');
-    expect(script).toContain('DOMRect.fromRect');
+    expect(script).toContain('noiseRectList');
+    // A Proxy over DOMRectList leaked the real values through descriptors (client-rects.test.ts).
+    expect(script).not.toContain('new Proxy(list');
   });
 
   it('stealth: geolocation block mode leaves page APIs untouched (browser-level permission)', () => {

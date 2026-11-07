@@ -195,20 +195,12 @@ if(typeof HTMLIFrameElement!=='undefined'){
   }catch(e){}
 }
 const keep=(o,p,w)=>{const f=o[p];if(!f)return;o[p]=asMethod(f,w(f));return f};
-const rect=(r)=>{const d=H(Math.round(r.x*100),Math.round(r.y*100))*0.04-0.02;return DOMRect.fromRect({x:r.x+d,y:r.y+d,width:r.width+d*0.5,height:r.height+d*0.5})};
-const wrapRectList=(list)=>{
-  if(!list)return list;
-  const out=[];for(let i=0;i<list.length;i++)out.push(rect(list[i]));
-  return new Proxy(list,{
-    get(t,p,r){
-      if(p==='item')return mask((idx)=>out[idx]??null,t.item);
-      if(p==='length')return out.length;
-      if(p===Symbol.iterator)return function*(){for(const r of out)yield r;};
-      if(typeof p==='string'&&!isNaN(p))return out[Number(p)];
-      return Reflect.get(t,p,r);
-    }
-  });
-};`;
+// ClientRects noise moves the values of the rects the browser returned, in place. DOMRectList holds
+// mutable DOMRect objects, so indexing, item(), descriptors, iteration and the native methods all
+// read the same noised numbers and the list stays a real DOMRectList (audit 2026-11-08: a Proxy
+// over the list leaked the real values through descriptors and broke native item/length).
+const noiseRect=(r)=>{if(!r)return r;const d=H(Math.round(r.x*100),Math.round(r.y*100))*0.04-0.02;r.x=r.x+d;r.y=r.y+d;r.width=r.width+d*0.5;r.height=r.height+d*0.5;return r};
+const noiseRectList=(list)=>{if(list)for(let i=0;i<list.length;i++)noiseRect(list[i]);return list};`;
 
 const CANVAS = `if(c.canvas!=='real'){
 const empty=(w,h)=>new ImageData(new Uint8ClampedArray(Math.max(0,w*h*4)),w,h);
@@ -268,11 +260,11 @@ const WEBGPU_INFO = `if(c.webgpuInfo&&typeof GPUAdapterInfo!=='undefined'){try{
 }catch(e){}}`;
 
 const CLIENT_RECTS = `if(c.clientRectsNoise){
-  keep(Element.prototype,'getBoundingClientRect',f=>function(){const r=f.call(this);return r?rect(r):r;});
-  keep(Element.prototype,'getClientRects',f=>function(){return wrapRectList(f.call(this));});
+  keep(Element.prototype,'getBoundingClientRect',f=>function(){return noiseRect(f.call(this));});
+  keep(Element.prototype,'getClientRects',f=>function(){return noiseRectList(f.call(this));});
   if(typeof Range!=='undefined'){
-    keep(Range.prototype,'getBoundingClientRect',f=>function(){const r=f.call(this);return r?rect(r):r;});
-    keep(Range.prototype,'getClientRects',f=>function(){return wrapRectList(f.call(this));});
+    keep(Range.prototype,'getBoundingClientRect',f=>function(){return noiseRect(f.call(this));});
+    keep(Range.prototype,'getClientRects',f=>function(){return noiseRectList(f.call(this));});
   }
 }`;
 
