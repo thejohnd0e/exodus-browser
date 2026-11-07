@@ -1,0 +1,27 @@
+version: 2
+
+updates:
+  # Versions are pinned exactly in package.json, so nothing moves unless a pull request says so.
+  # Electron carries Chromium security fixes; keep it and the build tooling visible.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: scope
+    groups:
+      # Patch and minor bumps of test and build tooling arrive together; runtime
+      # dependencies and major versions stay in their own pull requests.
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore"
