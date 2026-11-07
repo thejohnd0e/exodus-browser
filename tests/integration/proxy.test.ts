@@ -1,4 +1,6 @@
 import {it,expect} from 'vitest';
+import https from 'node:https';
+import {TEST_TLS_CERT,TEST_TLS_KEY} from '../fixtures/test-tls';
 import http from 'node:http';
 import net from 'node:net';
 import {once} from 'node:events';
@@ -40,12 +42,16 @@ it('relays through SOCKS5 with authentication and rejects wrong credentials',asy
     expect(seen).toContain(`127.0.0.1:${o.port}`);
   }finally{await goodLease.close();socks.server.close();o.s.close();}
 });
-it('checks external IP only through the configured proxy and rejects malformed answers',async()=>{
-  const target=http.createServer((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ip:'203.0.113.9'}));});target.listen(0,'127.0.0.1');await once(target,'listening');
-  const bad=http.createServer((_req,res)=>res.end('{"ip":"not-an-ip"}'));bad.listen(0,'127.0.0.1');await once(bad,'listening');
-  const upstream=new Server({host:'127.0.0.1',port:0});await upstream.listen();const input={kind:'http' as const,host:'127.0.0.1',port:upstream.port};
-  try{expect(await checkProxy(input,new URL(`http://127.0.0.1:${(target.address() as net.AddressInfo).port}/`))).toEqual({ip:'203.0.113.9'});
-    await expect(checkProxy(input,new URL(`http://127.0.0.1:${(bad.address() as net.AddressInfo).port}/`))).rejects.toThrow('PROXY_CHECK_FAILED');}finally{await upstream.close(true);target.close();bad.close();}
+it('checks external IP only through the configured proxy over HTTPS and rejects malformed answers',async()=>{
+  const target=https.createServer({cert:TEST_TLS_CERT,key:TEST_TLS_KEY},(_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ip:'203.0.113.9'}));});target.listen(0,'127.0.0.1');await once(target,'listening');
+  const bad=https.createServer({cert:TEST_TLS_CERT,key:TEST_TLS_KEY},(_req,res)=>res.end('{"ip":"not-an-ip"}'));bad.listen(0,'127.0.0.1');await once(bad,'listening');
+  const tunnels:string[]=[];
+  const upstream=new Server({host:'127.0.0.1',port:0,prepareRequestFunction:({hostname,port}:{hostname:string;port:number})=>{tunnels.push(`${hostname}:${port}`);return {};}});await upstream.listen();const input={kind:'http' as const,host:'127.0.0.1',port:upstream.port};
+  try{expect(await checkProxy(input,{endpoint:new URL(`https://localhost:${(target.address() as net.AddressInfo).port}/`),ca:TEST_TLS_CERT})).toEqual({ip:'203.0.113.9'});
+    expect(tunnels).toEqual([`localhost:${(target.address() as net.AddressInfo).port}`]);
+    await expect(checkProxy(input,{endpoint:new URL(`https://localhost:${(bad.address() as net.AddressInfo).port}/`),ca:TEST_TLS_CERT})).rejects.toThrow('PROXY_CHECK_FAILED');
+    await expect(checkProxy(input,{endpoint:new URL(`http://localhost:${(target.address() as net.AddressInfo).port}/`)})).rejects.toThrow('CHECK_SCHEME_UNSUPPORTED');}
+  finally{await upstream.close(true);target.close();bad.close();}
 });
 it('allocates a separate loopback port per lease',async()=>{
   const upstream=new Server({host:'127.0.0.1',port:0});await upstream.listen();

@@ -1,10 +1,13 @@
 import {it,expect} from 'vitest';
 import {_electron as electron} from 'playwright';
-import {mkdtempSync, rmSync, readFileSync} from 'node:fs';
+import {mkdtempSync, rmSync, readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import Database from 'better-sqlite3';
 import {createServer} from 'node:http';
+import {createServer as createHttpsServer} from 'node:https';
+import net from 'node:net';
+import {TEST_TLS_CERT,TEST_TLS_KEY} from '../fixtures/test-tls';
 import type {AddressInfo} from 'node:net';
 import {fileURLToPath} from 'node:url';
 import {nativeMessage} from '../../src/shared/i18n/messages';
@@ -254,10 +257,22 @@ it('opens isolated local app, creates a profile offline, stores proxy secrets wi
 it('checks the selected proxy from the UI without a confirmation dialog or background checks',async()=>{
   const data=mkdtempSync(join(tmpdir(),'local-profiles-ip-'));
   const requests:string[]=[];
-  const proxy=createServer((req,res)=>{requests.push(req.url??'');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ip:'8.8.8.8'}));});
+  // Stands in for api.ipify.org, api.country.is and ipwho.is. The app reaches it only through the
+  // proxy below, over HTTPS, and trusts the test certificate through NODE_EXTRA_CA_CERTS.
+  const services=createHttpsServer({cert:TEST_TLS_CERT,key:TEST_TLS_KEY},(req,res)=>{
+    requests.push(`${req.headers.host}${req.url}`);res.setHeader('Content-Type','application/json');
+    if(req.headers.host==='api.ipify.org'){res.end(JSON.stringify({ip:'8.8.8.8'}));return;}
+    res.statusCode=503;res.end('{}');
+  });
+  await new Promise<void>(resolve=>services.listen(0,'127.0.0.1',resolve));
+  const servicesPort=(services.address() as AddressInfo).port;
+  const tunnels:string[]=[];
+  const proxy=createServer((req,res)=>{tunnels.push('plain '+req.url);res.statusCode=405;res.end();});
+  proxy.on('connect',(req,socket,head)=>{tunnels.push(req.url??'');const upstream=net.connect(servicesPort,'127.0.0.1',()=>{if(head&&head.length)upstream.write(head);socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');upstream.pipe(socket);socket.pipe(upstream);});upstream.on('error',()=>socket.destroy());socket.on('error',()=>upstream.destroy());});
  await new Promise<void>(resolve=>proxy.listen(0,'127.0.0.1',resolve));
  const port=(proxy.address() as AddressInfo).port;
-  const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data}});
+  const ca=join(data,'test-ca.pem');writeFileSync(ca,TEST_TLS_CERT);
+  const app=await electron.launch({args:['.'],env:{...process.env,LOCAL_PROFILES_DATA:data,NODE_EXTRA_CA_CERTS:ca}});
   try{
     await app.evaluate(({session})=>{const urls:string[]=[];(globalThis as any).__countryRequests=urls;session.defaultSession.webRequest.onBeforeRequest((details,callback)=>{urls.push(details.url);callback({});});});
    await app.evaluate(({dialog})=>{(globalThis as any).__dialogCalls=0;dialog.showMessageBox=(()=>{(globalThis as any).__dialogCalls++;throw Error('Unexpected confirmation dialog');}) as typeof dialog.showMessageBox;});
@@ -266,7 +281,7 @@ it('checks the selected proxy from the UI without a confirmation dialog or backg
    expect(result.ok).toBe(true);
    const card=win.locator('article').filter({has:win.getByRole('heading',{name:'IP check'})});
    await card.getByRole('heading',{name:'IP check'}).waitFor({timeout:3000});
-   expect(requests).toEqual([]);
+   expect(requests).toEqual([]);expect(tunnels).toEqual([]);
     await card.getByRole('button',{name:'Settings'}).click();await card.getByRole('button',{name:'Check IP'}).click();
     await win.getByRole('alert').or(card.getByText('External IP: 8.8.8.8',{exact:true})).waitFor({timeout:5000});
    expect(await app.evaluate(()=>(globalThis as any).__dialogCalls)).toBe(0);
@@ -277,8 +292,10 @@ it('checks the selected proxy from the UI without a confirmation dialog or backg
     expect(await app.evaluate(()=>(globalThis as any).__countryAttributionUrl)).toBe('https://db-ip.com/');
     await win.setViewportSize({width:820,height:800});
     const flagBox=await flag.boundingBox(),mainBox=await win.locator('main').boundingBox();expect(flagBox).not.toBeNull();expect(mainBox).not.toBeNull();expect(flagBox!.x+flagBox!.width).toBeLessThanOrEqual(mainBox!.x+mainBox!.width);
-   await card.getByText(/api\.ipify\.org.*HTTP/).waitFor();
-    expect(requests).toEqual(['http://api.ipify.org/?format=json']);
+   await card.getByText(/through the proxy over HTTPS: api\.ipify\.org/).waitFor();
+    // The IP, then the country and the zone for that IP, all through the proxy; no plain HTTP request.
+    expect(requests.sort()).toEqual(['api.country.is/8.8.8.8','api.ipify.org/?format=json','ipwho.is/8.8.8.8']);
+    expect(tunnels.sort()).toEqual(['api.country.is:443','api.ipify.org:443','ipwho.is:443']);
     const remoteRequests=await app.evaluate(()=>(globalThis as any).__countryRequests as string[]);
     expect(remoteRequests.filter(url=>!url.startsWith('file://')&&!url.startsWith('devtools://')&&!url.startsWith('data:'))).toEqual([]);
    expect(await app.evaluate(()=>(globalThis as any).__dialogCalls)).toBe(0);
@@ -286,6 +303,7 @@ it('checks the selected proxy from the UI without a confirmation dialog or backg
  }finally{
    await app.close();
    await new Promise<void>((resolve,reject)=>proxy.close(error=>error?reject(error):resolve()));
+   services.closeAllConnections();services.close();
    rmSync(data,{recursive:true,force:true});
  }
 },30000);

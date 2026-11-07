@@ -44,7 +44,7 @@ Profiles stay on your computer. There is no Exodus account to create, no subscri
 | **Separate profiles** | Create, name, search and organize profiles with notes. Cookies and website data stay separate and persist between launches. |
 | **Parallel browsing** | Run several profiles at once, each in its own Chromium browser process. Launch and stop them from one place. |
 | **Per-profile proxies** | Save named HTTP, HTTPS or SOCKS5 connections and assign them to profiles. Reuse one saved connection across multiple profiles. |
-| **IP checks** | Check a saved proxy's external IP on demand and see its country beside the result. The country is asked from `api.country.is` over HTTPS; the bundled DB-IP database is the offline fallback. |
+| **IP checks** | Check a saved proxy's external IP on demand and see its country beside the result. The IP (`api.ipify.org`), country (`api.country.is`) and time zone (`ipwho.is`) are asked through that proxy over HTTPS, so these services see only the proxy's address; nothing is sent from your own address. The bundled DB-IP database is the fallback for the country. |
 | **Anti-detect controls** | Generate a fingerprint preset or adjust browser identity, graphics/audio-related signals, time zone, location, screen, hardware and WebRTC settings. |
 | **Extensions** | Add an extension from a Chrome Web Store link, a folder or a ZIP archive. Choose which profiles use it and update it explicitly. |
 | **Cookies** | Import and export JSON or Netscape cookie files. Clear a profile's cookies without clearing its other website data. |

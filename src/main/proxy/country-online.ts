@@ -1,9 +1,11 @@
 import {isIP} from 'node:net';
 import {isTimeZone} from '../../shared/fingerprint';
+import type {ProxiedFetch} from './through-proxy';
 
 /**
- * Country and time zone of an exit IP, asked from public HTTPS services. The request is made directly
- * from the host and only carries the exit IP of the proxy; it never goes through the proxy itself.
+ * Country and time zone of an exit IP, asked from public HTTPS services. There is no default transport:
+ * callers pass the fetch of the profile's proxy (`proxiedFetch`), so the service sees the proxy asking
+ * about itself and never the host's address (DECISIONS #79).
  */
 const CACHE=new Map<string,string>();
 const CACHE_LIMIT=200;
@@ -15,14 +17,13 @@ const ZONE_CACHE=new Map<string,string>();
  */
 export async function lookupTimezoneOnline(
   ip:string,
-  options:{fetchImpl?:typeof fetch;timeoutMs?:number}={},
+  options:{fetchImpl:ProxiedFetch;timeoutMs?:number;baseUrl?:string},
 ):Promise<string|null>{
   if(isIP(ip)===0)return null;
   const cached=ZONE_CACHE.get(ip);
   if(cached)return cached;
-  const fetchImpl=options.fetchImpl??fetch;
   try{
-    const response=await fetchImpl(`https://ipwho.is/${encodeURIComponent(ip)}`,{
+    const response=await options.fetchImpl(`${options.baseUrl??'https://ipwho.is/'}${encodeURIComponent(ip)}`,{
       signal:AbortSignal.timeout(options.timeoutMs??5000),
       headers:{accept:'application/json'},
     });
@@ -43,18 +44,17 @@ export async function lookupTimezoneOnline(
  * as Canada), while two independent services agreed with each other. The offline database stays as
  * a fallback for offline use and service failures.
  *
- * The request is made directly from the host and only carries the exit IP of the proxy.
+ * The request travels through the profile's proxy (see above).
  */
 export async function lookupCountryOnline(
   ip:string,
-  options:{fetchImpl?:typeof fetch;timeoutMs?:number}={},
+  options:{fetchImpl:ProxiedFetch;timeoutMs?:number;baseUrl?:string},
 ):Promise<string|null>{
   if(isIP(ip)===0)return null;
   const cached=CACHE.get(ip);
   if(cached)return cached;
-  const fetchImpl=options.fetchImpl??fetch;
   try{
-    const response=await fetchImpl(`https://api.country.is/${encodeURIComponent(ip)}`,{
+    const response=await options.fetchImpl(`${options.baseUrl??'https://api.country.is/'}${encodeURIComponent(ip)}`,{
       signal:AbortSignal.timeout(options.timeoutMs??5000),
       headers:{accept:'application/json'},
     });

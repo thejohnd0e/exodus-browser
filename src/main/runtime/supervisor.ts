@@ -5,9 +5,8 @@ import {ProfileService} from '../profiles/service';
 import {profilePath} from '../profiles/paths';
 import type {BrowserEngineAdapter,EngineProcess,ProxyLease} from '../engines/types';
 import {openProxyBridge} from '../proxy/bridge';
-import {checkProxy} from '../proxy/check';
+import {lookupExitLocation} from '../proxy/check';
 import {lookupCountry} from '../proxy/country';
-import {lookupCountryOnline,lookupTimezoneOnline} from '../proxy/country-online';
 import {resolveTimezone,type ExitLocation} from '../proxy/timezone';
 import {probeProfileProcesses,type ProcessRecord} from './recovery';
 import type {SessionStore} from '../sessions/store';
@@ -16,7 +15,7 @@ export class Supervisor {
   private state:Record<string,ProfileState>={};private locks=new Set<string>();
   private running=new Map<string,Run>();
   private probe:()=>Promise<ProcessRecord[]>;private bridge:(p:ProxyInput)=>Promise<ProxyLease>;private exitLocation:(p:ProxyInput)=>Promise<ExitLocation>;private confirmTimezone:(warning:LaunchWarning)=>Promise<boolean>;private launchWarnings:Record<string,LaunchWarning>={};
-  constructor(private profiles:ProfileService,private engine:BrowserEngineAdapter,options:{probe?:()=>Promise<ProcessRecord[]>;bridge?:(p:ProxyInput)=>Promise<ProxyLease>;sessions?:SessionStore;extensionDirectory?:(id:string)=>string;exitLocation?:(p:ProxyInput)=>Promise<ExitLocation>;confirmTimezone?:(warning:LaunchWarning)=>Promise<boolean>}={}){this.confirmTimezone=options.confirmTimezone??(async()=>false);this.exitLocation=options.exitLocation??(async proxy=>{const {ip}=await checkProxy(proxy);const [online,zone,offline]=await Promise.all([lookupCountryOnline(ip),lookupTimezoneOnline(ip),lookupCountry(ip)]);return {country:online??offline,zone};});this.probe=options.probe??probeProfileProcesses;this.bridge=options.bridge??openProxyBridge;this.sessions=options.sessions;this.extensionDirectory=options.extensionDirectory??(id=>id);}
+  constructor(private profiles:ProfileService,private engine:BrowserEngineAdapter,options:{probe?:()=>Promise<ProcessRecord[]>;bridge?:(p:ProxyInput)=>Promise<ProxyLease>;sessions?:SessionStore;extensionDirectory?:(id:string)=>string;exitLocation?:(p:ProxyInput)=>Promise<ExitLocation>;confirmTimezone?:(warning:LaunchWarning)=>Promise<boolean>}={}){this.confirmTimezone=options.confirmTimezone??(async()=>false);this.exitLocation=options.exitLocation??(async proxy=>{const {country,zone}=await lookupExitLocation(proxy);return {country,zone};});this.probe=options.probe??probeProfileProcesses;this.bridge=options.bridge??openProxyBridge;this.sessions=options.sessions;this.extensionDirectory=options.extensionDirectory??(id=>id);}
   private sessions?:SessionStore;
   private extensionDirectory:(id:string)=>string;
   states(){return {...this.state};}

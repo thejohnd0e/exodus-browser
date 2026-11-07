@@ -1,16 +1,57 @@
-import http from 'node:http';
 import {isIP} from 'node:net';
 import type {ProxyInput} from '../../shared/contracts';
 import {openProxyBridge} from './bridge';
-// Deliberately plain HTTP: disclosed beside the UI button and in README. An on-path attacker can spoof this check.
-export const IP_CHECK_SERVICE='http://api.ipify.org?format=json';
-export async function checkProxy(input:ProxyInput,endpoint=new URL(IP_CHECK_SERVICE)):Promise<{ip:string}>{
-  if(endpoint.protocol!=='http:')throw Error('CHECK_SCHEME_UNSUPPORTED');
-  const bridge=await openProxyBridge(input);const p=new URL(bridge.url);
-  try{return await new Promise((resolve,reject)=>{
-    const req=http.get({hostname:p.hostname,port:p.port,path:endpoint.href,headers:{Host:endpoint.host},timeout:10000},res=>{
-      let text='';let size=0;res.on('data',chunk=>{size+=chunk.length;if(size>65536)req.destroy(Error('CHECK_TOO_LARGE'));else text+=chunk;});
-      res.on('error',reject);res.on('end',()=>{try{if(res.statusCode!==200)throw Error('PROXY_CHECK_FAILED');const {ip}=JSON.parse(text);if(typeof ip!=='string'||!isIP(ip))throw Error('INVALID_IP_RESPONSE');resolve({ip});}catch{reject(Error('PROXY_CHECK_FAILED'));}});
-    });req.on('error',()=>reject(Error('PROXY_CHECK_FAILED')));req.on('timeout',()=>req.destroy(Error('PROXY_CHECK_TIMEOUT')));
-  });}finally{await bridge.close();}
+import {proxiedFetch,type ProxiedFetch} from './through-proxy';
+import {lookupCountryOnline,lookupTimezoneOnline} from './country-online';
+import {lookupCountry} from './country';
+
+// Asked through the profile's proxy over HTTPS (DECISIONS #79): the service sees only the proxy's exit
+// address, and an on-path party can no longer rewrite the answer.
+export const IP_CHECK_SERVICE='https://api.ipify.org?format=json';
+
+type CheckOptions={endpoint?:URL;ca?:string|Buffer};
+type LookupOptions={endpoints?:{ip?:URL;country?:string;zone?:string};ca?:string|Buffer;offlineCountry?:(ip:string)=>Promise<string|null>};
+
+async function exitIp(get:ProxiedFetch,endpoint:URL):Promise<string>{
+  let ip:unknown;
+  try{
+    const response=await get(endpoint.href,{headers:{accept:'application/json'},signal:AbortSignal.timeout(10000)});
+    if(response.status!==200)throw Error('PROXY_CHECK_FAILED');
+    ip=(await response.json() as {ip?:unknown}).ip;
+  }catch(error){
+    if(error instanceof Error&&error.message==='PROXIED_TIMEOUT')throw Error('PROXY_CHECK_TIMEOUT');
+    throw Error('PROXY_CHECK_FAILED');
+  }
+  // A malformed answer is reported like any other failed check, as before.
+  if(typeof ip!=='string'||!isIP(ip))throw Error('PROXY_CHECK_FAILED');
+  return ip;
+}
+
+/** External IP of a proxy, asked through that proxy over HTTPS. */
+export async function checkProxy(input:ProxyInput,options:CheckOptions={}):Promise<{ip:string}>{
+  const endpoint=options.endpoint??new URL(IP_CHECK_SERVICE);
+  if(endpoint.protocol!=='https:')throw Error('CHECK_SCHEME_UNSUPPORTED');
+  const bridge=await openProxyBridge(input);
+  try{return {ip:await exitIp(proxiedFetch(bridge.url,{ca:options.ca}),endpoint)};}
+  finally{await bridge.close();}
+}
+
+/**
+ * Exit IP, country and time zone of a proxy through one bridge. Nothing is sent from the host directly:
+ * if the country service does not answer, the bundled database decides; if the zone service does not
+ * answer, the zone stays unknown and the caller falls back to a single-zone country or asks the user.
+ */
+export async function lookupExitLocation(input:ProxyInput,options:LookupOptions={}):Promise<{ip:string;country:string|null;zone:string|null}>{
+  const endpoint=options.endpoints?.ip??new URL(IP_CHECK_SERVICE);
+  if(endpoint.protocol!=='https:')throw Error('CHECK_SCHEME_UNSUPPORTED');
+  const bridge=await openProxyBridge(input);
+  try{
+    const get=proxiedFetch(bridge.url,{ca:options.ca});
+    const ip=await exitIp(get,endpoint);
+    const [online,zone]=await Promise.all([
+      lookupCountryOnline(ip,{fetchImpl:get,baseUrl:options.endpoints?.country}),
+      lookupTimezoneOnline(ip,{fetchImpl:get,baseUrl:options.endpoints?.zone}),
+    ]);
+    return {ip,country:online??await (options.offlineCountry??lookupCountry)(ip),zone};
+  }finally{await bridge.close();}
 }

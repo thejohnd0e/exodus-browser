@@ -1,0 +1,7 @@
+// Test-only TLS identity (self-signed, valid until 2125) for localhost, exit-services.invalid and the
+// three exit-lookup services, so tests can stand in for them with a local HTTPS server and trust this
+// certificate explicitly. Production code never accepts it. `exit-services.invalid` cannot be resolved,
+// so a test that uses it fails if a request ever bypasses the proxy.
+// Kept as strings because *.pem files are ignored by Git.
+export const TEST_TLS_CERT="-----BEGIN CERTIFICATE-----\r\nMIIB1zCCAX2gAwIBAgIUPRqqsWC2ED/zTBHjnr4oxWzDqvAwCgYIKoZIzj0EAwIw\r\nFDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MTEwNzIzMzUzOVoYDzIxMjYxMDE0\r\nMjMzNTM5WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO\r\nPQMBBwNCAARCaRoyxoNyeDFGveba2GOCc2rLocyzs/tub24uOm0rCXaxBneX1T8+\r\nCadLjhf6fGziRiI/wZGCpGRzqpVWzxCio4GqMIGnMB0GA1UdDgQWBBQgVojogfpr\r\niuBgoMVnMXQIk6zaezAfBgNVHSMEGDAWgBQgVojogfpriuBgoMVnMXQIk6zaezAP\r\nBgNVHRMBAf8EBTADAQH/MFQGA1UdEQRNMEuCCWxvY2FsaG9zdIIVZXhpdC1zZXJ2\r\naWNlcy5pbnZhbGlkgg1hcGkuaXBpZnkub3Jngg5hcGkuY291bnRyeS5pc4IIaXB3\r\naG8uaXMwCgYIKoZIzj0EAwIDSAAwRQIhAMpcssefPUwd/T5q9wgfDMEr4izyPtkN\r\ny3SfxgdePl64AiBAsm52wRfShhdztCN7Ox+PTsL2bOFyVvFBVx47HhYNaQ==\r\n-----END CERTIFICATE-----\n";
+export const TEST_TLS_KEY="-----BEGIN PRIVATE KEY-----\r\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgjzAeIRuJAY41gizV\r\n5fTvhOFC4OyaQW9sq4uBslcGDZahRANCAARCaRoyxoNyeDFGveba2GOCc2rLocyz\r\ns/tub24uOm0rCXaxBneX1T8+CadLjhf6fGziRiI/wZGCpGRzqpVWzxCi\r\n-----END PRIVATE KEY-----\n";

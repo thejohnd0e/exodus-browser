@@ -17,9 +17,8 @@ import {createCookieOperations} from './cookies/operations';
 import {PortableProfileService} from './portable/service';
 import {ExtensionLibrary} from './extensions/library';
 import {createPortableOperations} from './portable/operations';
-import {checkProxy,IP_CHECK_SERVICE} from './proxy/check';
+import {lookupExitLocation,IP_CHECK_SERVICE} from './proxy/check';
 import {lookupCountry} from './proxy/country';
-import {lookupCountryOnline} from './proxy/country-online';
 import {createWindow,appIconPath} from './window';
 import {TrayController} from './tray';
 import {createDispatcher,operations} from './ipc';
@@ -135,9 +134,9 @@ else void app.whenReady().then(async()=>{
       backup:async id=>{await supervisor.assertStopped(id);const result=await dialog.showSaveDialog(win,{defaultPath:'profile-backup.zip',filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});if(result.filePath&&!result.canceled)await backups.create(id,result.filePath);},
       restore:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('backup.restore.title',currentLanguage),properties:['openFile'],filters:[{name:nativeMessage('backup.filter',currentLanguage),extensions:['zip']}]});return r.canceled?null:backups.restore(r.filePaths[0]);},
       exportProfile:portableOps.exportProfile,importProfile:portableOps.importProfile,
-     checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');const {ip}=await checkProxy(input.proxy);return {ip,countryCode:(await lookupCountryOnline(ip))??await lookupCountry(ip),service:IP_CHECK_SERVICE};},
+     checkProxy:async id=>{const input=profiles.getLaunchInput(id);if(!input.proxy)throw Error('NO_PROXY');const {ip,country}=await lookupExitLocation(input.proxy);return {ip,countryCode:country,service:IP_CHECK_SERVICE};},
     listProxies:async()=>profiles.listProxies(),createProxy:input=>profiles.createProxy(input),updateProxy:(id,input)=>profiles.updateProxy(id,input),removeProxy:id=>profiles.removeProxy(id),
-     checkSavedProxy:async id=>{const {ip}=await checkProxy(profiles.getProxyInput(id));return {ip,countryCode:(await lookupCountryOnline(ip))??await lookupCountry(ip),service:IP_CHECK_SERVICE};},runningProxyVersions:async()=>supervisor.runningProxyVersions(),
+     checkSavedProxy:async id=>{const {ip,country}=await lookupExitLocation(profiles.getProxyInput(id));return {ip,countryCode:country,service:IP_CHECK_SERVICE};},runningProxyVersions:async()=>supervisor.runningProxyVersions(),
      importCookies:cookieOps.importCookies,exportCookies:cookieOps.exportCookies,clearCookies:cookieOps.clearCookies,
       listExtensions:async()=>extensions.list(),
       addExtensionFolder:async()=>{const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.addFromFolder(r.filePaths[0]);},
