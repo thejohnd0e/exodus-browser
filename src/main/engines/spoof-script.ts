@@ -38,6 +38,8 @@ export interface SpoofConfig {
   audioNoise: boolean;
   hardware: { cores: number; memoryGb: number } | null;
   screen: { width: number; height: number; availWidth: number; availHeight: number } | null;
+  /** Set only for an out-of-process iframe, where Chromium's screen emulation does not reach. */
+  frameScreen: { dpr: number | null } | null;
   webRtc: 'off' | null;
 }
 
@@ -55,7 +57,7 @@ export function deriveScreenAvailability(spoof: { width: number; height: number 
   };
 }
 
-export function spoofConfig(fingerprint: Fingerprint, seed: number, available?: ScreenAvailability): SpoofConfig {
+export function spoofConfig(fingerprint: Fingerprint, seed: number, available?: ScreenAvailability, outOfProcessFrame = false): SpoofConfig {
   const webglInfo = fingerprint.webglInfo.mode === 'manual' ? { vendor: fingerprint.webglInfo.vendor, renderer: fingerprint.webglInfo.renderer } : null;
   const webgpuOff = fingerprint.webgpu === 'off';
   const webgpuCandidate = webglInfo && !webgpuOff ? webgpuInfoFor(webglInfo.vendor, webglInfo.renderer) : null;
@@ -76,6 +78,7 @@ export function spoofConfig(fingerprint: Fingerprint, seed: number, available?: 
       availWidth: available?.width ?? fingerprint.screen.width,
       availHeight: available?.height ?? fingerprint.screen.height,
     } : null,
+    frameScreen: outOfProcessFrame && fingerprint.screen.mode === 'manual' ? { dpr: fingerprint.screen.dpr ?? null } : null,
     webRtc: fingerprint.webRtc === 'off' ? 'off' : null,
   };
 }
@@ -314,9 +317,42 @@ try{
   Object.defineProperty(window,'outerHeight',{get:hg,configurable:true,enumerable:oh?oh.enumerable:true});
 }catch(e){}}`;
 
+// Out-of-process iframes only (DECISIONS #74). Chromium cannot emulate the screen there, so the frame
+// renders with the host display: devicePixelRatio and matchMedia would contradict the spoofed
+// window.screen. The real values are read before SCREEN patches them; screen queries in matchMedia
+// are rewritten from the profile's screen to the host's, so they answer as the top page does, and
+// MediaQueryList(Event).media still return the query as written. Stylesheet @media rules are not
+// affected and keep following the host display.
+const FRAME_SCREEN = `if(c.frameScreen&&c.screen){try{
+  const sw=Object.getOwnPropertyDescriptor(Screen.prototype,'width'),sh=Object.getOwnPropertyDescriptor(Screen.prototype,'height');
+  const realW=sw.get.call(screen),realH=sh.get.call(screen);
+  const dd=Object.getOwnPropertyDescriptor(window,'devicePixelRatio');
+  const realD=dd&&dd.get?dd.get.call(window):1;
+  const W=c.screen.width,Hs=c.screen.height,D=c.frameScreen.dpr||realD;
+  if(dd&&dd.get&&D!==realD)Object.defineProperty(window,'devicePixelRatio',{get:mask(function(){return D;},dd.get),set:dd.set,configurable:true,enumerable:dd.enumerable});
+  const fmt=v=>String(Math.round(v*1e6)/1e6);
+  const toHost=(feature,value)=>feature.indexOf('width')>=0?value*realW/W:feature.indexOf('height')>=0?value*realH/Hs:value*realD/D;
+  const rewrite=q=>q.replace(/[(][ ]*((?:-webkit-)?(?:min-|max-)?(?:-webkit-)?(?:device-width|device-height|resolution|device-pixel-ratio))[ ]*:[ ]*([0-9]*[.]?[0-9]+)[ ]*([a-zA-Z]*)[ ]*[)]/gi,(m,f,v,u)=>{
+    const feature=f.toLowerCase();
+    if((feature.indexOf('width')>=0||feature.indexOf('height')>=0)&&u.toLowerCase()!=='px')return m;
+    return '('+f+': '+fmt(toHost(feature,parseFloat(v)))+u+')';
+  });
+  const written=new WeakMap(),back=new Map();
+  keep(window,'matchMedia',f=>function(q){
+    if(arguments.length===0)return f.apply(this,arguments);
+    const query=String(q),host=rewrite(query);const list=f.call(this,host);
+    if(host!==query){try{written.set(list,query);back.set(host,query);}catch(e){}}
+    return list;
+  });
+  const md=Object.getOwnPropertyDescriptor(MediaQueryList.prototype,'media');
+  if(md&&md.get)Object.defineProperty(MediaQueryList.prototype,'media',{get:mask(function(){const v=md.get.call(this);return written.has(this)?written.get(this):v;},md.get),configurable:true,enumerable:md.enumerable});
+  if(typeof MediaQueryListEvent!=='undefined'){const ed=Object.getOwnPropertyDescriptor(MediaQueryListEvent.prototype,'media');
+    if(ed&&ed.get)Object.defineProperty(MediaQueryListEvent.prototype,'media',{get:mask(function(){const v=ed.get.call(this);return back.has(v)?back.get(v):v;},ed.get),configurable:true,enumerable:ed.enumerable});}
+}catch(e){}}`;
+
 const WEBRTC = `if(c.webRtc==='off'){const kill=(n)=>{try{Object.defineProperty(window,n,{value:undefined,writable:true,configurable:true});}catch(e){}};kill('RTCPeerConnection');kill('webkitRTCPeerConnection');kill('RTCSessionDescription');kill('RTCIceCandidate');}`;
-export function buildSpoofScript(fingerprint: Fingerprint, seed: number, available?: ScreenAvailability): string {
-  const config = spoofConfig(fingerprint, seed, available);
+export function buildSpoofScript(fingerprint: Fingerprint, seed: number, available?: ScreenAvailability, options: { outOfProcessFrame?: boolean } = {}): string {
+  const config = spoofConfig(fingerprint, seed, available, options.outOfProcessFrame === true);
   const sections = [
     config.canvas !== 'real' ? CANVAS : null,
     config.canvas !== 'real' ? OFFSCREEN_CANVAS : null,
@@ -327,6 +363,8 @@ export function buildSpoofScript(fingerprint: Fingerprint, seed: number, availab
     config.clientRectsNoise ? CLIENT_RECTS : null,
     config.audioNoise ? AUDIO : null,
     config.hardware ? HARDWARE : null,
+    // Reads the real display, so it must run before SCREEN replaces the getters.
+    config.frameScreen ? FRAME_SCREEN : null,
     config.screen ? SCREEN : null,
     config.webRtc ? WEBRTC : null,
   ].filter(Boolean);

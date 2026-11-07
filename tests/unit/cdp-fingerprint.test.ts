@@ -239,12 +239,42 @@ describe('installFingerprint', () => {
     expect(f.calls).toContain('Runtime.runIfWaitingForDebugger:s2');
   });
 
-  it('still reloads a popup when only a user-agent override applies', async () => {
+  // A tab that arrives with a web address already loading is stopped at once and opened again once
+  // the overrides are in place, so its first document never runs with the real fingerprint.
+  const expectStoppedAndReopened = (f: Fake, url: string) => {
+    expect(f.calls).toContain('Page.stopLoading:s2');
+    expect(f.calls.indexOf('Page.stopLoading:s2')).toBeLessThan(f.calls.indexOf('Runtime.runIfWaitingForDebugger:s2'));
+    expect(f.calls).toContain('Page.navigate:s2');
+    expect(f.params['Page.navigate']).toEqual({ url });
+    expect(f.calls).not.toContain('Page.reload:s2');
+  };
+
+  it('stops and reopens a tab with a web address when only a user-agent override applies', async () => {
     const f = fake([]);
     withLinkHistory(f);
     await installFingerprint(f.client, { fingerprint: DEFAULT_FINGERPRINT, languages: ['en-US'], seed: 1, engineUserAgent: windowsEngine, engineVersion: '156.0.8078.80' });
     f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/' } } });
     await new Promise(r => setTimeout(r, 30));
+    expectStoppedAndReopened(f, 'https://example.com/');
+  });
+
+  it('neither stops nor reopens a tab with a web address when the profile overrides nothing', async () => {
+    const f = fake([]);
+    withLinkHistory(f);
+    await installFingerprint(f.client, { fingerprint: DEFAULT_FINGERPRINT, languages: ['en-US'], seed: 1 });
+    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/once?token=1' } } });
+    await new Promise(r => setTimeout(r, 30));
+    expect(f.calls).not.toContain('Page.stopLoading:s2');
+    expect(f.calls).not.toContain('Page.navigate:s2');
+  });
+
+  it('reloads, without stopping, a tab whose address is not a web address', async () => {
+    const f = fake([]);
+    withLinkHistory(f);
+    await installFingerprint(f.client, { fingerprint: SPOOFED, languages: ['en-US'], seed: 1 });
+    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'file:///C:/page.html' } } });
+    await new Promise(r => setTimeout(r, 30));
+    expect(f.calls).not.toContain('Page.stopLoading:s2');
     expect(f.calls).toContain('Page.reload:s2');
   });
 
@@ -253,13 +283,13 @@ describe('installFingerprint', () => {
     ['geolocation', { ...DEFAULT_FINGERPRINT, geolocation: { mode: 'manual' as const, latitude: 1, longitude: 2, accuracy: 10 } }],
     ['screen', { ...DEFAULT_FINGERPRINT, screen: { mode: 'manual' as const, width: 1920, height: 1080 } }],
     ['spoof script', SPOOFED],
-  ])('still reloads a popup when a %s override applies', async (_name, fingerprint) => {
+  ])('stops and reopens a tab with a web address when a %s override applies', async (_name, fingerprint) => {
     const f = fake([]);
     withLinkHistory(f);
     await installFingerprint(f.client, { fingerprint: fingerprint as never, languages: ['en-US'], seed: 1 });
     f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/' } } });
     await new Promise(r => setTimeout(r, 30));
-    expect(f.calls).toContain('Page.reload:s2');
+    expectStoppedAndReopened(f, 'https://example.com/');
   });
 
   it('failure on a new page closes that page but not the session', async () => {
@@ -293,11 +323,20 @@ describe('installFingerprint', () => {
     const f = fake([]);
     await installFingerprint(f.client, { fingerprint: SPOOFED, languages: ['en-US'], seed: 1 });
     f.rejectOn('Page.getNavigationHistory');
-    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/checkout' } } });
+    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'file:///C:/checkout.html' } } });
     await new Promise(r => setTimeout(r, 30));
     expect(f.calls).not.toContain('Page.reload:s2');
     // The already-loaded document still gets the spoof script, without risking a POST resubmission.
     expect(f.calls).toContain('Runtime.evaluate:s2');
+  });
+
+  it('reopens a stopped tab even when navigation history cannot be inspected, so it is not left empty', async () => {
+    const f = fake([]);
+    await installFingerprint(f.client, { fingerprint: SPOOFED, languages: ['en-US'], seed: 1 });
+    f.rejectOn('Page.getNavigationHistory');
+    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/page' } } });
+    await new Promise(r => setTimeout(r, 30));
+    expectStoppedAndReopened(f, 'https://example.com/page');
   });
 
   it('patches an already loaded document instead of reloading a form submission', async () => {

@@ -4,6 +4,7 @@ import {once} from 'node:events';
 import type {AddressInfo} from 'node:net';
 import {existsSync,readdirSync} from 'node:fs';
 import {join} from 'node:path';
+import {spawn} from 'node:child_process';
 import {ChromiumAdapter} from '../../src/main/engines/chromium';
 import {tempRoot,cleanup} from '../fixtures/profiles';
 import {DEFAULT_FINGERPRINT,type Fingerprint} from '../../src/shared/fingerprint';
@@ -26,12 +27,13 @@ const mainPage=`<!doctype html><meta charset="utf-8">
 <form id="post" method="post" action="/post" target="_blank"><input name="a" value="payload"></form>
 <form id="get" method="get" action="/getform" target="_blank"><input name="a" value="payload"></form>`;
 
-async function withProfile(fingerprint:Fingerprint,run:(env:{seen:Seen[];hits:Hit[];browser:Browser;click:(expression:string)=>Promise<void>})=>Promise<void>){
+async function withProfile(fingerprint:Fingerprint,run:(env:{seen:Seen[];hits:Hit[];browser:Browser;click:(expression:string)=>Promise<void>;origin:string;userDataDir:string})=>Promise<void>){
   const seen:Seen[]=[];const hits:Hit[]=[];
   const server=createServer((req,res)=>{
     const url=new URL(req.url??'/','http://local');
     if(url.pathname==='/report'){seen.push(JSON.parse(url.searchParams.get('v')!));res.end('ok');return;}
     if(url.pathname==='/favicon.ico'){res.statusCode=404;res.end();return;}
+    if(url.pathname==='/redirect'){hits.push({method:req.method??'',path:'/redirect',body:''});res.writeHead(302,{location:'/created'});res.end();return;}
     const chunks:Buffer[]=[];
     req.on('data',chunk=>chunks.push(chunk));
     req.on('end',()=>{
@@ -50,7 +52,7 @@ async function withProfile(fingerprint:Fingerprint,run:(env:{seen:Seen[];hits:Hi
       if(!main)throw Error('main page not found');
       const sessionId=await browser.attach(main.targetId);
       const click=async(expression:string)=>{await browser.send('Runtime.evaluate',{expression:`${expression};0`,userGesture:true},sessionId);};
-      await run({seen,hits,browser,click});
+      await run({seen,hits,browser,click,origin,userDataDir:root});
     }finally{await p.stop();}
   }finally{cleanup(root);server.closeAllConnections();server.close();}
 }
@@ -102,5 +104,40 @@ it('applies a manual screen to a target="_blank" tab in JavaScript and in media 
     expect(documents).toHaveLength(1);
     expect(documents[0]).toMatchObject({sw:1512,sh:982,dpr:2,mq:true});
     expect(documents[0]).toSatisfy(isSpoofed);
+  });
+},60000);
+
+// A tab that the browser creates with an address already set starts loading before it is attached.
+// With an instant answer its first document used to run with the real platform, hardware and time
+// zone until the automatic reload (docs/engine-and-antifraud.md).
+for(const [name,open] of [
+  // An empty session id sends a browser-level command.
+  ['created over the DevTools protocol',async(browser:Browser,url:string)=>{await browser.send('Target.createTarget',{url,newWindow:true},'');}],
+  ['handed over as an external link',async(_browser:Browser,url:string,userDataDir:string)=>{spawn(exe,['--user-data-dir='+userDataDir,url],{stdio:'ignore',detached:true}).unref();}],
+] as const){
+  it(`never runs a document with the real fingerprint in a tab ${name}`,async()=>{
+    if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
+    await withProfile(spoofedProfile,async({seen,hits,browser,origin,userDataDir})=>{
+      await open(browser,origin+'/created',userDataDir);
+      await until(()=>seen.some(entry=>entry.ctx==='created'&&isSpoofed(entry)));await sleep(1500);
+      const documents=seen.filter(entry=>entry.ctx==='created');
+      expect(documents.length,'the tab never ran its page').toBeGreaterThanOrEqual(1);
+      expect(documents.filter(entry=>!isSpoofed(entry)),'documents that ran with real values').toEqual([]);
+      // The first request may already have left before the tab was attached; it is re-sent once at most.
+      expect(hits.filter(hit=>hit.path==='/created').length).toBeLessThanOrEqual(2);
+      expect((await browser.pages()).some(page=>page.url?.endsWith('/created')),'the tab was closed').toBe(true);
+    });
+  },60000);
+}
+
+it('never runs a document with the real fingerprint when the created tab is redirected',async()=>{
+  if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
+  await withProfile(spoofedProfile,async({seen,browser,origin})=>{
+    await browser.send('Target.createTarget',{url:origin+'/redirect',newWindow:true},'');
+    await until(()=>seen.some(entry=>entry.ctx==='created'&&isSpoofed(entry)));await sleep(1500);
+    const documents=seen.filter(entry=>entry.ctx==='created');
+    expect(documents.length).toBeGreaterThanOrEqual(1);
+    expect(documents.filter(entry=>!isSpoofed(entry)),'documents that ran with real values').toEqual([]);
+    expect((await browser.pages()).some(page=>page.url?.endsWith('/created'))).toBe(true);
   });
 },60000);

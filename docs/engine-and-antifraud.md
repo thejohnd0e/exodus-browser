@@ -140,60 +140,42 @@ by `--disable-blink-features=AutomationControlled` (Decision #58) and does not
 depend on the engine brand. See `kz-google-antifraud-diagnosis-2026-11-05.md`
 (local notes, not tracked) and DECISIONS.md #58-#60.
 
-## Tabs created by the browser can run their first document with the real fingerprint
+## Tabs created by the browser with an address already set
 
 Overrides are applied over the DevTools protocol, so they exist only after a tab
 has been attached. Tabs the application opens itself start at `about:blank` and
-are navigated afterwards, so they are spoofed from their first request. A tab
-that the browser creates with a URL already set starts loading before the
-overrides arrive. Measured on Google Chrome 157 with a macOS profile (manual
-hardware, time zone, screen and GPU) on a Windows host, for a tab created with a
-URL over the DevTools protocol (`Target.createTarget`) against a local server that
-answers instantly:
+are navigated afterwards. A tab that the browser creates with a web address
+already set (`Target.createTarget`, an external link handed to a running
+profile) starts loading before it can be attached.
 
-| What | First document | After the automatic reload |
-|---|---|---|
-| `navigator.platform`, `userAgentData.platform`, `Sec-CH-UA-Platform` | host (`Win32`, `Windows`) | profile (`MacIntel`, `macOS`) |
-| `platformVersion`, architecture, full version list | empty | profile values |
-| `hardwareConcurrency`, `deviceMemory` | host values | profile values |
-| time zone | the real one | profile value |
-| WebGL vendor and renderer | the real GPU | profile value |
-| `screen`, `devicePixelRatio` | the real display | profile values |
-| `User-Agent` header | spoofed | spoofed |
-| Client Hints brands | correct (`Google Chrome` present) | correct |
+Until 2026-11-08 such a tab, when the server answered instantly, ran its first
+document with the real fingerprint until the automatic reload: platform,
+`userAgentData`, hardware, time zone, WebGL vendor and renderer, screen and
+`devicePixelRatio` were all the host's. (An earlier version of this section listed
+only the platform and said non-Windows profiles alone were affected; that was
+wrong.)
 
-The earlier version of this section listed only the platform values and said the
-exposure existed only for a profile whose OS differs from the host. That was
-wrong: every value that the profile overrides is real in that first document.
+Now the installer sends `Page.stopLoading` the moment such a tab is attached, so
+the in-flight document does not commit, and opens the same address again
+(`Page.navigate`) once the overrides are in place. Measured on Google Chrome 157
+and Playwright Chromium 149 (`tests/integration/blank-target.test.ts`): for a tab
+created over the DevTools protocol, for an external link handed over by a second
+launch with the same user-data directory, and for an address that redirects, no
+document runs with real values.
 
-What is and is not known:
+What remains:
 
-- A script in the first document can read all of the values above before the
-  reload, and the first request carries the host `Sec-CH-UA-Platform`. The
-  reload corrects the page, not the request that was already sent.
-- The window is a race. With a server that answered after 500 ms the first
-  document was already spoofed, so the exposure is real for instant responses
-  and shrinks with network latency. How often it occurs against real remote
-  sites was not measured.
-- Pages opened by `window.open(url)` or `rel=opener` links attach with a blank
-  URL and are navigated after the overrides, and were spoofed in the first
-  document. An external link handed to a running profile showed the same first
-  request exposure as `Target.createTarget`; its first document was not
-  measured separately.
-- The reload is skipped when the profile overrides nothing, so one-shot URLs
-  (magic links, OAuth callbacks) are not requested twice in that case. With any
-  override active the reload remains, and such a URL is requested twice.
-- It is not fixable by rewriting the request after attach: enabling `Fetch` on
-  the paused tab only intercepted the second, post-reload request.
+- The first request may already have left before the tab was attached. It
+  carries a spoofed `User-Agent` but the host `Sec-CH-UA-Platform`, and the address
+  is requested a second time. This cannot be fixed after attach: enabling `Fetch`
+  on the paused tab only intercepted the second request, and
   `--disable-features=UserAgentClientHint` had no effect on Chromium 149.
-- Aborting the in-flight navigation at attach and navigating again after the
-  overrides (`Page.stopLoading`, then `Page.navigate`) removed the exposed first
-  document in a single run against the instant local server. It was not repeated,
-  not tried on slow or redirecting pages and not shipped.
-
-Guidance: avoid handing sensitive URLs to a running profile from outside.
-Typing an address into a tab the profile already opened should be safe because
-the overrides are in place before that navigation, but this was not measured.
+- One-shot addresses (magic links, OAuth callbacks) opened this way are therefore
+  requested twice while the profile overrides anything. With nothing overridden the
+  tab is neither stopped nor reloaded.
+- Only `http` and `https` addresses are stopped; other addresses keep the reload.
+- Guidance: avoid handing sensitive one-shot URLs to a running profile from
+  outside; open them from a page inside the profile instead.
 
 ## Links that open a new tab by `target="_blank"`
 
@@ -220,6 +202,27 @@ detected only after the resume, so the tab may run briefly before it is closed
 (ordinary tabs still fail closed before they run); a manual screen uses the last
 display that another page measured, and the tab is closed if none has been
 measured yet.
+
+## Cross-origin iframes and the emulated screen
+
+Chromium rejects `Emulation.setDeviceMetricsOverride` on an iframe target
+("Command can only be executed on top-level targets", confirmed on Chrome 157)
+and does not propagate the page's screen emulation into out-of-process iframes;
+`Emulation.setEmulatedMedia` accepts a `resolution` feature but ignores it. A
+cross-origin frame therefore renders with the host display.
+
+Its script now reports the profile's `devicePixelRatio` and rewrites the screen
+features of `matchMedia` queries (`device-width`, `device-height`, `resolution`,
+`-webkit-device-pixel-ratio`, with `min-`/`max-` prefixes) from the profile's screen
+to the host's, so they answer exactly as on the top page; `MediaQueryList.media`
+and `MediaQueryListEvent.media` return the query as written and `matchMedia` keeps
+a native `toString`. Measured on Chrome 157 and Chromium 149
+(`tests/integration/screen-consistency.test.ts`).
+
+Not covered: `@media` rules in the frame's stylesheets still follow the host
+display (a page can detect this by comparing a computed style with `matchMedia`),
+range syntax such as `(device-width >= 1512px)` and `device-aspect-ratio` are not
+rewritten, and the frame's actual rendering resolution stays the host's.
 
 ## What is not proven
 

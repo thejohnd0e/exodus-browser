@@ -57,7 +57,9 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
   // The emulated screen keeps the host display's work-area inset, so it is computed per page
   // from the real widget before the override is applied.
   let screenAvailability: ScreenAvailability | undefined;
-  const pageScript = (): string => buildSpoofScript(fingerprint, seed, screenAvailability);
+  // Only out-of-process iframes are separate targets; same-origin frames share their parent's
+  // renderer, script and emulation.
+  const pageScript = (outOfProcessFrame = false): string => buildSpoofScript(fingerprint, seed, screenAvailability, { outOfProcessFrame });
   // Chrome for Testing is Chromium-branded: its own Sec-CH-UA omits "Google Chrome", which both
   // leaks a non-Chrome browser and makes google.com offer to "download Chrome". Always send
   // Chrome-branded Client Hints; without a custom UA keep the fingerprint OS so the UA string,
@@ -141,7 +143,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     }
     commands.push(['Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true,filter:[{type:'service_worker',exclude:true},{}] }]);
     if (screenMetrics) commands.push(['Emulation.setDeviceMetricsOverride', screenMetrics]);
-    const script = pageScript();
+    const script = pageScript(!topLevel);
     if (script) commands.push(['Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:'){${script}\n}` }]);
     if (effectiveUa && metadata)
       commands.push(['Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage: languages.join(','), platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }]);
@@ -286,18 +288,28 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     if (installable) ownedSessions.set(attached.sessionId,{targetId:attached.target.targetId,parent:message.sessionId});
     if (attached.target.type === 'page' && !/^(devtools|chrome-extension|edge):/i.test(attached.target.url ?? '')) {
       if (/^chrome:/i.test(attached.target.url ?? '')) internalTargets.add(attached.target.targetId);
+      const url = attached.target.url ?? '';
+      // A tab that the browser created with a web address already set (Target.createTarget, an
+      // external link handed to a running profile) started loading before it could be attached. With
+      // an instant answer its first document used to run with the real fingerprint until the reload.
+      // Stopping the load at once keeps that document from committing; the address is opened again
+      // once the overrides are in place. The first request may already have left. Tabs opened from a
+      // page (target="_blank", window.open) attach with an empty address and are not affected.
+      // Verified on Chrome 157 and Chromium 149 by tests/integration/blank-target.test.ts.
+      const stopped = /^https?:/i.test(url) && overridesAnything();
+      if (stopped) void client.send('Page.stopLoading', {}, attached.sessionId).catch(() => undefined);
       void applyToPage(attached.sessionId, attached.target.targetId, true).then(async () => {
-        // A target that arrives with a navigation already in flight (popups, window.open) can run
-        // page scripts before overrides apply. Reload it once so the visible document is spoofed.
-        const url = attached.target.url ?? '';
+        // A target that arrives with a navigation already in flight can run page scripts before
+        // overrides apply. Reload it once (or open the stopped address) so the visible document is spoofed.
         if (url && url !== 'about:blank' && !/^chrome:/i.test(url) && overridesAnything()) {
           let reload = true;
           try {
             const history = await client.send<{ currentIndex: number; entries: Array<{ transitionType?: string }> }>('Page.getNavigationHistory', {}, attached.sessionId);
             const current = history.entries[history.currentIndex];
             if (current?.transitionType === 'form_submit') reload = false;
-          } catch { reload = false; }
-          if (reload) await client.send('Page.reload', {}, attached.sessionId).catch(() => undefined);
+          } catch { reload = stopped; /* a stopped tab must not be left empty */ }
+          if (reload && stopped) await client.send('Page.navigate', { url }, attached.sessionId).catch(() => undefined);
+          else if (reload) await client.send('Page.reload', {}, attached.sessionId).catch(() => undefined);
           // Reloading is unsafe for POST results and may be unavailable, but the document that is
           // already loaded was created before the injected script existed. Patch it in place so a
           // tab opened by hand is not left with the real hardware fingerprint.

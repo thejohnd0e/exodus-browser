@@ -143,35 +143,61 @@ it('real screen mode keeps JS and CSS media queries consistent without emulation
 },120000);
 
 /**
- * Known Chromium limitation: page-level device emulation is not propagated to out-of-process
- * iframes, and Emulation.setDeviceMetricsOverride is rejected on an iframe target. The injected
- * script still spoofs window.screen there, so a cross-origin frame sees JS and CSS disagree.
- * This test records the limitation instead of hiding it; it must be removed when Chromium
- * propagates emulated screen metrics to OOPIFs.
+ * Chromium rejects Emulation.setDeviceMetricsOverride on an iframe target ("Command can only be
+ * executed on top-level targets") and does not propagate the page's emulation into out-of-process
+ * iframes, so a cross-origin frame renders with the host display. Its script therefore also
+ * reports the profile's devicePixelRatio and answers matchMedia screen queries (device-width,
+ * device-height, resolution, -webkit-device-pixel-ratio) for the profile's screen, so the frame's
+ * JavaScript agrees with itself and with the top page. Stylesheet @media rules cannot be changed
+ * this way and still follow the host display; the last expectation keeps that limitation visible.
  */
-it('cross-origin iframe CSS media queries still use the host screen',async()=>{
+it('a cross-origin iframe reports the profile screen in JavaScript, including devicePixelRatio and matchMedia',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const real=await readRealScreen();
   const spoof=pickSpoof(real);
-  const reports:ScreenReport[]=[];
+  const spoofDpr=real.dpr===2?1:2;
+  const reports:Array<Record<string,unknown>>=[];
+  const childPage=`<!doctype html><style>#p{width:1px}@media (device-width: ${spoof.width}px){#p{width:7px}}</style><div id="p"></div><script>
+    const q='(device-width: ${spoof.width}px)';const mql=matchMedia(q);
+    fetch('/report?value='+encodeURIComponent(JSON.stringify({tag:'child',
+      screen:[screen.width,screen.height],dpr:devicePixelRatio,
+      mqSpoof:mql.matches,media:mql.media,
+      mqReal:matchMedia('(device-width: ${real.width}px)').matches,
+      mqMinSpoof:matchMedia('(min-device-width: ${spoof.width}px)').matches,
+      mqMaxBelow:matchMedia('(max-device-width: ${spoof.width-1}px)').matches,
+      mqHeight:matchMedia('(device-height: ${spoof.height}px)').matches,
+      mqResolution:matchMedia('(resolution: ${spoofDpr}dppx)').matches,
+      mqWebkit:matchMedia('(-webkit-min-device-pixel-ratio: ${spoofDpr})').matches,
+      mqUnrelated:matchMedia('all').matches,
+      matchMediaSource:Function.prototype.toString.call(matchMedia),
+      cssWidth:getComputedStyle(document.getElementById('p')).width})));</script>`;
   const childServer=createServer((req,res)=>{
     if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}
-    res.setHeader('Content-Type','text/html');res.end(pageFor('child',spoof,real.width,1));
+    res.setHeader('Content-Type','text/html');res.end(childPage);
   });
   const childPort=await listen(childServer);
   const parentServer=createServer((req,res)=>{
     if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}
-    res.setHeader('Content-Type','text/html');res.end(pageFor('parent',spoof,real.width,1,`<iframe src="http://localhost:${childPort}/child"></iframe>`));
+    res.setHeader('Content-Type','text/html');
+    res.end(`<!doctype html><iframe src="http://localhost:${childPort}/child"></iframe><script>fetch('/report?value='+encodeURIComponent(JSON.stringify({tag:'parent',dpr:devicePixelRatio,mqSpoof:matchMedia('(device-width: ${spoof.width}px)').matches,mqResolution:matchMedia('(resolution: ${spoofDpr}dppx)').matches})))</script>`);
   });
   const parentPort=await listen(parentServer);const url=`http://127.0.0.1:${parentPort}`;
   const root=tempRoot();
   try{
-    const p=await new ChromiumAdapter(exe).launch({profileId:'screen-oopif',userDataDir:root,languages:['en-US'],startUrls:[url],fingerprint:{...DEFAULT_FINGERPRINT,screen:{mode:'manual',width:spoof.width,height:spoof.height}}});
+    const p=await new ChromiumAdapter(exe).launch({profileId:'screen-oopif',userDataDir:root,languages:['en-US'],startUrls:[url],fingerprint:{...DEFAULT_FINGERPRINT,screen:{mode:'manual',width:spoof.width,height:spoof.height,dpr:spoofDpr}}});
     try{
       for(let i=0;i<100&&!reports.some(r=>r.tag==='child');i++)await new Promise(r=>setTimeout(r,100));
-      const frame=reports.filter(r=>r.tag==='child').at(-1);expect(frame,'cross-origin frame did not report').toBeTruthy();
-      expect(frame!.screen.slice(0,2)).toEqual([spoof.width,spoof.height]);
-      expect(frame!.mqSpoof,'limitation changed: the frame now inherits the emulated screen').toBe(false);
+      const parent=reports.find(r=>r.tag==='parent');const frame=reports.filter(r=>r.tag==='child').at(-1);
+      expect(frame,'cross-origin frame did not report').toBeTruthy();
+      expect(parent).toMatchObject({dpr:spoofDpr,mqSpoof:true,mqResolution:true});
+      expect(frame).toMatchObject({
+        screen:[spoof.width,spoof.height],dpr:spoofDpr,
+        mqSpoof:true,media:`(device-width: ${spoof.width}px)`,mqReal:false,mqMinSpoof:true,mqMaxBelow:false,mqHeight:true,
+        mqResolution:true,mqWebkit:true,mqUnrelated:true,
+        matchMediaSource:'function matchMedia() { [native code] }',
+      });
+      // Known limitation: stylesheet media queries in the frame still follow the host display.
+      expect(frame!.cssWidth,'limitation changed: stylesheets in the frame now see the emulated screen').toBe('1px');
     }finally{await p.stop();}
   }finally{cleanup(root);parentServer.closeAllConnections();parentServer.close();childServer.closeAllConnections();childServer.close();}
 },120000);

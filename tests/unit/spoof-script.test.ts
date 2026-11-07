@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSpoofScript, buildWorkerSpoofScript, deriveScreenAvailability, webgpuInfoFor } from '../../src/main/engines/spoof-script';
+import { buildSpoofScript, buildWorkerSpoofScript, deriveScreenAvailability, spoofConfig, webgpuInfoFor } from '../../src/main/engines/spoof-script';
 import { DEFAULT_FINGERPRINT } from '../../src/shared/fingerprint';
 
 const hardware = { mode: 'manual' as const, cores: 12, memoryGb: 8 as const };
@@ -153,5 +153,19 @@ describe('spoof script', () => {
   it('stealth: geolocation block mode leaves page APIs untouched (browser-level permission)', () => {
     const script = buildSpoofScript({ ...DEFAULT_FINGERPRINT, geolocation: { mode: 'block' } }, 1);
     expect(script).toBe('');
+  });
+});
+
+describe('out-of-process frame screen',()=>{
+  const manual={...DEFAULT_FINGERPRINT,screen:{mode:'manual' as const,width:1512,height:982,dpr:2}};
+  it('is configured only for an out-of-process frame with a manual screen',()=>{
+    expect(spoofConfig(manual,1,undefined,true).frameScreen).toEqual({dpr:2});
+    expect(spoofConfig(manual,1).frameScreen).toBeNull();
+    expect(spoofConfig(DEFAULT_FINGERPRINT,1,undefined,true).frameScreen).toBeNull();
+    expect(spoofConfig({...manual,screen:{mode:'manual' as const,width:1512,height:982}},1,undefined,true).frameScreen).toEqual({dpr:null});
+  });
+  it('adds the matchMedia rewrite to the frame script and never to the top page script',()=>{
+    expect(buildSpoofScript(manual,1,undefined,{outOfProcessFrame:true})).toContain("keep(window,'matchMedia'");
+    expect(buildSpoofScript(manual,1)).not.toContain("keep(window,'matchMedia'");
   });
 });
