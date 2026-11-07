@@ -3,7 +3,7 @@
   "productName": "Exodus Browser",
   "author": "thejohnd0e",
   "license": "GPL-3.0-only",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "private": true,
   "type": "module",
   "main": "dist/main.cjs",
