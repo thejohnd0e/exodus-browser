@@ -195,22 +195,31 @@ Guidance: avoid handing sensitive URLs to a running profile from outside.
 Typing an address into a tab the profile already opened should be safe because
 the overrides are in place before that navigation, but this was not measured.
 
-## Links that open a new tab by `target="_blank"` (open defect)
+## Links that open a new tab by `target="_blank"`
 
-Found on 2026-11-07 while measuring the above. In a managed profile a link
-`<a href="/page" target="_blank">` (which browsers treat as `noopener`, so the
-new tab gets its own renderer process) does not open a usable tab: the new
-target is created, none of its page-level commands (`Page.enable`,
-`Network.setUserAgentOverride`, `Page.addScriptToEvaluateOnNewDocument`) is
-answered while it waits for the debugger, the installer's 5-second timeout fires
-and, failing closed, it closes the tab. The requested page is never fetched.
-Reproduced on Google Chrome 157 with the default fingerprint and with manual
-overrides, and on Playwright Chromium 149. The same happens for a form with
-`target="_blank"`. The same link with `rel="opener"` and `window.open(url)` work.
-Commands that are answered by the browser process (`Target.setAutoAttach`,
-`Runtime.runIfWaitingForDebugger`) respond within milliseconds, so the tab is
-waiting for resume, which the installer only sends after the overrides were
-acknowledged. See TODO.md for the open item.
+Found and fixed on 2026-11-07/08. A link `<a href="/page" target="_blank">` is
+treated as `noopener`, so the new tab gets its own renderer process. Until that
+tab is resumed, Chromium answers only browser-side commands
+(`Target.setAutoAttach`, `Runtime.runIfWaitingForDebugger`); page-level commands
+(`Page.enable`, `Network.setUserAgentOverride`,
+`Page.addScriptToEvaluateOnNewDocument`) wait for the resume. The installer used
+to wait for those answers before resuming, hit its 5-second timeout and, failing
+closed, closed the tab: such links and forms did not open at all.
+
+Now a new page that does not answer `Page.enable` within 300 ms gets the same
+overrides sent in order, followed by the resume, before any reply is awaited.
+Chromium delivers a session's commands in order, so the overrides reach the page
+before its first document runs. Measured on Google Chrome 157 and Playwright
+Chromium 149 (`tests/integration/blank-target.test.ts`): links and GET/POST forms
+with `target="_blank"` open once, a POST is sent once with its body, and the first
+document already reports the profile's platform, hardware, time zone, user agent
+and manual screen (in JavaScript and in media queries).
+
+Trade-offs of this path: such a tab opens about 300 ms later; a failed override is
+detected only after the resume, so the tab may run briefly before it is closed
+(ordinary tabs still fail closed before they run); a manual screen uses the last
+display that another page measured, and the tab is closed if none has been
+measured yet.
 
 ## What is not proven
 

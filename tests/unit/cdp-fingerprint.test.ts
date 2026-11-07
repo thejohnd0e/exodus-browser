@@ -63,6 +63,8 @@ describe('installFingerprint', () => {
   it('does not close an internal page when its instrumentation fails',async()=>{
     const f=fake();const failures:string[]=[];
     await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1,onPageFailure:r=>failures.push(r)});
+    // Let the initial page finish its setup first; only the internal page should meet the failure.
+    await new Promise(r=>setTimeout(r,20));
     f.rejectOn('Page.addScriptToEvaluateOnNewDocument');
     f.emit({method:'Target.attachedToTarget',params:{sessionId:'s9',targetInfo:{targetId:'t9',type:'page',url:'chrome://settings/'}}});
     await new Promise(r=>setTimeout(r,20));
@@ -409,6 +411,8 @@ describe('navigate', () => {
   it('opens the first URL in the existing page and the rest in new tabs', async () => {
     const f = fake([{ targetId: 't1', type: 'page' }]);
     const session = await installFingerprint(f.client, { fingerprint: SPOOFED, languages: ['ru-RU'], seed: 1 });
+    // The initial page is set up asynchronously; navigate() itself waits for it.
+    await new Promise(r => setTimeout(r, 20));
     expect(f.calls).toContain('Page.addScriptToEvaluateOnNewDocument:s1');
     f.calls.length = 0;
     await session.navigate(['https://a.example', 'https://b.example']);
@@ -523,4 +527,84 @@ describe('service targets',()=>{
    expect(f.calls).toContain('Page.enable:s8');
    expect(f.calls).not.toContain('Page.reload:s8');
  });
+});
+
+// A noopener tab (target="_blank" link or form) gets its own renderer process. Until it is resumed,
+// Chromium answers only browser-side commands such as Target.setAutoAttach and
+// Runtime.runIfWaitingForDebugger; every page-level command waits for the resume.
+function answerOnlyAfterResume(f:Fake,sessionId:string,failMethod?:string):string[]{
+  const send=f.client.send.bind(f.client);
+  const held:Array<()=>void>=[];let resumed=false;
+  // The order in which the installer sent its commands, independent of when they were answered.
+  const sent:string[]=[];
+  f.client.send=(async(method:string,params:Record<string,unknown>={},target?:string)=>{
+    if(target===sessionId)sent.push(method);
+    if(target!==sessionId||method.startsWith('Target.'))return send(method,params,target);
+    if(method==='Runtime.runIfWaitingForDebugger'){const result=await send(method,params,target);resumed=true;held.splice(0).forEach(release=>release());return result;}
+    if(!resumed)await new Promise<void>(release=>held.push(release));
+    if(method===failMethod){f.calls.push(`${method}:${target}`);throw Error('boom');}
+    return send(method,params,target);
+  }) as typeof f.client.send;
+  return sent;
+}
+
+describe('a tab that answers only after it is resumed',()=>{
+  it('sends every override before the resume and keeps the tab open',async()=>{
+    const f=fake([]);const failures:string[]=[];
+    await installFingerprint(f.client,{fingerprint:{...SPOOFED,timezone:{mode:'manual',value:'Europe/Berlin'}},languages:['en-US'],seed:1,engineUserAgent:windowsEngine,engineVersion:'156.0.8078.80',onPageFailure:r=>failures.push(r),pageAnswerWaitMs:30});
+    const calls=answerOnlyAfterResume(f,'s2');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,200));
+    expect(calls.at(-1)).toBe('Runtime.runIfWaitingForDebugger');
+    for(const override of ['Page.addScriptToEvaluateOnNewDocument','Network.setUserAgentOverride','Emulation.setTimezoneOverride'])
+      expect(calls.indexOf(override),override).toBeGreaterThanOrEqual(0);
+    expect(f.calls).not.toContain('Target.closeTarget');
+    expect(failures).toEqual([]);
+  });
+
+  it('keeps the ordinary path, and its fail-closed guarantee, for a tab that answers at once',async()=>{
+    const f=fake([]);const failures:string[]=[];
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1,onPageFailure:r=>failures.push(r),pageAnswerWaitMs:30});
+    f.rejectOn('Page.addScriptToEvaluateOnNewDocument');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,100));
+    expect(f.calls).not.toContain('Runtime.runIfWaitingForDebugger:s2');
+    expect(f.params['Target.closeTarget']).toEqual({targetId:'t2'});
+    expect(failures).toHaveLength(1);
+  });
+
+  it('closes the tab when an override fails after the resume',async()=>{
+    const f=fake([]);const failures:string[]=[];
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1,onPageFailure:r=>failures.push(r),pageAnswerWaitMs:30});
+    answerOnlyAfterResume(f,'s2','Page.addScriptToEvaluateOnNewDocument');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,200));
+    expect(f.params['Target.closeTarget']).toEqual({targetId:'t2'});
+    expect(failures).toHaveLength(1);
+  });
+
+  it('emulates a manual screen from the last measured display without asking the paused tab',async()=>{
+    const f=fake();
+    await installFingerprint(f.client,{fingerprint:{...SPOOFED,screen:{mode:'manual',width:1512,height:982,dpr:2}},languages:['en-US'],seed:1,pageAnswerWaitMs:30});
+    await new Promise(r=>setTimeout(r,30));
+    expect(f.calls).toContain('Emulation.setDeviceMetricsOverride:s1');
+    const calls=answerOnlyAfterResume(f,'s2');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,200));
+    expect(calls).toContain('Emulation.setDeviceMetricsOverride');
+    expect(calls).not.toContain('Runtime.evaluate');
+    expect(calls.indexOf('Emulation.setDeviceMetricsOverride')).toBeLessThan(calls.indexOf('Runtime.runIfWaitingForDebugger'));
+    expect(f.calls).not.toContain('Target.closeTarget');
+  });
+
+  it('closes a tab with a manual screen when no display has been measured yet',async()=>{
+    const f=fake([]);const failures:string[]=[];
+    await installFingerprint(f.client,{fingerprint:{...SPOOFED,screen:{mode:'manual',width:1512,height:982,dpr:2}},languages:['en-US'],seed:1,onPageFailure:r=>failures.push(r),pageAnswerWaitMs:30});
+    answerOnlyAfterResume(f,'s2');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,200));
+    expect(f.calls).not.toContain('Runtime.runIfWaitingForDebugger:s2');
+    expect(f.params['Target.closeTarget']).toEqual({targetId:'t2'});
+    expect(failures).toEqual(['SCREEN_METRICS_UNAVAILABLE']);
+  });
 });

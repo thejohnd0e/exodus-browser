@@ -13,6 +13,8 @@ export interface InstallOptions {
   onPageFailure?: (reason: string) => void;
   /** Test-only override for the readiness deadline. */
   readyTimeoutMs?: number;
+  /** Test-only override for how long a new page may take to answer before it is set up in one batch. */
+  pageAnswerWaitMs?: number;
 }
 
 interface TargetInfo { targetId: string; type: string; url?: string }
@@ -36,6 +38,8 @@ export interface FingerprintSession {
 
 const PAGE_WAIT_MS = 5000;
 const READY_WAIT_MS = 15000;
+// An ordinary new page answers Page.enable within a few tens of milliseconds while it is paused.
+const PAGE_ANSWER_WAIT_MS = 300;
 async function waitForPage(client: CdpClient): Promise<TargetInfo> {
   const deadline = Date.now() + PAGE_WAIT_MS;
   for (;;) {
@@ -91,7 +95,11 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     workerEvaluations.delete(owned.targetId);
   };
 
-  const readRealScreen = async (sessionId: string): Promise<{ screen: { width: number; height: number; availWidth: number; availHeight: number }; dpr: number } | null> => {
+  type RealScreen = { screen: { width: number; height: number; availWidth: number; availHeight: number }; dpr: number };
+  // The last display that a page could measure. A tab that cannot answer before it is resumed
+  // reuses it instead of measuring (see runApplyToPage).
+  let lastRealScreen: RealScreen | null = null;
+  const readRealScreen = async (sessionId: string): Promise<RealScreen | null> => {
     try {
       const { result } = await client.send<{ result: { value?: { screen?: { width: number; height: number; availWidth: number; availHeight: number }; dpr?: number } } }>(
         'Runtime.evaluate',
@@ -100,7 +108,8 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       );
       const value = result?.value;
       if (!value?.screen || typeof value.screen.width !== 'number' || typeof value.screen.availWidth !== 'number') return null;
-      return { screen: value.screen, dpr: typeof value.dpr === 'number' ? value.dpr : 1 };
+      lastRealScreen = { screen: value.screen, dpr: typeof value.dpr === 'number' ? value.dpr : 1 };
+      return lastRealScreen;
     } catch { return null; }
   };
 
@@ -110,36 +119,78 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
    * screen (and device pixel ratio) inside Chromium itself, which media queries honour; a page
    * size of zero keeps the real window layout so resizing still works. See DECISIONS.md #63.
    */
-  const applyScreenEmulation = async (sessionId: string): Promise<void> => {
+  const screenMetricsFor = (real: RealScreen): Record<string, unknown> => {
     const screen = fingerprint.screen;
-    if (screen.mode !== 'manual') return;
-    const real = await readRealScreen(sessionId);
-    if (!real) throw Error('SCREEN_METRICS_UNAVAILABLE');
+    if (screen.mode !== 'manual') throw Error('SCREEN_METRICS_UNAVAILABLE');
     screenAvailability = deriveScreenAvailability(screen, real.screen);
-    await client.send('Emulation.setDeviceMetricsOverride', {
+    return {
       width: 0, height: 0,
       screenWidth: screen.width, screenHeight: screen.height,
       deviceScaleFactor: screen.dpr ?? real.dpr,
       mobile: false,
       dontSetVisibleSize: true,
-    }, sessionId);
+    };
   };
 
-  const runApplyToPage = async (sessionId: string, targetId: string, topLevel: boolean): Promise<void> => {
-    await client.send('Page.enable', {}, sessionId);
+  /** Every override a paused page needs, in the order they must reach it, ending before the resume. */
+  const pageOverrides = (topLevel: boolean, screenMetrics: Record<string, unknown> | null): Array<[string, Record<string, unknown>]> => {
+    const commands: Array<[string, Record<string, unknown>]> = [];
     if (topLevel && fingerprint.geolocation.mode === 'manual') {
-      await client.send('Debugger.enable', {}, sessionId);
-      await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:') debugger;\n//# sourceURL=${geoGuardUrl}` }, sessionId);
+      commands.push(['Debugger.enable', {}]);
+      commands.push(['Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:') debugger;\n//# sourceURL=${geoGuardUrl}` }]);
     }
-    await client.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true,filter:[{type:'service_worker',exclude:true},{}] }, sessionId);
-    if (topLevel && fingerprint.screen.mode === 'manual') await applyScreenEmulation(sessionId);
+    commands.push(['Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true,filter:[{type:'service_worker',exclude:true},{}] }]);
+    if (screenMetrics) commands.push(['Emulation.setDeviceMetricsOverride', screenMetrics]);
     const script = pageScript();
-    if (script) await client.send('Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:'){${script}\n}` }, sessionId);
+    if (script) commands.push(['Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:'){${script}\n}` }]);
     if (effectiveUa && metadata)
-      await client.send('Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage: languages.join(','), platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }, sessionId);
-    if (fingerprint.timezone.mode === 'manual') await client.send('Emulation.setTimezoneOverride', { timezoneId: fingerprint.timezone.value }, sessionId);
-    if (fingerprint.geolocation.mode === 'manual') await client.send('Emulation.setGeolocationOverride', { latitude: fingerprint.geolocation.latitude, longitude: fingerprint.geolocation.longitude, accuracy: fingerprint.geolocation.accuracy }, sessionId);
-    await client.send('Runtime.runIfWaitingForDebugger', {}, sessionId);
+      commands.push(['Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage: languages.join(','), platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }]);
+    if (fingerprint.timezone.mode === 'manual') commands.push(['Emulation.setTimezoneOverride', { timezoneId: fingerprint.timezone.value }]);
+    if (fingerprint.geolocation.mode === 'manual') commands.push(['Emulation.setGeolocationOverride', { latitude: fingerprint.geolocation.latitude, longitude: fingerprint.geolocation.longitude, accuracy: fingerprint.geolocation.accuracy }]);
+    return commands;
+  };
+
+  /**
+   * An ordinary paused page answers every command, so each override is confirmed before the page
+   * is resumed and a failure closes it before it ever runs.
+   *
+   * A link or form with target="_blank" opens a noopener tab in its own renderer process. Until that
+   * tab is resumed Chromium answers only browser-side commands (Target.setAutoAttach,
+   * Runtime.runIfWaitingForDebugger); every page-level command waits for the resume. Waiting for
+   * them deadlocked until the command timeout and the tab was closed. Such a tab gets the same
+   * overrides sent in order, followed by the resume, before any reply is awaited: Chromium delivers
+   * the session's commands in order, so the overrides reach the page before its first document
+   * runs. A failure is then detected after the resume and still closes the tab. A manual screen
+   * cannot be measured on such a tab, so the last measured display is used; without one the tab is
+   * closed. Verified on Chrome 157 and Chromium 149 by tests/integration/blank-target.test.ts.
+   */
+  const runApplyToPage = async (sessionId: string, targetId: string, topLevel: boolean): Promise<void> => {
+    const enabled = client.send('Page.enable', {}, sessionId);
+    // The batched path awaits this later; an early failure must not become an unhandled rejection.
+    enabled.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const answered = await Promise.race([
+      enabled.then(() => true),
+      new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), options.pageAnswerWaitMs ?? PAGE_ANSWER_WAIT_MS); }),
+    ]).finally(() => clearTimeout(timer));
+    const manualScreen = topLevel && fingerprint.screen.mode === 'manual';
+    if (answered) {
+      let screenMetrics: Record<string, unknown> | null = null;
+      if (manualScreen) {
+        const real = await readRealScreen(sessionId);
+        if (!real) throw Error('SCREEN_METRICS_UNAVAILABLE');
+        screenMetrics = screenMetricsFor(real);
+      }
+      for (const [method, params] of pageOverrides(topLevel, screenMetrics)) await client.send(method, params, sessionId);
+      await client.send('Runtime.runIfWaitingForDebugger', {}, sessionId);
+      return;
+    }
+    if (manualScreen && !lastRealScreen) throw Error('SCREEN_METRICS_UNAVAILABLE');
+    const screenMetrics = manualScreen && lastRealScreen ? screenMetricsFor(lastRealScreen) : null;
+    const replies: Promise<unknown>[] = [enabled];
+    for (const [method, params] of pageOverrides(topLevel, screenMetrics)) replies.push(client.send(method, params, sessionId));
+    replies.push(client.send('Runtime.runIfWaitingForDebugger', {}, sessionId));
+    await Promise.all(replies);
   };
 
   const applyToPage = async (sessionId: string, targetId: string, topLevel = false, critical = false): Promise<void> => {
