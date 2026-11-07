@@ -135,3 +135,7 @@ describe('client hints coherence', () => {
   });
 });
 
+it('turns WebGPU off in the engine instead of in page script',()=>{
+  expect(fingerprintArgs({...DEFAULT_FINGERPRINT,webgpu:'off'})).toContain('--disable-features=WebGPUService');
+  expect(fingerprintArgs({...DEFAULT_FINGERPRINT,webgpu:'on'}).some(arg=>arg.startsWith('--disable-features'))).toBe(false);
+});

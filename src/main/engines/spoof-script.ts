@@ -248,8 +248,6 @@ const OFFSCREEN_CANVAS = `if(c.canvas!=='real'&&typeof OffscreenCanvasRenderingC
  });
 }`;
 
-const WEBGPU = `if(c.webgpuOff){try{Object.defineProperty(navigator,'gpu',{get:mask(()=>undefined,function(){return undefined;}),configurable:true});}catch(e){}}`;
-
 const WEBGPU_INFO = `if(c.webgpuInfo&&typeof GPUAdapterInfo!=='undefined'){try{
   const def=(p,v)=>{const o=Object.getOwnPropertyDescriptor(GPUAdapterInfo.prototype,p);if(o&&o.get){const g=mask(function(){return v;},o.get);Object.defineProperty(GPUAdapterInfo.prototype,p,{get:g,configurable:true,enumerable:true});}};
   def('vendor',c.webgpuInfo.vendor);
@@ -358,7 +356,6 @@ export function buildSpoofScript(fingerprint: Fingerprint, seed: number, availab
     config.canvas !== 'real' ? OFFSCREEN_CANVAS : null,
     config.webgl !== 'real' || config.webglInfo ? WEBGL : null,
     config.webgl === 'off' ? OFFSCREEN_WEBGL_OFF : null,
-    config.webgpuOff ? WEBGPU : null,
     config.webgpuInfo ? WEBGPU_INFO : null,
     config.clientRectsNoise ? CLIENT_RECTS : null,
     config.audioNoise ? AUDIO : null,

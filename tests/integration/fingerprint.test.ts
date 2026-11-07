@@ -218,7 +218,8 @@ it('webgl exposes the configured vendor and renderer, webgpu is disabled and can
       expect(reports,'browser did not report').toHaveLength(1);
       expect(reports[0].vendor).toBe('Google Inc. (NVIDIA)');
       expect(reports[0].renderer).toContain('ANGLE (NVIDIA');
-      expect(reports[0].gpu).toBe('undefined');
+      // WebGPU Off keeps navigator.gpu, as Chrome without a usable adapter does; webgpu-off.test.ts checks the adapter.
+      expect(reports[0].gpu).toBe('object');
       expect(reports[0].pixels,'canvas off returns transparent black pixels').toBe(0);
     }finally{await p.stop();cleanup(root);}
   }finally{server.closeAllConnections();server.close();}

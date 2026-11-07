@@ -15,6 +15,11 @@ export function fingerprintArgs(fingerprint: Fingerprint, options: { proxied?: b
   if (fingerprint.screen.mode === 'manual') args.push(`--window-size=${fingerprint.screen.width},${fingerprint.screen.height}`);
   // With a proxy, non-proxied UDP (STUN) would reveal the real IP, so the policy applies even in Real mode.
   if (fingerprint.webRtc !== 'real' || options.proxied) args.push(`${WEBRTC_IP_HANDLING_SWITCH}=disable_non_proxied_udp`);
+  // WebGPU Off stops Chrome's WebGPU service, so navigator.gpu stays (as in Chrome on a machine without
+  // a usable adapter) but requestAdapter() resolves to null in pages, workers and through the
+  // prototype getter. A JavaScript patch could be stepped around (DECISIONS #76). Measured on Chrome
+  // 157 and Chromium 149; --disable-blink-features=WebGPU and --disable-features=WebGPU had no effect.
+  if (fingerprint.webgpu === 'off') args.push('--disable-features=WebGPUService');
   return args;
 }
 

@@ -239,6 +239,20 @@ display (a page can detect this by comparing a computed style with `matchMedia`)
 range syntax such as `(device-width >= 1512px)` and `device-aspect-ratio` are not
 rewritten, and the frame's actual rendering resolution stays the host's.
 
+## Workers and WebGPU Off
+
+Found by an external audit on 2026-11-08 and fixed the same day (Decision #76):
+
+- A worker started by another worker was never attached, so it reported the host's
+  hardware, platform and GPU while the page and first-level workers were spoofed.
+  Worker sessions now attach their own child workers before they run; chains of
+  classic and module workers are covered by `tests/integration/worker-chain.test.ts`.
+- WebGPU Off used to hide `navigator.gpu` in page script only, so the prototype getter
+  and every worker still returned the real adapter. It is now an engine switch
+  (`--disable-features=WebGPUService`): `navigator.gpu` exists and `requestAdapter()`
+  returns `null` everywhere, as in Chrome on a machine without a usable adapter.
+  The switch must be re-checked on every Chrome update (`tests/integration/webgpu-off.test.ts`).
+
 ## What is not proven
 
 - That Client Hints brands ever influenced the outcome. The front end never
