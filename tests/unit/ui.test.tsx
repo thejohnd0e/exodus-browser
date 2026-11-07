@@ -37,6 +37,19 @@ it('opens language choices upward and saves only a different language',async()=>
   fireEvent.click(trigger);fireEvent.click(screen.getByRole('button',{name:ru['language.ru']}));
   await waitFor(()=>expect(updateSettings).toHaveBeenCalledWith({language:'ru'}));
 });
+it('shows daily update checks as off by default and saves the choice without touching other options',async()=>{
+  const updateSettings=vi.fn<ProfileApi['updateSettings']>(async settings=>({ok:true,value:settings}));render(<App api={api({updateSettings})}/>);await screen.findByText('Work');
+  fireEvent.click(screen.getByRole('button',{name:'Interface language'}));
+  const toggle=screen.getByRole('switch',{name:/Check for updates daily/});
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+  fireEvent.click(toggle);
+  await waitFor(()=>expect(updateSettings).toHaveBeenCalledWith({language:'en',autoCheckUpdates:true}));
+});
+it('starts with daily update checks on when the stored settings say so',async()=>{
+  const getSettings=vi.fn<ProfileApi['getSettings']>(async()=>({ok:true,value:{language:'en',autoCheckUpdates:true}}));render(<App api={api({getSettings})}/>);await screen.findByText('Work');
+  fireEvent.click(screen.getByRole('button',{name:'Interface language'}));
+  await waitFor(()=>expect(screen.getByRole('switch',{name:/Check for updates daily/}).getAttribute('aria-checked')).toBe('true'));
+});
 it('closes language choices with Escape and returns focus to the trigger',async()=>{
   render(<App api={api()}/>);await screen.findByText('Work');
   const trigger=screen.getByRole('button',{name:'Interface language'});

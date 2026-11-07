@@ -44,21 +44,31 @@ export class UpdateService {
     return this.current;
   }
 
-  async check():Promise<UpdateState>{
-    this.assertIdle();
-    this.set({state:'checking'});
+  /**
+   * A background check (the opt-in daily one) never interrupts a download or an installer that is
+   * ready, does not flash the "checking" state and never reports a failure: it only surfaces an
+   * available release, exactly as a manual check would.
+   */
+  async check(options:{background?:boolean}={}):Promise<UpdateState>{
+    const background=options.background===true;
+    if(background){
+      if(this.controller||['checking','downloading','available','ready'].includes(this.current.state))return this.current;
+    }else{
+      this.assertIdle();
+      this.set({state:'checking'});
+    }
     try{
       const json=await this.fetchMetadata(this.options.apiUrl??UPDATE_API_URL);
       const release=parseLatestRelease(json,this.options.appVersion,this.options.isAllowedUrl);
       if(release.kind==='up-to-date'){
         this.offer=null;
-        return this.set({state:'up-to-date'});
+        return background?this.current:this.set({state:'up-to-date'});
       }
       this.offer=release;
       return this.set({state:'available',version:release.version,size:release.installer.size});
     }catch(error){
       this.offer=null;
-      return this.set({state:'error',code:codeOf(error,'UPDATE_CHECK_FAILED')});
+      return background?this.current:this.set({state:'error',code:codeOf(error,'UPDATE_CHECK_FAILED')});
     }
   }
 

@@ -6,7 +6,7 @@ import {useI18n} from './i18n/provider';
 
 const languages:readonly {code:AppLanguage;name:string}[]=[{code:'en',name:en['language.en']},{code:'ru',name:ru['language.ru']}];
 
-export function AppSettings({disabled=false,minimizeToTray=false,onMinimizeToTrayChange}:{disabled?:boolean;minimizeToTray?:boolean;onMinimizeToTrayChange?:(enabled:boolean)=>void}){
+export function AppSettings({disabled=false,minimizeToTray=false,onMinimizeToTrayChange,autoCheckUpdates=false,onAutoCheckUpdatesChange}:{disabled?:boolean;minimizeToTray?:boolean;onMinimizeToTrayChange?:(enabled:boolean)=>void;autoCheckUpdates?:boolean;onAutoCheckUpdatesChange?:(enabled:boolean)=>void}){
   const {language,setLanguage,t}=useI18n();
   const [open,setOpen]=useState(false);
   const popupId=useId();
@@ -23,6 +23,7 @@ export function AppSettings({disabled=false,minimizeToTray=false,onMinimizeToTra
     {open&&<div id={popupId} className="language-popup">
       {languages.map(item=><button key={item.code} type="button" aria-pressed={item.code===language} onClick={()=>choose(item.code)}><span>{item.name}</span>{item.code===language&&<span aria-hidden="true">✓</span>}</button>)}
       {onMinimizeToTrayChange&&<><hr/><button type="button" role="switch" aria-checked={minimizeToTray} onClick={()=>onMinimizeToTrayChange(!minimizeToTray)}><span>{t('tray.minimize')}</span>{minimizeToTray&&<span aria-hidden="true">✓</span>}</button></>}
+      {onAutoCheckUpdatesChange&&<button type="button" role="switch" aria-checked={autoCheckUpdates} onClick={()=>onAutoCheckUpdatesChange(!autoCheckUpdates)}><span>{t('update.autoCheck')}</span>{autoCheckUpdates&&<span aria-hidden="true">✓</span>}</button>}
     </div>}
   </div>;
 }

@@ -222,6 +222,29 @@ describe('UpdateService',()=>{
     expect(requested).not.toContain(installerUrl);
   });
 
+  it('keeps a failed background check silent and leaves the previous state',async()=>{
+    const {svc,states}=service({fetch:async()=>{throw new Error('offline');}});
+    expect(await svc.check({background:true})).toEqual({state:'idle'});
+    expect(svc.state()).toEqual({state:'idle'});
+    expect(states.some(state=>state.state==='error')).toBe(false);
+    // A manual check afterwards still reports the failure.
+    expect(await svc.check()).toEqual({state:'error',code:'UPDATE_CHECK_FAILED'});
+  });
+
+  it('shows an available update found by a background check without downloading it',async()=>{
+    const requested:string[]=[];
+    const {svc}=service({fetch:async(url:string)=>{requested.push(url);return new Response(JSON.stringify(releaseJson()),{status:200});}});
+    expect(await svc.check({background:true})).toEqual({state:'available',version:'1.1.78',size:payload.length});
+    expect(requested).toEqual([apiUrl]);
+  });
+
+  it('does not disturb a download, a ready installer or an already shown update',async()=>{
+    const {svc}=service();
+    await svc.check();await svc.download();
+    expect(svc.state()).toEqual({state:'ready',version:'1.1.78'});
+    expect(await svc.check({background:true})).toEqual({state:'ready',version:'1.1.78'});
+  });
+
   it('refuses installation before a verified download',async()=>{
     const {svc,runInstaller}=service();
     await svc.check();

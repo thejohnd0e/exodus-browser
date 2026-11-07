@@ -30,6 +30,7 @@ import {SessionStore} from './sessions/store';
 import {AppSettingsService} from './settings/service';
 import {nativeMessage} from '../shared/i18n/messages';
 import {UpdateService} from './update/service';
+import {UpdateScheduler,FileCheckTimeStore} from './update/scheduler';
 import {AgentApiService} from './agent-api/service';
 import {spawn} from 'node:child_process';
 app.setName('Exodus Browser');
@@ -101,13 +102,16 @@ else void app.whenReady().then(async()=>{
    });
     let quitting=false,closing=false;
     const finishShutdown=async()=>{try{// Stop admitting agent requests before browser work so a start cannot race shutdown.
-      await agentApi.close();await Promise.all([cookies.closeAll(),portable.closeAll()]);await supervisor.shutdown();quitting=true;tray.dispose();profiles.close();app.quit();}catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});closing=false;}};
+      updateScheduler.dispose();await agentApi.close();await Promise.all([cookies.closeAll(),portable.closeAll()]);await supervisor.shutdown();quitting=true;tray.dispose();profiles.close();app.quit();}catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});closing=false;}};
     const update=new UpdateService({
       appVersion:BUILD_INFO.version,root,
       busy:async()=>supervisor.hasActiveWork()||cookies.hasActiveWork()||portable.hasActiveWork(),
       runInstaller:path=>new Promise<void>((resolve,reject)=>{const child=spawn(path,[],{detached:true,stdio:'ignore'});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});}),
       onState:state=>{if(!win.isDestroyed())win.webContents.send('app:update-state',state);},
     });
+    // Opt-in only (DECISIONS #71): with the option off nothing is scheduled and no request is made.
+    const updateScheduler=new UpdateScheduler({store:new FileCheckTimeStore(root),check:()=>update.check({background:true})});
+    await updateScheduler.setEnabled(initialSettings.autoCheckUpdates===true);
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
        remove:async id=>{await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
@@ -140,7 +144,7 @@ else void app.whenReady().then(async()=>{
       removeExtension:async extensionId=>{await extensions.remove(extensionId);},
       getUpdateState:async()=>update.state(),checkForUpdate:()=>update.check(),downloadUpdate:()=>update.download(),cancelUpdate:()=>update.cancel(),
       installUpdate:async()=>{await update.install();await finishShutdown();},
-      getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;tray.setEnabled(value.minimizeToTray===true);return value;},
+      getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;tray.setEnabled(value.minimizeToTray===true);await updateScheduler.setEnabled(value.autoCheckUpdates===true);return value;},
       agentApiStatus:async()=>agentApi.status(),
       setAgentApiEnabled:async enabled=>{if(enabled)await agentApi.enable();else await agentApi.disable();return agentApi.status();},
       createAgentCredential:label=>agentApi.createCredential(label),

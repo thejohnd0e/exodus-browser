@@ -38,3 +38,16 @@ it('stores the tray option and keeps it when only the language is updated',async
   await expect(service.updateSettings({language:'en',minimizeToTray:'yes'} as never)).rejects.toThrow();
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+it('keeps background update checks off unless enabled and preserves the choice across other updates',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'exodus-settings-'));
+ try{
+  const service=new AppSettingsService(root);
+  await writeFile(join(root,'settings.json'),'{"language":"en","minimizeToTray":true}\n');
+  expect((await service.getSettings()).autoCheckUpdates).toBeUndefined();
+  await expect(service.updateSettings({language:'en',autoCheckUpdates:true})).resolves.toEqual({language:'en',minimizeToTray:true,autoCheckUpdates:true});
+  await expect(service.updateSettings({language:'ru'})).resolves.toEqual({language:'ru',minimizeToTray:true,autoCheckUpdates:true});
+  await expect(service.updateSettings({language:'ru',autoCheckUpdates:false})).resolves.toMatchObject({autoCheckUpdates:false});
+  await expect(service.updateSettings({language:'ru',autoCheckUpdates:'yes'} as never)).rejects.toThrow();
+ }finally{await rm(root,{recursive:true,force:true});}
+});
