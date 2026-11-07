@@ -40,6 +40,14 @@ const windowsFull = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 const SPOOFED = { ...DEFAULT_FINGERPRINT, canvas: 'noise' as const };
 const macUa = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.80 Safari/537.36';
 
+function withLinkHistory(f: Fake): void {
+  const send = f.client.send.bind(f.client);
+  f.client.send = async (method: string, params: Record<string, unknown> = {}, sessionId?: string) => {
+    if (method === 'Page.getNavigationHistory') { f.calls.push(`${method}:${sessionId}`); return { currentIndex: 0, entries: [{ transitionType: 'link' }] } as never; }
+    return send(method, params, sessionId);
+  };
+}
+
 describe('installFingerprint', () => {
   it('resumes a pause that the page caused with its own debugger statement',async()=>{
     const f=fake();const failures:string[]=[];
@@ -216,6 +224,40 @@ describe('installFingerprint', () => {
     f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/checkout' } } });
     await new Promise(r => setTimeout(r, 30));
     expect(reloaded).toBe(false);
+  });
+
+  it('neither reloads nor patches a popup when the profile overrides nothing', async () => {
+    const f = fake([]);
+    withLinkHistory(f);
+    await installFingerprint(f.client, { fingerprint: DEFAULT_FINGERPRINT, languages: ['en-US'], seed: 1 });
+    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/magic?token=once' } } });
+    await new Promise(r => setTimeout(r, 30));
+    expect(f.calls).not.toContain('Page.reload:s2');
+    expect(f.calls).not.toContain('Runtime.evaluate:s2');
+    expect(f.calls).toContain('Runtime.runIfWaitingForDebugger:s2');
+  });
+
+  it('still reloads a popup when only a user-agent override applies', async () => {
+    const f = fake([]);
+    withLinkHistory(f);
+    await installFingerprint(f.client, { fingerprint: DEFAULT_FINGERPRINT, languages: ['en-US'], seed: 1, engineUserAgent: windowsEngine, engineVersion: '156.0.8078.80' });
+    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/' } } });
+    await new Promise(r => setTimeout(r, 30));
+    expect(f.calls).toContain('Page.reload:s2');
+  });
+
+  it.each([
+    ['timezone', { ...DEFAULT_FINGERPRINT, timezone: { mode: 'manual' as const, value: 'Europe/Berlin' } }],
+    ['geolocation', { ...DEFAULT_FINGERPRINT, geolocation: { mode: 'manual' as const, latitude: 1, longitude: 2, accuracy: 10 } }],
+    ['screen', { ...DEFAULT_FINGERPRINT, screen: { mode: 'manual' as const, width: 1920, height: 1080 } }],
+    ['spoof script', SPOOFED],
+  ])('still reloads a popup when a %s override applies', async (_name, fingerprint) => {
+    const f = fake([]);
+    withLinkHistory(f);
+    await installFingerprint(f.client, { fingerprint: fingerprint as never, languages: ['en-US'], seed: 1 });
+    f.emit({ method: 'Target.attachedToTarget', params: { sessionId: 's2', targetInfo: { targetId: 't2', type: 'page', url: 'https://example.com/' } } });
+    await new Promise(r => setTimeout(r, 30));
+    expect(f.calls).toContain('Page.reload:s2');
   });
 
   it('failure on a new page closes that page but not the session', async () => {

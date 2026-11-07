@@ -64,6 +64,12 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       ? (options.engineVersion ? uaForOs(fingerprint.os, options.engineVersion) : reduceUserAgent(options.engineUserAgent))
       : '';
   const metadata = effectiveUa ? metadataFor(fingerprint.userAgent ?? effectiveUa, fingerprint.os, options.engineVersion ?? options.engineUserAgent) : null;
+  // A document that loaded before the overrides existed only needs a reload or an in-place patch
+  // when something is overridden. With nothing overridden the real document is already correct,
+  // and a reload would send one-shot URLs (magic links, OAuth callbacks) a second time.
+  const overridesAnything = (): boolean =>
+    pageScript() !== '' || Boolean(effectiveUa && metadata) || fingerprint.timezone.mode === 'manual'
+    || fingerprint.geolocation.mode === 'manual' || fingerprint.screen.mode === 'manual';
   const pageSessions = new Map<string, { sessionId: string; ready: Promise<void> }>();
   const geoGuardUrl = `exodus-geo-guard://${randomUUID()}`;
   // Only the newest guard script of a session can pause a live document; keeping one id
@@ -233,7 +239,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
         // A target that arrives with a navigation already in flight (popups, window.open) can run
         // page scripts before overrides apply. Reload it once so the visible document is spoofed.
         const url = attached.target.url ?? '';
-        if (url && url !== 'about:blank' && !/^chrome:/i.test(url)) {
+        if (url && url !== 'about:blank' && !/^chrome:/i.test(url) && overridesAnything()) {
           let reload = true;
           try {
             const history = await client.send<{ currentIndex: number; entries: Array<{ transitionType?: string }> }>('Page.getNavigationHistory', {}, attached.sessionId);
