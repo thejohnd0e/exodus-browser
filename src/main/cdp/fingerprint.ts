@@ -77,6 +77,12 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     pageScript() !== '' || Boolean(effectiveUa && metadata) || fingerprint.timezone.mode === 'manual'
     || fingerprint.geolocation.mode === 'manual' || fingerprint.screen.mode === 'manual';
   const pageSessions = new Map<string, { sessionId: string; ready: Promise<void> }>();
+  // A middle click or Ctrl+click opens a background tab that the browser starts loading before it
+  // is attached, with an empty address at attach time. With an instant answer its main frame
+  // commits a web document before the overrides are in place. Such commits, seen while a page is
+  // still being set up, are remembered so the attach handler can reload the page.
+  const settingUp = new Set<string>();
+  const committedUnprotected = new Map<string, string>();
   const geoGuardUrl = `exodus-geo-guard://${randomUUID()}`;
   // Only the newest guard script of a session can pause a live document; keeping one id
   // per session bounds memory for long-lived tabs.
@@ -95,6 +101,8 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     for (const [child, info] of ownedSessions) if (info.parent === sessionId) revokeSession(child);
     if (pageSessions.get(owned.targetId)?.sessionId === sessionId) pageSessions.delete(owned.targetId);
     workerEvaluations.delete(owned.targetId);
+    settingUp.delete(sessionId);
+    committedUnprotected.delete(sessionId);
   };
 
   type RealScreen = { screen: { width: number; height: number; availWidth: number; availHeight: number }; dpr: number };
@@ -177,13 +185,26 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     ]).finally(() => clearTimeout(timer));
     const manualScreen = topLevel && fingerprint.screen.mode === 'manual';
     if (answered) {
-      let screenMetrics: Record<string, unknown> | null = null;
-      if (manualScreen) {
-        const real = await readRealScreen(sessionId);
-        if (!real) throw Error('SCREEN_METRICS_UNAVAILABLE');
-        screenMetrics = screenMetricsFor(real);
+      // From here until the last override is confirmed, a committed web document ran (or is
+      // running) without full protection: record it, whether it is already in the frame tree or
+      // arrives as Page.frameNavigated. Events and replies share the pipe, so the order is exact.
+      if (topLevel) settingUp.add(sessionId);
+      try {
+        if (topLevel) {
+          const tree = await client.send<{ frameTree?: { frame?: { url?: string } } }>('Page.getFrameTree', {}, sessionId).catch(() => null);
+          const early = tree?.frameTree?.frame?.url;
+          if (early && /^https?:/i.test(early)) committedUnprotected.set(sessionId, early);
+        }
+        let screenMetrics: Record<string, unknown> | null = null;
+        if (manualScreen) {
+          const real = await readRealScreen(sessionId);
+          if (!real) throw Error('SCREEN_METRICS_UNAVAILABLE');
+          screenMetrics = screenMetricsFor(real);
+        }
+        for (const [method, params] of pageOverrides(topLevel, screenMetrics)) await client.send(method, params, sessionId);
+      } finally {
+        settingUp.delete(sessionId);
       }
-      for (const [method, params] of pageOverrides(topLevel, screenMetrics)) await client.send(method, params, sessionId);
       await client.send('Runtime.runIfWaitingForDebugger', {}, sessionId);
       return;
     }
@@ -281,6 +302,12 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       if(detached?.sessionId)revokeSession(detached.sessionId);
       return;
     }
+    if (message.method === 'Page.frameNavigated' && message.sessionId) {
+      if (!settingUp.has(message.sessionId)) return;
+      const frame = (message.params as { frame?: { url?: string; parentId?: string } } | undefined)?.frame;
+      if (frame && !frame.parentId && frame.url && /^https?:/i.test(frame.url)) committedUnprotected.set(message.sessionId, frame.url);
+      return;
+    }
     if (message.method !== 'Target.attachedToTarget') return;
     const attached = sessionIdOf(message.params);
     if (!attached) return;
@@ -301,7 +328,11 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       void applyToPage(attached.sessionId, attached.target.targetId, true).then(async () => {
         // A target that arrives with a navigation already in flight can run page scripts before
         // overrides apply. Reload it once (or open the stopped address) so the visible document is spoofed.
-        if (url && url !== 'about:blank' && !/^chrome:/i.test(url) && overridesAnything()) {
+        // A tab that arrived with an empty address but committed a web document during setup
+        // (middle click, Ctrl+click) is reloaded the same way.
+        const committed = committedUnprotected.get(attached.sessionId);
+        committedUnprotected.delete(attached.sessionId);
+        if (((url && url !== 'about:blank') || committed) && !/^chrome:/i.test(url) && overridesAnything()) {
           let reload = true;
           try {
             const history = await client.send<{ currentIndex: number; entries: Array<{ transitionType?: string }> }>('Page.getNavigationHistory', {}, attached.sessionId);

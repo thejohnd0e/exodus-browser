@@ -647,3 +647,66 @@ describe('a tab that answers only after it is resumed',()=>{
     expect(failures).toEqual(['SCREEN_METRICS_UNAVAILABLE']);
   });
 });
+
+// Middle click and Ctrl+click: the tab attaches with an empty address while the browser is
+// already loading it. A web document committed before the overrides are confirmed must be reloaded.
+describe('a background tab that commits while it is being set up',()=>{
+  function commitDuring(f:Fake,sessionId:string,when:'before-overrides'|'after-resume',url='https://example.com/opened'){
+    const send=f.client.send.bind(f.client);let emitted=false;
+    f.client.send=(async(method:string,params:Record<string,unknown>={},target?:string)=>{
+      if(target===sessionId&&!emitted&&((when==='before-overrides'&&method==='Target.setAutoAttach')||(when==='after-resume'&&method==='Runtime.runIfWaitingForDebugger'))){
+        emitted=true;
+        const result=await send(method,params,target);
+        f.emit({sessionId,method:'Page.frameNavigated',params:{frame:{id:'main',url}}});
+        return result;
+      }
+      return send(method,params,target);
+    }) as typeof f.client.send;
+  }
+  it('reloads it when the main frame committed before the overrides were confirmed',async()=>{
+    const f=fake([]);withLinkHistory(f);
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1});
+    commitDuring(f,'s2','before-overrides');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,50));
+    expect(f.calls).toContain('Page.reload:s2');
+  });
+  it('reloads it when a web document is already in the frame tree at setup',async()=>{
+    const f=fake([]);withLinkHistory(f);
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1});
+    const send=f.client.send.bind(f.client);
+    f.client.send=(async(method:string,params:Record<string,unknown>={},target?:string)=>{
+      if(method==='Page.getFrameTree'&&target==='s2'){f.calls.push(`${method}:${target}`);return {frameTree:{frame:{id:'main',url:'https://example.com/early'}}} as never;}
+      return send(method,params,target);
+    }) as typeof f.client.send;
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,50));
+    expect(f.calls).toContain('Page.reload:s2');
+  });
+  it('does not reload a tab whose document commits after it was resumed',async()=>{
+    const f=fake([]);withLinkHistory(f);
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1});
+    commitDuring(f,'s2','after-resume');
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,50));
+    expect(f.calls).not.toContain('Page.reload:s2');
+  });
+  it('ignores a committing subframe and a profile that overrides nothing',async()=>{
+    const f=fake([]);withLinkHistory(f);
+    await installFingerprint(f.client,{fingerprint:SPOOFED,languages:['en-US'],seed:1});
+    const send=f.client.send.bind(f.client);let emitted=false;
+    f.client.send=(async(method:string,params:Record<string,unknown>={},target?:string)=>{
+      const result=await send(method,params,target);
+      if(target==='s2'&&method==='Target.setAutoAttach'&&!emitted){emitted=true;f.emit({sessionId:'s2',method:'Page.frameNavigated',params:{frame:{id:'child',parentId:'main',url:'https://ads.example/'}}});}
+      return result;
+    }) as typeof f.client.send;
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'s2',targetInfo:{targetId:'t2',type:'page',url:''}}});
+    const g=fake([]);withLinkHistory(g);
+    await installFingerprint(g.client,{fingerprint:DEFAULT_FINGERPRINT,languages:['en-US'],seed:1});
+    commitDuring(g,'s3','before-overrides');
+    g.emit({method:'Target.attachedToTarget',params:{sessionId:'s3',targetInfo:{targetId:'t3',type:'page',url:''}}});
+    await new Promise(r=>setTimeout(r,50));
+    expect(f.calls).not.toContain('Page.reload:s2');
+    expect(g.calls).not.toContain('Page.reload:s3');
+  });
+});

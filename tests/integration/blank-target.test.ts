@@ -25,7 +25,8 @@ const mainPage=`<!doctype html><meta charset="utf-8">
 <a id="link" href="/link" target="_blank">link</a>
 <a id="opener" href="/opener" target="_blank" rel="opener">opener</a>
 <form id="post" method="post" action="/post" target="_blank"><input name="a" value="payload"></form>
-<form id="get" method="get" action="/getform" target="_blank"><input name="a" value="payload"></form>`;
+<form id="get" method="get" action="/getform" target="_blank"><input name="a" value="payload"></form>
+<a id="plain" href="/plain" style="position:fixed;left:0;top:40px;width:100%;height:80%;display:block">plain</a>`;
 
 async function withProfile(fingerprint:Fingerprint,run:(env:{seen:Seen[];hits:Hit[];browser:Browser;click:(expression:string)=>Promise<void>;origin:string;userDataDir:string})=>Promise<void>){
   const seen:Seen[]=[];const hits:Hit[]=[];
@@ -141,3 +142,29 @@ it('never runs a document with the real fingerprint when the created tab is redi
     expect((await browser.pages()).some(page=>page.url?.endsWith('/created'))).toBe(true);
   });
 },60000);
+
+// Middle click and Ctrl+click open a background tab that the browser starts loading before it is
+// attached, with an empty address at attach time. With an instant answer its document used to
+// commit before the overrides and was never reloaded, so the tab kept the real fingerprint.
+for(const [name,mouse] of [
+  ['a middle click',{button:'middle',buttons:4,modifiers:0}],
+  ['a Ctrl+click',{button:'left',buttons:1,modifiers:2}],
+] as const){
+  it(`leaves no tab with the real fingerprint after ${name}`,async()=>{
+    if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
+    await withProfile(spoofedProfile,async({seen,hits,browser})=>{
+      const main=(await browser.pages()).find(page=>page.url?.endsWith('/main'))!;
+      const sessionId=await browser.attach(main.targetId);
+      await browser.send('Page.bringToFront',{},sessionId);
+      for(const type of ['mouseMoved','mousePressed','mouseReleased'] as const)
+        await browser.send('Input.dispatchMouseEvent',{type,x:200,y:200,clickCount:type==='mouseMoved'?0:1,...mouse,...(type==='mouseMoved'?{button:'none',buttons:0}:{}),...(type==='mouseReleased'?{buttons:0}:{})},sessionId);
+      await until(()=>seen.some(entry=>entry.ctx==='plain'&&isSpoofed(entry)));await sleep(1500);
+      const documents=seen.filter(entry=>entry.ctx==='plain');
+      expect(documents.length,'the tab never ran its page').toBeGreaterThanOrEqual(1);
+      // The document that stays in the tab is the last one; it must carry the profile values.
+      expect(documents.at(-1),'the tab was left with real values: '+JSON.stringify(documents)).toSatisfy(isSpoofed);
+      expect(hits.filter(hit=>hit.path==='/plain').length).toBeLessThanOrEqual(2);
+      expect((await browser.pages()).some(page=>page.url?.endsWith('/plain'))).toBe(true);
+    });
+  },60000);
+}

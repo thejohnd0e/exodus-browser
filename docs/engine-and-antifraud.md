@@ -163,6 +163,21 @@ created over the DevTools protocol, for an external link handed over by a second
 launch with the same user-data directory, and for an address that redirects, no
 document runs with real values.
 
+Middle click, Ctrl+click and "Open link in new tab" behave differently: the
+background tab is attached with an empty address while the browser is already
+loading it, so it cannot be recognised and stopped at attach. Measured on Chrome
+157 with a macOS profile: with an instant answer its document committed about
+20 ms after attach, before the overrides, and the tab used to keep the real
+platform, hardware and time zone for good, because nothing reloaded it. Now the
+installer notices a web document that commits while the tab is still being set
+up (in the frame tree right after `Page.enable`, or as `Page.frameNavigated`
+before the last override is confirmed) and reloads the tab. The tab no longer
+keeps real values, but on an instant answer its first document still runs with
+them before the reload and the address is requested twice. With a 500 ms answer
+the first document was already spoofed. Sending all overrides in one batch did
+not shorten the window: the commit does not wait for the installer. Latencies
+between 0 and 500 ms were not measured.
+
 What remains:
 
 - The first request may already have left before the tab was attached. It
