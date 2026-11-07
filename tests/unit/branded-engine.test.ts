@@ -72,7 +72,7 @@ it('prefers the downloaded branded engine over a linked one and over Chrome for 
     const installer=new EngineInstaller(root,async()=>{});
     expect(await installer.resolveExecutable()).toBe(join(root,'branded','157.0.8103.39','Chrome-bin','chrome.exe'));
     const status=await installer.status();
-    expect(status).toEqual({state:'ready',version:'157.0.8103.39',source:'branded'});
+    expect(status).toMatchObject({state:'ready',version:'157.0.8103.39',source:'branded',compatibility:'supported'});
   }finally{cleanup(root);}
 },30000);
 

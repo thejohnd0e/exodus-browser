@@ -3,7 +3,8 @@ import {access,mkdir,readFile,writeFile,rename,rm,stat} from 'node:fs/promises';
 import {basename,join} from 'node:path';
 import {createReadStream} from 'node:fs';
 import {extractArchive} from '../backups/archive';
-import {installBrandedEngine,type BrandedDeps,type BrandedEngineRecord} from './branded';
+import {installBrandedEngine,removeOtherBrandedVersions,type BrandedDeps,type BrandedEngineRecord} from './branded';
+import {engineCompatibility,SUPPORTED_CHROME_MAJORS} from './compat';
 import type {EngineStatus} from '../../shared/contracts';
 export type EngineRelease={version:string;url:string;sha256:string};
 export type Download=(url:string,destination:string,onBytes?:(received:number,total:number|null)=>void)=>Promise<void>;
@@ -36,9 +37,9 @@ export class EngineInstaller {
   }
   async status():Promise<EngineStatus>{
     const branded=await this.branded();
-    if(branded)return {state:'ready',version:branded.version,source:'branded'};
+    if(branded)return {state:'ready',version:branded.version,source:'branded',compatibility:engineCompatibility(branded.version),supportedMajors:SUPPORTED_CHROME_MAJORS};
     try{const executable=await this.resolveExecutable();await access(executable);
-      if(executable===this.packagedExecutable){const r=JSON.parse(await readFile(join(this.root,'current','release.json'),'utf8')) as EngineRelease;return {state:'ready',version:r.version,source:'downloaded'};}
+      if(executable===this.packagedExecutable){const r=JSON.parse(await readFile(join(this.root,'current','release.json'),'utf8')) as EngineRelease;return {state:'ready',version:r.version,source:'downloaded',compatibility:engineCompatibility(r.version),supportedMajors:SUPPORTED_CHROME_MAJORS};}
       return {state:'ready',version:'linked Chromium',source:'external'};
     }catch{return {state:'missing'};}
   }
@@ -60,7 +61,9 @@ export class EngineInstaller {
     this.installing=true;
     try{
       await mkdir(this.root,{recursive:true});
-      return await installBrandedEngine(this.root,{download:this.download,sevenZip,verify,onProgress});
+      const record=await installBrandedEngine(this.root,{download:this.download,sevenZip,verify,onProgress});
+      await removeOtherBrandedVersions(this.root,record.version);
+      return record;
     }finally{this.installing=false;}
   }
   async install(release:EngineRelease){

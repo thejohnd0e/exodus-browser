@@ -108,3 +108,16 @@ export async function installBrandedEngine(root:string,deps:BrandedDeps):Promise
     await rm(stage,{recursive:true,force:true}).catch(()=>undefined);
   }
 }
+
+/**
+ * Deletes engine versions other than the active one after an update has been activated. Only
+ * directories that look like a Chrome version are touched, and a missing directory is fine; the
+ * caller guarantees no profile browser is running when it calls this.
+ */
+export async function removeOtherBrandedVersions(root:string,keep:string):Promise<void>{
+  let entries:string[];
+  try{entries=await readdir(join(root,'branded'));}catch{return;}
+  for(const entry of entries){
+    if(entry!==keep&&/^\d+\.\d+\.\d+\.\d+$/.test(entry))await rm(join(root,'branded',entry),{recursive:true,force:true}).catch(()=>undefined);
+  }
+}

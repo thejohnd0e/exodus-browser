@@ -30,6 +30,7 @@ import {SessionStore} from './sessions/store';
 import {AppSettingsService} from './settings/service';
 import {nativeMessage} from '../shared/i18n/messages';
 import {UpdateService} from './update/service';
+import {assertEngineReplaceable} from './engines/compat';
 import {UpdateScheduler,FileCheckTimeStore} from './update/scheduler';
 import {AgentApiService} from './agent-api/service';
 import {spawn} from 'node:child_process';
@@ -121,6 +122,8 @@ else void app.whenReady().then(async()=>{
        return {...merged,hostGpuVendors:(await hostGpuVendors)?.vendors,hostGpuModels:(await hostGpuVendors)?.models};
      },
     installEngine:async()=>{
+      // Replacing a working engine needs every profile browser and maintenance operation stopped; nothing is closed for the user (DECISIONS #72).
+      assertEngineReplaceable((await installer.status()).state,supervisor.hasActiveWork()||cookies.hasActiveWork()||portable.hasActiveWork());
       engineInstall={stage:'download',received:0,total:null};
       try{await installer.installBranded(resolveSevenZip(),progress=>{engineInstall=progress;});}
       finally{engineInstall=null;}
