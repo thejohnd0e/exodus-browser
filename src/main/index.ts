@@ -152,7 +152,7 @@ else void app.whenReady().then(async()=>{
    for(const method of operations)ipcMain.handle('profiles:'+method,(event,...args)=>dispatcher(event,method,args));
    ipcMain.handle('app:close-decision',(event,decision)=>{if(!isTrustedSender(event as never,win.webContents,ui)||typeof decision!=='boolean')return false;if(!closing)return false;if(!decision){closing=false;return true;}void finishShutdown();return true;});
    win.on('close',event=>{
-     if(quitting)return;event.preventDefault();if(closing)return;closing=true;
+     if(quitting)return;if(tray.hideOnClose()){event.preventDefault();tray.hide();return;}event.preventDefault();if(closing)return;closing=true;
      if(Object.values(supervisor.states()).some(s=>['running','starting','stopping','blocked'].includes(s)))win.webContents.send('app:close-requested');
      else void finishShutdown();
    });

@@ -82,7 +82,7 @@ The expected status is `exodus connected`. If needed, use `/reload` in OpenCode 
 
 ## Minimize to tray
 
-Open the language menu in the sidebar footer and turn on **Minimize to tray**. The minimize button then hides the window to the notification area. Click the tray icon, or choose **Show Exodus Browser**, to bring it back; **Quit** shows the window and starts the normal close flow, including the running-profile confirmation. The Agent API keeps running while the window is hidden.
+Open the language menu in the sidebar footer and turn on **Minimize to tray**. Both the minimize button and the close (X) button then hide the window to the notification area; the application keeps running. Click the tray icon, or choose **Show Exodus Browser**, to bring it back; **Quit** is the way to exit: it shows the window and starts the normal close flow, including the running-profile confirmation. The Agent API keeps running while the window is hidden.
 
 ## Browser tool limits
 

@@ -24,6 +24,7 @@ export type TrayLabels = { show: string; quit: string; tooltip: string };
 export class TrayController {
   private tray: TrayLike | null = null;
   private enabled = false;
+  private quitRequested = false;
 
   constructor(private deps: {
     win: TrayWindow;
@@ -35,6 +36,11 @@ export class TrayController {
   }
 
   get active(): boolean { return this.tray !== null; }
+
+  /** True when the close button should send the window to the tray instead of starting shutdown. */
+  hideOnClose(): boolean { return this.enabled && !this.quitRequested && !this.deps.win.isDestroyed(); }
+
+  hide(): void { if (!this.deps.win.isDestroyed()) this.deps.win.hide(); }
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
@@ -76,7 +82,10 @@ export class TrayController {
   /** Uses the regular close handler, so running profiles still get the confirmation flow. */
   private quit(): void {
     this.show();
-    if (!this.deps.win.isDestroyed()) this.deps.win.close();
+    // The explicit Quit item must reach the regular close flow rather than being hidden again.
+    this.quitRequested = true;
+    try { if (!this.deps.win.isDestroyed()) this.deps.win.close(); }
+    finally { this.quitRequested = false; }
   }
 
   dispose(): void {

@@ -59,3 +59,17 @@ it('ignores a destroyed window', () => {
   handlers.minimize!(); controller.show();
   expect(win.hide).not.toHaveBeenCalled(); expect(win.show).not.toHaveBeenCalled();
 });
+
+it('sends the close button to the tray, but lets Quit run the real close', () => {
+  const { controller, win, menu } = setup();
+  expect(controller.hideOnClose()).toBe(false);
+  controller.setEnabled(true);
+  expect(controller.hideOnClose()).toBe(true);
+  controller.hide();
+  expect(win.hide).toHaveBeenCalledTimes(1);
+  let duringClose = true;
+  win.close.mockImplementation(() => { duringClose = controller.hideOnClose(); });
+  menu()[1]!.click();
+  expect(duringClose).toBe(false);
+  expect(controller.hideOnClose()).toBe(true);
+});
