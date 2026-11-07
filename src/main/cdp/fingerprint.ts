@@ -242,6 +242,10 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
   const workerEvaluations=new Map<string,Promise<void>>();
   const applyToWorker = async (sessionId: string, targetId: string): Promise<void> => {
     try {
+      // A worker can start its own workers. Without auto-attach on the worker session those nested
+      // workers were never paused or instrumented and reported the host's hardware, platform and GPU.
+      // Their attach events arrive on this session and are handled like any other owned worker.
+      await client.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sessionId);
       if (fingerprint.timezone.mode === 'manual')
         await client.send('Emulation.setTimezoneOverride', { timezoneId: fingerprint.timezone.value }, sessionId);
       if (effectiveUa && metadata)

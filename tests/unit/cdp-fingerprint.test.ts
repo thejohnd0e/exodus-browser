@@ -710,3 +710,20 @@ describe('a background tab that commits while it is being set up',()=>{
     expect(g.calls).not.toContain('Page.reload:s3');
   });
 });
+
+describe('nested workers',()=>{
+  it('lets a worker attach its own workers before it runs, and instruments them',async()=>{
+    const f=fake([]);
+    await installFingerprint(f.client,{fingerprint:{...SPOOFED,hardware:{mode:'manual',cores:4,memoryGb:4}},languages:['en-US'],seed:1});
+    f.emit({method:'Target.attachedToTarget',params:{sessionId:'w1',targetInfo:{targetId:'worker-1',type:'worker'}}});
+    await new Promise(r=>setTimeout(r,20));
+    const worker=f.calls.filter(call=>call.endsWith(':w1'));
+    expect(worker).toContain('Target.setAutoAttach:w1');
+    expect(worker.indexOf('Target.setAutoAttach:w1')).toBeLessThan(worker.indexOf('Runtime.runIfWaitingForDebugger:w1'));
+    // The nested worker is announced on the parent worker's session.
+    f.emit({sessionId:'w1',method:'Target.attachedToTarget',params:{sessionId:'w2',targetInfo:{targetId:'worker-2',type:'worker'}}});
+    await new Promise(r=>setTimeout(r,20));
+    expect(f.calls).toContain('Runtime.evaluate:w2');
+    expect(f.calls).toContain('Runtime.runIfWaitingForDebugger:w2');
+  });
+});
