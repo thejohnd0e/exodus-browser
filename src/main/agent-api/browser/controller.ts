@@ -1,7 +1,9 @@
+import { lstat } from 'node:fs/promises';
+import { isAbsolute, normalize } from 'node:path';
 import type { EngineBrowser, EnginePage } from '../../engines/types';
 
 export type BrowserTab = { targetId: string; url: string; title?: string };
-export type SnapshotElement = { ref: string; tag: string; role: string | null; name: string; value?: string; disabled?: boolean };
+export type SnapshotElement = { ref: string; tag: string; role: string | null; name: string; value?: string; disabled?: boolean; type?: string; checked?: boolean; expanded?: boolean };
 export type Snapshot = { url: string; title: string; text: string; elements: SnapshotElement[]; truncated: boolean };
 export type BrowserError = Error & { code: string };
 
@@ -31,7 +33,14 @@ export async function withDeadline<T>(promise: Promise<T>, timeoutMs: number, co
 // Runs in the page. Same-origin iframes and open shadow roots are traversed; cross-origin frames
 // are separate CDP targets and are addressed by their own targetId instead.
 const SNAPSHOT_SCRIPT = `(() => {
-  const interactive = 'a[href],button,input,select,textarea,[role=button],[role=link],[role=textbox],[role=checkbox],[role=tab],[contenteditable=""],[contenteditable=true]';
+  const interactive = [
+    'a[href]', 'button', 'input', 'select', 'textarea', 'summary',
+    '[role=button]', '[role=link]', '[role=textbox]', '[role=checkbox]',
+    '[role=radio]', '[role=switch]', '[role=combobox]', '[role=listbox]',
+    '[role=option]', '[role=menuitem]', '[role=menuitemcheckbox]',
+    '[role=menuitemradio]', '[role=tab]', '[role=slider]', '[role=spinbutton]',
+    '[contenteditable=""]', '[contenteditable=true]'
+  ].join(',');
   const out = [];
   const visit = (root, prefix) => {
     let nodes = [];
@@ -40,10 +49,17 @@ const SNAPSHOT_SCRIPT = `(() => {
       if (out.length >= ${MAX_ELEMENTS}) return;
       const ref = prefix + out.length;
       el.setAttribute('data-exodus-ref', ref);
-      const name = (el.getAttribute('aria-label') || el.getAttribute('name') || (el.innerText || '').trim() || el.getAttribute('placeholder') || el.getAttribute('title') || '').slice(0, 200);
-      out.push({ ref, tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), name, value: 'value' in el ? String(el.value ?? '').slice(0, 200) : undefined, disabled: el.disabled === true });
+      const owner = el.ownerDocument || document;
+      const labelledBy = (el.getAttribute('aria-labelledby') || '').split(/\\s+/).map(id => { const target = id ? owner.getElementById(id) : null; return target ? (target.innerText || target.textContent || '').trim() : ''; }).filter(Boolean).join(' ');
+      const name = (el.getAttribute('aria-label') || labelledBy || el.getAttribute('name') || (el.innerText || '').trim() || el.getAttribute('placeholder') || el.getAttribute('title') || '').slice(0, 200);
+      const item = { ref, tag: el.tagName.toLowerCase(), role: el.getAttribute('role'), name, value: 'value' in el ? String(el.value ?? '').slice(0, 200) : undefined, disabled: el.disabled === true };
+      if (el.tagName === 'INPUT' && el.type) item.type = el.type;
+      if (el.checked === true || el.getAttribute('aria-checked') === 'true' || el.getAttribute('aria-selected') === 'true') item.checked = true;
+      const expanded = el.getAttribute('aria-expanded');
+      if (expanded === 'true') item.expanded = true; else if (expanded === 'false') item.expanded = false;
+      out.push(item);
     }
-    const all = [];
+    let all = [];
     try { all = Array.from(root.querySelectorAll('*')); } catch { return; }
     for (const el of all) {
       const shadow = el.shadowRoot;
@@ -61,18 +77,21 @@ const SNAPSHOT_SCRIPT = `(() => {
   return { url: location.href, title: document.title, text: text.slice(0, ${MAX_TEXT}), truncated: text.length > ${MAX_TEXT}, elements: out };
 })()`;
 
-const FIND_SCRIPT = (ref: string) => `(() => {
-  const found = [];
+// Shared in-page lookup of a snapshot ref across the document, open shadow roots and same-origin frames.
+const LOCATE = (ref: string) => `const found = [];
   const visit = root => {
     try { const el = root.querySelector('[data-exodus-ref="${ref}"]'); if (el) found.push(el); } catch {}
-    const all = [];
+    let all = [];
     try { all = Array.from(root.querySelectorAll('*')); } catch { return; }
     for (const el of all) {
       if (el.shadowRoot) visit(el.shadowRoot);
       if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') { try { if (el.contentDocument) visit(el.contentDocument); } catch {} }
     }
   };
-  visit(document);
+  visit(document);`;
+
+const FIND_SCRIPT = (ref: string) => `(() => {
+  ${LOCATE(ref)}
   if (!found.length) return { error: 'SELECTOR_NOT_FOUND' };
   const el = found[0];
   el.scrollIntoView({ block: 'center', inline: 'center' });
@@ -82,23 +101,20 @@ const FIND_SCRIPT = (ref: string) => `(() => {
 })()`;
 
 const FILL_SCRIPT = (ref: string, text: string) => `(() => {
-  const found = [];
-  const visit = root => {
-    try { const el = root.querySelector('[data-exodus-ref="${ref}"]'); if (el) found.push(el); } catch {}
-    const all = [];
-    try { all = Array.from(root.querySelectorAll('*')); } catch { return; }
-    for (const el of all) {
-      if (el.shadowRoot) visit(el.shadowRoot);
-      if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') { try { if (el.contentDocument) visit(el.contentDocument); } catch {} }
-    }
-  };
-  visit(document);
+  ${LOCATE(ref)}
   if (!found.length) return { error: 'SELECTOR_NOT_FOUND' };
   const el = found[0];
   if (el.disabled) return { error: 'ELEMENT_DISABLED' };
+  if (el instanceof HTMLInputElement && el.type === 'file') return { error: 'INVALID_INPUT' };
   el.focus();
   const value = ${JSON.stringify(text)};
-  if (el.isContentEditable) { el.textContent = value; }
+  if (el instanceof HTMLSelectElement) {
+    const wanted = value.trim().toLowerCase();
+    const options = Array.from(el.options);
+    const option = options.find(opt => opt.value === value) || options.find(opt => opt.text.trim().toLowerCase() === wanted);
+    if (!option) return { error: 'OPTION_NOT_FOUND' };
+    el.value = option.value;
+  } else if (el.isContentEditable) { el.textContent = value; }
   else {
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
@@ -108,6 +124,45 @@ const FILL_SCRIPT = (ref: string, text: string) => `(() => {
   el.dispatchEvent(new Event('change', { bubbles: true }));
   return { ok: true };
 })()`;
+
+// Resolves the <input type="file"> for a ref: the element itself, or one inside / next to a dropzone.
+const FILE_INPUT_SCRIPT = (ref: string) => `(() => {
+  ${LOCATE(ref)}
+  if (!found.length) return null;
+  const el = found[0];
+  if (el instanceof HTMLInputElement && el.type === 'file') return el;
+  return el.querySelector('input[type="file"]') || (el.parentElement && el.parentElement.querySelector('input[type="file"]')) || null;
+})()`;
+
+const FOCUS_SCRIPT = (ref: string) => `(() => {
+  ${LOCATE(ref)}
+  if (!found.length) return { error: 'SELECTOR_NOT_FOUND' };
+  found[0].focus();
+  return { ok: true };
+})()`;
+
+// DOM.setFileInputFiles already notifies Chromium; the explicit events make framework listeners (React, Angular, Closure) pick the file up.
+const NOTIFY_FILES = `function () { this.dispatchEvent(new Event('input', { bubbles: true })); this.dispatchEvent(new Event('change', { bubbles: true })); return true; }`;
+
+const MAX_UPLOAD_FILES = 20;
+type KeySpec = { key: string; code: string; keyCode: number; text?: string };
+const KEYS: Record<string, KeySpec> = {
+  Enter: { key: 'Enter', code: 'Enter', keyCode: 13, text: '\r' },
+  Escape: { key: 'Escape', code: 'Escape', keyCode: 27 },
+  Tab: { key: 'Tab', code: 'Tab', keyCode: 9 },
+  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
+  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
+  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
+  PageDown: { key: 'PageDown', code: 'PageDown', keyCode: 34 },
+  PageUp: { key: 'PageUp', code: 'PageUp', keyCode: 33 },
+  Home: { key: 'Home', code: 'Home', keyCode: 36 },
+  End: { key: 'End', code: 'End', keyCode: 35 },
+  Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
+  Backspace: { key: 'Backspace', code: 'Backspace', keyCode: 8 },
+  Delete: { key: 'Delete', code: 'Delete', keyCode: 46 },
+};
+export const PRESS_KEYS = Object.keys(KEYS);
 
 /** One profile-scoped controller over CDP sessions owned by Exodus. No second connection is opened. */
 export class BrowserController {
@@ -159,6 +214,8 @@ export class BrowserController {
   async snapshot(profileId: string, targetId: string, signal?: AbortSignal): Promise<Snapshot> { return this.serial(profileId, targetId, () => this.run_snapshot(profileId, targetId, signal)); }
   async click(profileId: string, targetId: string, ref: string, signal?: AbortSignal): Promise<void> { return this.serial(profileId, targetId, () => this.run_click(profileId, targetId, ref, signal)); }
   async fill(profileId: string, targetId: string, ref: string, text: string, signal?: AbortSignal): Promise<void> { return this.serial(profileId, targetId, () => this.run_fill(profileId, targetId, ref, text, signal)); }
+  async upload(profileId: string, targetId: string, ref: string, files: unknown, signal?: AbortSignal): Promise<void> { return this.serial(profileId, targetId, () => this.run_upload(profileId, targetId, ref, files, signal)); }
+  async press(profileId: string, targetId: string, key: string, ref?: string, signal?: AbortSignal): Promise<void> { return this.serial(profileId, targetId, () => this.run_press(profileId, targetId, key, ref, signal)); }
   async screenshot(profileId: string, targetId: string, signal?: AbortSignal): Promise<Buffer> { return this.serial(profileId, targetId, () => this.run_screenshot(profileId, targetId, signal)); }
 
   private async run_tabs(profileId: string, signal?: AbortSignal): Promise<BrowserTab[]> {
@@ -228,6 +285,44 @@ export class BrowserController {
     const sessionId = await this.session(browser, targetId);
     const result = await this.evaluate<{ ok?: boolean; error?: string }>(browser, sessionId, FILL_SCRIPT(ref.replace(/[^a-zA-Z0-9]/g, ''), text), signal);
     if (result.error) throw fail(result.error);
+  }
+
+  /** Local files are validated in the main process, then attached through CDP; no OS file dialog is opened. */
+  private async run_upload(profileId: string, targetId: string, ref: string, files: unknown, signal?: AbortSignal): Promise<void> {
+    if (!Array.isArray(files) || files.length < 1 || files.length > MAX_UPLOAD_FILES) throw fail('INVALID_INPUT');
+    const resolved: string[] = [];
+    for (const file of files) {
+      if (typeof file !== 'string' || !file || file.includes('\u0000') || !isAbsolute(file)) throw fail('INVALID_INPUT');
+      const info = await lstat(file).catch(() => null);
+      if (!info || !info.isFile() || info.isSymbolicLink()) throw fail('INVALID_INPUT');
+      resolved.push(normalize(file));
+    }
+    const browser = this.require(profileId);
+    const pages = await this.pages(browser);
+    if (!pages.some(page => page.targetId === targetId)) throw fail('TAB_NOT_FOUND');
+    const sessionId = await this.session(browser, targetId);
+    const located = await this.send<{ result?: { objectId?: string; subtype?: string }; exceptionDetails?: { text?: string } }>(browser, 'Runtime.evaluate', { expression: FILE_INPUT_SCRIPT(ref.replace(/[^a-zA-Z0-9]/g, '')), returnByValue: false }, sessionId, signal);
+    if (located.exceptionDetails) throw fail('EVALUATION_FAILED', located.exceptionDetails.text ?? 'EVALUATION_FAILED');
+    const objectId = located.result?.objectId;
+    if (!objectId || located.result?.subtype === 'null') throw fail('FILE_INPUT_NOT_FOUND');
+    await this.send(browser, 'DOM.setFileInputFiles', { objectId, files: resolved }, sessionId, signal);
+    await this.send(browser, 'Runtime.callFunctionOn', { objectId, functionDeclaration: NOTIFY_FILES, returnByValue: true }, sessionId, signal);
+  }
+
+  private async run_press(profileId: string, targetId: string, key: string, ref: string | undefined, signal?: AbortSignal): Promise<void> {
+    const spec = typeof key === 'string' && Object.hasOwn(KEYS, key) ? KEYS[key]! : null;
+    if (!spec) throw fail('INVALID_INPUT');
+    const browser = this.require(profileId);
+    const pages = await this.pages(browser);
+    if (!pages.some(page => page.targetId === targetId)) throw fail('TAB_NOT_FOUND');
+    const sessionId = await this.session(browser, targetId);
+    if (ref !== undefined) {
+      const focused = await this.evaluate<{ ok?: boolean; error?: string }>(browser, sessionId, FOCUS_SCRIPT(ref.replace(/[^a-zA-Z0-9]/g, '')), signal);
+      if (focused.error) throw fail(focused.error);
+    }
+    const base = { key: spec.key, code: spec.code, windowsVirtualKeyCode: spec.keyCode, nativeVirtualKeyCode: spec.keyCode };
+    await this.send(browser, 'Input.dispatchKeyEvent', { type: spec.text ? 'keyDown' : 'rawKeyDown', ...base, ...(spec.text ? { text: spec.text } : {}) }, sessionId, signal);
+    await this.send(browser, 'Input.dispatchKeyEvent', { type: 'keyUp', ...base }, sessionId, signal);
   }
 
   private async run_screenshot(profileId: string, targetId: string, signal?: AbortSignal): Promise<Buffer> {

@@ -17,8 +17,9 @@ export class AppSettingsService {
    throw error;
   }
  }
+ /** A partial update keeps stored options it does not mention (a language change must not reset the tray option). */
  async updateSettings(input:AppSettings):Promise<AppSettings>{
-  const settings=appSettingsSchema.parse(input);await mkdir(this.root,{recursive:true});
+  const parsed=appSettingsSchema.parse(input);const settings=appSettingsSchema.parse({...await this.getSettings(),...parsed});await mkdir(this.root,{recursive:true});
   const file=join(this.root,'settings.json');const temporary=`${file}.partial-${randomUUID()}`;
   try{await writeFile(temporary,JSON.stringify(settings)+'\n',{flag:'wx'});await rename(temporary,file);}
   finally{await rm(temporary,{force:true});}

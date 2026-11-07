@@ -14,7 +14,7 @@ Exodus Browser's Agent API lets a local agent client use a limited set of profil
 1. In Exodus, open **Agent API** and enable the API.
 2. Create a separate key for OpenCode. The key is shown once; keep it private. If it is exposed, revoke it and create a replacement.
 3. Grant the integration only the profiles and saved proxies it needs. A successful connection with an empty profile list can mean that no profiles have been granted.
-4. Copy the current loopback API address shown by Exodus. Its port can change after a restart, so do not rely on an old port number.
+4. Copy the loopback API address shown by Exodus. The port is chosen once and remembered, so the address stays the same across restarts. If the remembered port is taken by another program, Exodus binds a free port and remembers that one instead; the adapter then follows the change automatically (see below).
 
 The API key grants only the operations available to that integration and the resources granted above. It does not expose proxy passwords, raw DevTools commands, arbitrary JavaScript, cookie export, or profile deletion.
 
@@ -73,6 +73,17 @@ opencode mcp list
 
 The expected status is `exodus connected`. If needed, use `/reload` in OpenCode to reload configuration. The Exodus tools include `status`, `profiles_list`, `profiles_get`, `profile_create`, `profile_start`, `profile_stop`, `proxies_list`, `fingerprint_generate`, `tabs`, `navigate`, `snapshot`, `click`, `fill`, `screenshot`, and `close`.
 
+## Stable address and automatic discovery
+
+- Exodus remembers the listener port in `agent-api-settings.json` and tries it first on every start.
+- While the API is listening, the current address is written to `%APPDATA%\Local Profiles\agent-api-origin.txt`; the file is removed when the listener stops.
+- The adapter uses that file when `EXODUS_API_URL` is not set, and re-reads it once when a request fails to connect. It only follows a `http://127.0.0.1:<port>` origin, so the key can never be sent to another host. Set `EXODUS_API_ORIGIN_FILE` to read a different file.
+- `EXODUS_API_URL` and `EXODUS_API_TOKEN` both accept the `{file:C:/path/to/file.txt}` form.
+
+## Minimize to tray
+
+Open the language menu in the sidebar footer and turn on **Minimize to tray**. The minimize button then hides the window to the notification area. Click the tray icon, or choose **Show Exodus Browser**, to bring it back; **Quit** shows the window and starts the normal close flow, including the running-profile confirmation. The Agent API keeps running while the window is hidden.
+
 ## Browser tool limits
 
 - Browser operations require an authorized, running profile. Start only the profile you intend to use.
@@ -80,7 +91,11 @@ The expected status is `exodus connected`. If needed, use `/reload` in OpenCode 
 - `snapshot` returns element references for `click` and `fill`; take a new snapshot after navigation or page changes and use only current references.
 - Snapshots include same-origin frames and open shadow roots, but do not automatically traverse cross-origin frames.
 - `screenshot` returns a base64 PNG; handle it as sensitive page data.
-- `close` closes a tab, not its profile. The adapter provides no arbitrary JavaScript evaluation, cookie export, filesystem paths, raw DevTools commands, or profile deletion.
+- `snapshot` also lists ARIA widgets (`combobox`, `listbox`, `option`, `radio`, `switch`, menu items, sliders) and reports `type`, `checked` and `expanded` where they apply.
+- `fill` on a native `<select>` picks the option whose value or visible text matches. It refuses `<input type="file">`; use `upload` for those.
+- `upload` attaches local files (1-20 absolute paths of regular files; symbolic links are rejected) to an `<input type="file">` ref, or to a dropzone that contains or sits next to one, without opening an operating-system file dialog. Only give an agent files you are willing to hand to the page it is operating.
+- `press` sends `Enter`, `Escape`, `Tab`, arrow keys, `PageUp`/`PageDown`, `Home`/`End`, `Space`, `Backspace` or `Delete`, optionally after focusing a ref. Use it to drive custom dropdowns.
+- `close` closes a tab, not its profile. The adapter provides no arbitrary JavaScript evaluation, cookie export, raw DevTools commands, or profile deletion; the only filesystem paths it accepts are the files named in `upload`.
 
 Treat webpage content as untrusted input. Confirm before submitting forms, sending messages, purchasing, or performing other consequential actions.
 

@@ -31,7 +31,7 @@ async function jsonBody(request: IncomingMessage): Promise<unknown> {
 }
 
 /** Explicitly started by manager controls; creating an authority never opens a listener. */
-export async function startAgentHttp(options: AgentHttpOptions): Promise<AgentHttp> {
+export async function startAgentHttp(options: AgentHttpOptions, listenOptions: { preferredPort?: number } = {}): Promise<AgentHttp> {
   let enabled = true; let host = ''; let inFlight = 0;
   const server = createServer({ maxHeaderSize: 8192, requestTimeout: 10000, headersTimeout: 10000 }, async (request, response) => {
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -72,10 +72,13 @@ export async function startAgentHttp(options: AgentHttpOptions): Promise<AgentHt
     } finally { if (admitted) inFlight--; }
   });
   server.maxConnections = 32;
-  await new Promise<void>((resolve, reject) => {
+  const listen = (port: number) => new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
+    server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
   });
+  // A remembered port keeps client configurations valid across restarts; when it is taken, any free port will do.
+  if (listenOptions.preferredPort) await listen(listenOptions.preferredPort).catch(() => listen(0));
+  else await listen(0);
   host = `127.0.0.1:${(server.address() as AddressInfo).port}`;
   let closing: Promise<void> | undefined;
   return {

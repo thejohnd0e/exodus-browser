@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Minimal stdio MCP adapter for the Exodus local API.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 // Credentials come from the environment so they never appear in model-visible tool arguments.
 const TOOLS = [
@@ -15,24 +17,57 @@ const TOOLS = [
   { name: 'navigate', description: 'Navigate one tab to an http(s) URL.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/navigate`, input: { id: { type: 'string' }, targetId: { type: 'string' }, url: { type: 'string' } }, required: ['id', 'targetId', 'url'] },
   { name: 'snapshot', description: 'Structured page snapshot with element refs for click and fill.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/snapshot`, input: { id: { type: 'string' }, targetId: { type: 'string' } }, required: ['id', 'targetId'] },
   { name: 'click', description: 'Click an element ref from a snapshot.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/click`, input: { id: { type: 'string' }, targetId: { type: 'string' }, ref: { type: 'string' } }, required: ['id', 'targetId', 'ref'] },
-  { name: 'fill', description: 'Fill an input ref from a snapshot.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/fill`, input: { id: { type: 'string' }, targetId: { type: 'string' }, ref: { type: 'string' }, text: { type: 'string' } }, required: ['id', 'targetId', 'ref', 'text'] },
+  { name: 'fill', description: 'Fill an input ref from a snapshot; for a native <select> the text is an option value or visible label.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/fill`, input: { id: { type: 'string' }, targetId: { type: 'string' }, ref: { type: 'string' }, text: { type: 'string' } }, required: ['id', 'targetId', 'ref', 'text'] },
+  { name: 'upload', description: 'Attach local files to an <input type="file"> ref (or a dropzone containing or next to one) without opening an OS file dialog. Files must be absolute paths of regular files.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/upload`, input: { id: { type: 'string' }, targetId: { type: 'string' }, ref: { type: 'string' }, files: { type: 'array', items: { type: 'string' } } }, required: ['id', 'targetId', 'ref', 'files'] },
+  { name: 'press', description: 'Press a keyboard key (Enter, Escape, Tab, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, PageDown, PageUp, Home, End, Space, Backspace, Delete), optionally focusing a snapshot ref first. Use it to drive custom dropdowns.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/press`, input: { id: { type: 'string' }, targetId: { type: 'string' }, key: { type: 'string' }, ref: { type: 'string' } }, required: ['id', 'targetId', 'key'] },
   { name: 'screenshot', description: 'PNG screenshot of a tab returned as base64.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/screenshot`, input: { id: { type: 'string' }, targetId: { type: 'string' } }, required: ['id', 'targetId'] },
   { name: 'close', description: 'Close one tab of a running profile.', method: 'POST', path: ({ id, targetId }) => `/api/v1/profiles/${encodeURIComponent(id)}/tabs/${encodeURIComponent(targetId)}/close`, input: { id: { type: 'string' }, targetId: { type: 'string' } }, required: ['id', 'targetId'] },
 ];
 const byName = new Map(TOOLS.map(tool => [tool.name, tool]));
 const PATH_ARGS = new Set(['id', 'targetId']);
 
-export function createMcpHandler({ url, token, fetchImpl = globalThis.fetch }) {
+/** Accepts a literal value or `{file:C:/path/to/file.txt}`, so secrets and addresses can live outside client configs. */
+export function resolveValue(value, readText = path => readFileSync(path, 'utf8')) {
+  if (typeof value !== 'string') return value;
+  const match = /^\{file:(.+)\}$/s.exec(value.trim());
+  return match ? readText(match[1].trim()).trim() : value;
+}
+
+/** Only a loopback origin may ever receive the bearer token. */
+const LOOPBACK_ORIGIN = /^http:\/\/127\.0\.0\.1:\d{1,5}$/;
+export function defaultOriginFile(env = process.env) {
+  if (env.EXODUS_API_ORIGIN_FILE) return env.EXODUS_API_ORIGIN_FILE;
+  return env.APPDATA ? join(env.APPDATA, 'Local Profiles', 'agent-api-origin.txt') : null;
+}
+function readOrigin(originFile, readText) {
+  if (!originFile) return null;
+  try { const origin = readText(originFile).trim(); return LOOPBACK_ORIGIN.test(origin) ? origin : null; }
+  catch { return null; }
+}
+
+export function createMcpHandler({ url, token, fetchImpl = globalThis.fetch, originFile = null, readText = path => readFileSync(path, 'utf8') }) {
   if (!url || !token) throw Error('EXODUS_API_URL and EXODUS_API_TOKEN are required');
-  async function callTool(tool, args) {
-    for (const key of tool.required ?? []) if (args?.[key] === undefined) throw Error(`MISSING_ARGUMENT: ${key}`);
-    const path = typeof tool.path === 'function' ? tool.path(args ?? {}) : tool.path;
-    const body = tool.method === 'GET' ? undefined : JSON.stringify(Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => !PATH_ARGS.has(key))));
-    const response = await fetchImpl(url.replace(/\/$/, '') + path, {
+  let currentUrl = url;
+  async function send(tool, path, body) {
+    return fetchImpl(currentUrl.replace(/\/$/, '') + path, {
       method: tool.method,
       headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       ...(body ? { body } : {}),
     });
+  }
+  async function callTool(tool, args) {
+    for (const key of tool.required ?? []) if (args?.[key] === undefined) throw Error(`MISSING_ARGUMENT: ${key}`);
+    const path = typeof tool.path === 'function' ? tool.path(args ?? {}) : tool.path;
+    const body = tool.method === 'GET' ? undefined : JSON.stringify(Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => !PATH_ARGS.has(key))));
+    let response;
+    try { response = await send(tool, path, body); }
+    catch (error) {
+      // Exodus restarted on another address: pick up the published origin and retry once.
+      const fresh = readOrigin(originFile, readText);
+      if (!fresh || fresh === currentUrl.replace(/\/$/, '')) throw error;
+      currentUrl = fresh;
+      response = await send(tool, path, body);
+    }
     const payload = await response.json().catch(() => ({ ok: false, error: { code: 'INVALID_RESPONSE' } }));
     if (!response.ok || !payload.ok) throw Error(payload?.error?.code ?? 'HTTP_' + response.status);
     return payload.value;
@@ -59,7 +94,12 @@ export function createMcpHandler({ url, token, fetchImpl = globalThis.fetch }) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const mcp = createMcpHandler({ url: process.env.EXODUS_API_URL, token: process.env.EXODUS_API_TOKEN });
+  const originFile = defaultOriginFile();
+  const mcp = createMcpHandler({
+    url: resolveValue(process.env.EXODUS_API_URL) || readOrigin(originFile, path => readFileSync(path, 'utf8')),
+    token: resolveValue(process.env.EXODUS_API_TOKEN),
+    originFile,
+  });
   let buffer = '';
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', chunk => {

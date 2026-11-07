@@ -47,7 +47,7 @@ export class AgentManagement {
       if (method === 'POST') return this.createProfile(identity, body);
     }
     if (path === '/api/v1/fingerprints' && method === 'POST') return this.generateFingerprint(body);
-    const tabs = /^\/api\/v1\/profiles\/([^/]+)\/tabs(?:\/([^/]+)(?:\/(navigate|snapshot|click|fill|screenshot|close))?)?$/.exec(path);
+    const tabs = /^\/api\/v1\/profiles\/([^/]+)\/tabs(?:\/([^/]+)(?:\/(navigate|snapshot|click|fill|upload|press|screenshot|close))?)?$/.exec(path);
     if (tabs) return this.browserOperation(identity, method, tabs[1]!, tabs[2], tabs[3], body);
     const match = /^\/api\/v1\/profiles\/([^/]+)(?:\/(start|stop))?$/.exec(path);
     if (match) {
@@ -69,7 +69,7 @@ export class AgentManagement {
 
   private capabilities(): string[] {
     return this.writer
-      ? ['profiles.read', 'profiles.create', 'profiles.start', 'profiles.stop', 'fingerprints.generate', 'proxies.read', 'tabs.read', 'page.navigate', 'page.snapshot', 'page.click', 'page.fill', 'page.screenshot']
+      ? ['profiles.read', 'profiles.create', 'profiles.start', 'profiles.stop', 'fingerprints.generate', 'proxies.read', 'tabs.read', 'page.navigate', 'page.snapshot', 'page.click', 'page.fill', 'page.upload', 'page.press', 'page.screenshot']
       : ['profiles.read', 'proxies.read'];
   }
 
@@ -99,6 +99,16 @@ export class AgentManagement {
         await controller.fill(profileId, targetId, input.ref, input.text);
         return { ok: true };
       }
+      if (action === 'upload') {
+        if (typeof input.ref !== 'string' || !Array.isArray(input.files)) throw new AgentApiError(400, 'INVALID_INPUT');
+        await controller.upload(profileId, targetId, input.ref, input.files);
+        return { ok: true };
+      }
+      if (action === 'press') {
+        if (typeof input.key !== 'string' || (input.ref !== undefined && typeof input.ref !== 'string')) throw new AgentApiError(400, 'INVALID_INPUT');
+        await controller.press(profileId, targetId, input.key, input.ref);
+        return { ok: true };
+      }
       if (action === 'screenshot') {
         const png = await controller.screenshot(profileId, targetId);
         return { mimeType: 'image/png', dataBase64: png.toString('base64') };
@@ -119,7 +129,8 @@ export class AgentManagement {
     if (code === 'TIMEOUT') return new AgentApiError(504, 'TIMEOUT');
     if (code === 'CANCELLED') return new AgentApiError(499, 'CANCELLED');
     if (code === 'INVALID_URL') return new AgentApiError(400, 'INVALID_URL');
-    if (code === 'SELECTOR_NOT_FOUND' || code === 'ELEMENT_NOT_VISIBLE' || code === 'ELEMENT_DISABLED' || code === 'ARTIFACT_TOO_LARGE') return new AgentApiError(409, code);
+    if (code === 'INVALID_INPUT') return new AgentApiError(400, 'INVALID_INPUT');
+    if (code === 'SELECTOR_NOT_FOUND' || code === 'ELEMENT_NOT_VISIBLE' || code === 'ELEMENT_DISABLED' || code === 'OPTION_NOT_FOUND' || code === 'FILE_INPUT_NOT_FOUND' || code === 'ARTIFACT_TOO_LARGE') return new AgentApiError(409, code);
     if (code === 'CONNECTION_LOST' || code === 'BROWSER_ERROR' || code === 'NAVIGATION_FAILED' || code === 'EVALUATION_FAILED' || code === 'SCREENSHOT_FAILED') return new AgentApiError(502, code);
     return new AgentApiError(500, 'INTERNAL_ERROR');
   }

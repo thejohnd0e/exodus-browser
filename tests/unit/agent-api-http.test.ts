@@ -144,8 +144,8 @@ it('serves an OpenAPI document whose paths match the implemented routes', async 
     '/api/v1/fingerprints', '/api/v1/openapi.json', '/api/v1/profiles', '/api/v1/profiles/{id}',
     '/api/v1/profiles/{id}/start', '/api/v1/profiles/{id}/stop', '/api/v1/profiles/{id}/tabs',
     '/api/v1/profiles/{id}/tabs/{targetId}/click', '/api/v1/profiles/{id}/tabs/{targetId}/close',
-    '/api/v1/profiles/{id}/tabs/{targetId}/fill', '/api/v1/profiles/{id}/tabs/{targetId}/navigate',
-    '/api/v1/profiles/{id}/tabs/{targetId}/screenshot', '/api/v1/profiles/{id}/tabs/{targetId}/snapshot',
+    '/api/v1/profiles/{id}/tabs/{targetId}/fill', '/api/v1/profiles/{id}/tabs/{targetId}/navigate', '/api/v1/profiles/{id}/tabs/{targetId}/press',
+    '/api/v1/profiles/{id}/tabs/{targetId}/screenshot', '/api/v1/profiles/{id}/tabs/{targetId}/snapshot', '/api/v1/profiles/{id}/tabs/{targetId}/upload',
     '/api/v1/proxies', '/api/v1/status',
   ]);
   expect(JSON.stringify(document)).not.toContain('automation-session');

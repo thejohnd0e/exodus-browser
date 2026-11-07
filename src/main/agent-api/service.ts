@@ -6,8 +6,13 @@ import { CredentialAuthority, type AgentIdentity } from './credentials';
 import { AgentManagement } from './management';
 import { BrowserController } from './browser/controller';
 import { startAgentHttp, type AgentHttp } from './http';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { AgentApiSettingsStore } from './settings';
 import { IdempotencyStore } from './idempotency';
+
+/** Written next to the credentials so tools can find the live address after a restart. */
+export const ORIGIN_FILE = 'agent-api-origin.txt';
 
 type Reader = { list(): Promise<Profile[]>; listProxies(): SavedProxy[] };
 type Writer = {
@@ -34,6 +39,7 @@ export class AgentApiService {
     private settings: AgentApiSettingsStore,
     private management: AgentManagement,
     private idempotency: IdempotencyStore | null,
+    private root: string,
   ) {}
 
   static async open(options: { root: string; secrets: Secrets; profiles: Reader; writer?: Writer }): Promise<AgentApiService> {
@@ -47,7 +53,7 @@ export class AgentApiService {
       grantProfile: (credentialId: string, profileId: string) => authority!.grant(credentialId, 'profile', profileId),
     } : undefined;
     const management = new AgentManagement(options.profiles, writer, options.writer ? new BrowserController(id => options.writer!.browser(id)) : undefined);
-    return new AgentApiService(authority, authorityError, settings, management, writer ? await IdempotencyStore.open(options.root, options.secrets) : null);
+    return new AgentApiService(authority, authorityError, settings, management, writer ? await IdempotencyStore.open(options.root, options.secrets) : null, options.root);
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -94,16 +100,26 @@ export class AgentApiService {
     const http = await startAgentHttp({
       authenticate: token => this.authority?.authenticate(token) ?? null,
       dispatch: (identity: AgentIdentity, method, path, body, idempotencyKey) => this.dispatch(identity, method, path, body, idempotencyKey),
-    });
+    }, { preferredPort: this.settings.get().port });
     try {
       await this.settings.set(true);
       await this.settings.clearDisablePending();
+      // Remember the port that was actually bound; a failure here only costs address stability.
+      const port = Number(new URL(http.origin).port);
+      if (this.settings.get().port !== port) await this.settings.setPort(port).catch(() => undefined);
     } catch (error) {
       await http.close().catch(() => undefined);
       throw error;
     }
     this.http = http;
+    await this.publishOrigin(http.origin);
     return { origin: http.origin };
+  }
+
+  /** Discovery file for the MCP adapter; it is removed whenever the listener stops. */
+  private async publishOrigin(origin: string): Promise<void> {
+    try { await mkdir(this.root, { recursive: true }); await writeFile(join(this.root, ORIGIN_FILE), origin + '\n', { mode: 0o600 }); }
+    catch { /* discovery is a convenience; the saved port still applies */ }
   }
 
   async disable(): Promise<void> {
@@ -124,7 +140,8 @@ export class AgentApiService {
 
   private async closeListener(): Promise<void> {
     const http = this.http; this.http = null;
-    await http?.close();
+    try { await http?.close(); }
+    finally { if (http) await rm(join(this.root, ORIGIN_FILE), { force: true }).catch(() => undefined); }
   }
 
   createCredential(label: string): Promise<{ id: string; token: string }> { return this.serial(async () => this.requireAuthority().create(label)); }

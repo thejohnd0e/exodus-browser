@@ -1,4 +1,4 @@
-import {app,ipcMain,dialog,safeStorage,net,clipboard} from 'electron';
+import {app,ipcMain,dialog,safeStorage,net,clipboard,Tray,Menu,nativeImage} from 'electron';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createWriteStream,existsSync} from 'node:fs';
@@ -20,7 +20,8 @@ import {createPortableOperations} from './portable/operations';
 import {checkProxy,IP_CHECK_SERVICE} from './proxy/check';
 import {lookupCountry} from './proxy/country';
 import {lookupCountryOnline} from './proxy/country-online';
-import {createWindow} from './window';
+import {createWindow,appIconPath} from './window';
+import {TrayController} from './tray';
 import {createDispatcher,operations} from './ipc';
 import {isTrustedSender} from './trust';
 import releases from './engines/releases.json';
@@ -69,7 +70,9 @@ else void app.whenReady().then(async()=>{
     new Promise<undefined>(resolve=>setTimeout(()=>resolve(undefined),2000)),
   ]).catch(()=>undefined);
   const sessions=new SessionStore(root);const settings=new AppSettingsService(root);const win=createWindow(BUILD_INFO.version);const ui=pathToFileURL(join(__dirname,'ui','index.html')).href;
-  let currentLanguage=(await settings.getSettings()).language;
+  const initialSettings=await settings.getSettings();let currentLanguage=initialSettings.language;
+  const tray=new TrayController({win,createTray:()=>new Tray(nativeImage.createFromPath(appIconPath())),buildMenu:items=>Menu.buildFromTemplate(items),labels:()=>({show:nativeMessage('tray.show',currentLanguage),quit:nativeMessage('tray.quit',currentLanguage),tooltip:'Exodus Browser'})});
+  tray.setEnabled(initialSettings.minimizeToTray===true);
   const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions,extensionDirectory:id=>extensions.directoryFor(id),confirmTimezone:async()=>{
     if(win.isDestroyed())return false;
     const result=await dialog.showMessageBox(win,{type:'warning',buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.continue',currentLanguage)],defaultId:0,cancelId:0,noLink:true,message:nativeMessage('timezone.launch.title',currentLanguage),detail:nativeMessage('timezone.launch.detail',currentLanguage)});
@@ -98,7 +101,7 @@ else void app.whenReady().then(async()=>{
    });
     let quitting=false,closing=false;
     const finishShutdown=async()=>{try{// Stop admitting agent requests before browser work so a start cannot race shutdown.
-      await agentApi.close();await Promise.all([cookies.closeAll(),portable.closeAll()]);await supervisor.shutdown();quitting=true;profiles.close();app.quit();}catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});closing=false;}};
+      await agentApi.close();await Promise.all([cookies.closeAll(),portable.closeAll()]);await supervisor.shutdown();quitting=true;tray.dispose();profiles.close();app.quit();}catch{await dialog.showMessageBox(win,{type:'error',message:nativeMessage('manager.close.error',currentLanguage)});closing=false;}};
     const update=new UpdateService({
       appVersion:BUILD_INFO.version,root,
       busy:async()=>supervisor.hasActiveWork()||cookies.hasActiveWork()||portable.hasActiveWork(),
@@ -137,7 +140,7 @@ else void app.whenReady().then(async()=>{
       removeExtension:async extensionId=>{await extensions.remove(extensionId);},
       getUpdateState:async()=>update.state(),checkForUpdate:()=>update.check(),downloadUpdate:()=>update.download(),cancelUpdate:()=>update.cancel(),
       installUpdate:async()=>{await update.install();await finishShutdown();},
-      getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;return value;},
+      getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;tray.setEnabled(value.minimizeToTray===true);return value;},
       agentApiStatus:async()=>agentApi.status(),
       setAgentApiEnabled:async enabled=>{if(enabled)await agentApi.enable();else await agentApi.disable();return agentApi.status();},
       createAgentCredential:label=>agentApi.createCredential(label),
@@ -153,6 +156,6 @@ else void app.whenReady().then(async()=>{
      if(Object.values(supervisor.states()).some(s=>['running','starting','stopping','blocked'].includes(s)))win.webContents.send('app:close-requested');
      else void finishShutdown();
    });
-  app.on('second-instance',()=>{if(win.isMinimized())win.restore();win.focus();});
+  app.on('second-instance',()=>tray.show());
   await win.loadFile(join(__dirname,'ui','index.html'));
 }).catch(()=>{dialog.showErrorBox('Exodus Browser','Could not open local storage. Check access to the application directory.');app.exit(1);});

@@ -3,6 +3,8 @@ import {join} from 'node:path';
 import icon from '../../ico/exodus-icon.png';
 const APPROVED_EXTERNAL_URLS=['https://db-ip.com/','https://github.com/thejohnd0e/exodus-browser'];
 function approvedExternalUrl(url:string):string|null{try{const href=new URL(url).href;return APPROVED_EXTERNAL_URLS.find(allowed=>allowed===href)??null;}catch{return null;}}
+/** Absolute path of the application icon, shared by the window and the tray. */
+export const appIconPath=()=>join(__dirname,icon);
 export function createWindow(version=''){
   const win=new BrowserWindow({width:1200,height:820,minWidth:920,minHeight:640,backgroundColor:'#10151e',title:`Exodus Browser${version?` v${version}`:''}`,icon:join(__dirname,icon),webPreferences:{preload:join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
   win.setMenu(null);

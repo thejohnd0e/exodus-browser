@@ -174,3 +174,40 @@ it('rejects unknown credential identifiers and authenticates a valid key', async
     expect((await call(origin!, '/api/v1/status', credential.token)).body.ok).toBe(true);
   } finally { await close(); }
 });
+
+it('reuses the saved port after a restart and publishes a discovery file only while listening', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-api-service-'));
+  try {
+    const secrets = testSecrets();
+    const open = () => AgentApiService.open({ root, secrets, profiles: { list: async () => [], listProxies: () => [] } });
+    const first = await open();
+    await first.enable();
+    const origin = first.status().origin!;
+    expect((await readFile(join(root, 'agent-api-origin.txt'), 'utf8')).trim()).toBe(origin);
+    expect(JSON.parse(await readFile(join(root, 'agent-api-settings.json'), 'utf8')).port).toBe(Number(new URL(origin).port));
+    await first.close();
+    await expect(readFile(join(root, 'agent-api-origin.txt'), 'utf8')).rejects.toThrow();
+    const second = await open();
+    await second.resume();
+    expect(second.status().origin).toBe(origin);
+    await second.disable();
+    // Disabling keeps the remembered port for the next enable.
+    expect(JSON.parse(await readFile(join(root, 'agent-api-settings.json'), 'utf8'))).toMatchObject({ enabled: false, port: Number(new URL(origin).port) });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it('falls back to a free port when the saved one is taken', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-api-service-'));
+  const { createServer } = await import('node:net');
+  const blocker = createServer();
+  try {
+    await new Promise<void>(resolve => blocker.listen(0, '127.0.0.1', resolve));
+    const port = (blocker.address() as { port: number }).port;
+    await writeFile(join(root, 'agent-api-settings.json'), JSON.stringify({ version: 1, enabled: false, port }));
+    const instance = await AgentApiService.open({ root, secrets: testSecrets(), profiles: { list: async () => [], listProxies: () => [] } });
+    const { origin } = await instance.enable();
+    expect(Number(new URL(origin).port)).not.toBe(port);
+    expect(JSON.parse(await readFile(join(root, 'agent-api-settings.json'), 'utf8')).port).toBe(Number(new URL(origin).port));
+    await instance.disable();
+  } finally { blocker.close(); await rm(root, { recursive: true, force: true }); }
+});

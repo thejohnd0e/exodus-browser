@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-const schema = z.object({ version: z.literal(1), enabled: z.boolean() }).strict();
+const schema = z.object({ version: z.literal(1), enabled: z.boolean(), port: z.number().int().min(1).max(65535).optional() }).strict();
 export type AgentApiSettings = z.infer<typeof schema>;
 
 /**
@@ -25,8 +25,15 @@ export class AgentApiSettingsStore {
     return store;
   }
   get(): AgentApiSettings { return { ...this.state }; }
+  /** Persists the enabled flag and keeps the remembered port. */
   async set(enabled: boolean): Promise<AgentApiSettings> {
-    const next = schema.parse({ version: 1, enabled });
+    return this.write(schema.parse({ version: 1, enabled, ...(this.state.port ? { port: this.state.port } : {}) }));
+  }
+  /** The loopback port is remembered so MCP client configs survive restarts. */
+  async setPort(port: number): Promise<AgentApiSettings> {
+    return this.write(schema.parse({ ...this.state, port }));
+  }
+  private async write(next: AgentApiSettings): Promise<AgentApiSettings> {
     await mkdir(join(this.file, '..'), { recursive: true });
     const temporary = `${this.file}.partial-${randomUUID()}`;
     try { await writeFile(temporary, JSON.stringify(next) + '\n', { flag: 'wx', mode: 0o600 }); await rename(temporary, this.file); }

@@ -34,7 +34,7 @@ it('ignores notifications and lists bounded profile tools', async () => {
   expect(await mcp.handle({ jsonrpc: '2.0', method: 'notifications/initialized' })).toBeNull();
   const response = await mcp.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) as any;
   const names = response.result.tools.map((tool: any) => tool.name);
-  expect(names).toEqual(['status', 'profiles_list', 'profiles_get', 'profile_create', 'profile_start', 'profile_stop', 'proxies_list', 'fingerprint_generate', 'tabs', 'navigate', 'snapshot', 'click', 'fill', 'screenshot', 'close']);
+  expect(names).toEqual(['status', 'profiles_list', 'profiles_get', 'profile_create', 'profile_start', 'profile_stop', 'proxies_list', 'fingerprint_generate', 'tabs', 'navigate', 'snapshot', 'click', 'fill', 'upload', 'press', 'screenshot', 'close']);
   expect(names).not.toContain('evaluate');
   expect(names).not.toContain('delete_profile');
   expect(JSON.stringify(response.result.tools)).not.toContain('synthetic-token');
@@ -88,4 +88,38 @@ it('builds the URL from arguments for every parameterized tool', async () => {
     'http://127.0.0.1:9/api/v1/profiles/abc/tabs/t1/screenshot',
     'http://127.0.0.1:9/api/v1/profiles/abc/tabs/t1/close',
   ]);
+});
+
+import { defaultOriginFile, resolveValue } from '../../tools/mcp/exodus-mcp.mjs';
+
+it('resolves {file:...} values and leaves literals alone', () => {
+  const read = vi.fn(() => ' file-token\r\n');
+  expect(resolveValue('{file:C:/keys/token.txt}', read)).toBe('file-token');
+  expect(read).toHaveBeenCalledWith('C:/keys/token.txt');
+  expect(resolveValue('literal-token', read)).toBe('literal-token');
+  expect(resolveValue(undefined, read)).toBeUndefined();
+  expect(defaultOriginFile({ APPDATA: 'C:\\Users\\x\\AppData\\Roaming' })).toMatch(/Local Profiles[\\/]agent-api-origin\.txt$/);
+  expect(defaultOriginFile({ EXODUS_API_ORIGIN_FILE: 'D:/o.txt', APPDATA: 'C:\\a' })).toBe('D:/o.txt');
+});
+
+it('re-reads the published origin once when the connection fails', async () => {
+  const urls: string[] = [];
+  const fetchImpl = vi.fn(async (url: string) => {
+    urls.push(url);
+    if (url.startsWith('http://127.0.0.1:9/')) throw new TypeError('fetch failed');
+    return { ok: true, status: 200, json: async () => ({ ok: true, value: [] }) };
+  });
+  const mcp = createMcpHandler({ url: 'http://127.0.0.1:9', token: 'synthetic-token', fetchImpl, originFile: 'origin.txt', readText: () => 'http://127.0.0.1:4242\n' });
+  const call = (id: number) => mcp.handle({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'profiles_list', arguments: {} } }) as Promise<any>;
+  expect(JSON.parse((await call(1)).result.content[0].text)).toEqual([]);
+  await call(2);
+  expect(urls).toEqual(['http://127.0.0.1:9/api/v1/profiles', 'http://127.0.0.1:4242/api/v1/profiles', 'http://127.0.0.1:4242/api/v1/profiles']);
+});
+
+it('never follows a non-loopback origin from the discovery file', async () => {
+  const fetchImpl = vi.fn(async () => { throw new TypeError('fetch failed'); });
+  const mcp = createMcpHandler({ url: 'http://127.0.0.1:9', token: 'synthetic-token', fetchImpl, originFile: 'origin.txt', readText: () => 'http://evil.example:80' });
+  const response = await mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'status', arguments: {} } }) as any;
+  expect(response.result.isError).toBe(true);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
 });

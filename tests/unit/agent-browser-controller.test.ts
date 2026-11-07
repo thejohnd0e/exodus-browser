@@ -178,3 +178,87 @@ it('closes only a tab that belongs to the profile', async () => {
   await controller.closeTab('p1', 't1');
   expect(calls.some(call => call.method === 'Target.closeTarget')).toBe(true);
 });
+
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+it('snapshots ARIA widgets and exposes type, checked and expanded', async () => {
+  const { browser, calls } = fakeBrowser();
+  await new BrowserController(() => browser).snapshot('p1', 't1');
+  const expression = String(calls.find(call => call.method === 'Runtime.evaluate')!.params.expression);
+  for (const selector of ['[role=listbox]', '[role=combobox]', '[role=option]', '[role=radio]', '[role=switch]', '[role=menuitem]']) expect(expression).toContain(selector);
+  expect(expression).toContain('aria-labelledby');
+  expect(expression).toContain('aria-expanded');
+  expect(expression).toContain('item.type');
+  // Traversal of frames and shadow roots must not reassign a constant.
+  expect(expression).not.toContain('const all');
+});
+
+it('fills a native select by option value or visible text and rejects file inputs', async () => {
+  const { browser, calls } = fakeBrowser();
+  await new BrowserController(() => browser).fill('p1', 't1', '7', 'English');
+  const expression = String(calls.filter(call => call.method === 'Runtime.evaluate').at(-1)!.params.expression);
+  expect(expression).toContain('HTMLSelectElement');
+  expect(expression).toContain('OPTION_NOT_FOUND');
+  expect(expression).toContain("el.type === 'file'");
+});
+
+it('uploads validated local files through DOM.setFileInputFiles without a file dialog', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'exodus-upload-'));
+  try {
+    const file = join(directory, 'icon.png');
+    await writeFile(file, 'png');
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const browser = fakeBrowser().browser;
+    const send = browser.send;
+    browser.send = (async (method: string, params: Record<string, unknown>, sessionId: string, timeout?: number) => {
+      calls.push({ method, params });
+      if (method === 'Runtime.evaluate' && params.returnByValue === false) return { result: { type: 'object', objectId: 'node-1' } };
+      return send(method, params, sessionId, timeout);
+    }) as typeof browser.send;
+    const controller = new BrowserController(() => browser);
+    await controller.upload('p1', 't1', '7', [file]);
+    expect(calls.find(call => call.method === 'DOM.setFileInputFiles')!.params).toEqual({ objectId: 'node-1', files: [file] });
+    const notify = calls.find(call => call.method === 'Runtime.callFunctionOn')!.params;
+    expect(String(notify.functionDeclaration)).toContain("'change'");
+    expect(String(calls.find(call => call.method === 'Runtime.evaluate')!.params.expression)).toContain('input[type="file"]');
+    expect(calls.some(call => call.method === 'Page.fileChooserOpened' || call.method === 'Input.dispatchMouseEvent')).toBe(false);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it('rejects unsafe or missing upload inputs before touching the page', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'exodus-upload-'));
+  try {
+    const file = join(directory, 'a.txt');
+    await writeFile(file, 'x');
+    const { browser, calls } = fakeBrowser();
+    const controller = new BrowserController(() => browser);
+    for (const files of [[], 'a', [1], ['relative.png'], [directory], [join(directory, 'missing.png')], Array.from({ length: 21 }, () => file)]) {
+      await expect(controller.upload('p1', 't1', '7', files)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    }
+    const link = join(directory, 'link.txt');
+    if (await symlink(file, link).then(() => true, () => false)) await expect(controller.upload('p1', 't1', '7', [link])).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(calls).toEqual([]);
+    await expect(controller.upload('p1', 'other', '7', [file])).rejects.toMatchObject({ code: 'TAB_NOT_FOUND' });
+    await expect(controller.upload('p1', 't1', '7', [file])).rejects.toMatchObject({ code: 'FILE_INPUT_NOT_FOUND' });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it('presses keys through CDP, optionally focusing a ref first', async () => {
+  const { browser, calls } = fakeBrowser();
+  const controller = new BrowserController(() => browser);
+  await controller.press('p1', 't1', 'ArrowDown', '7');
+  const keys = calls.filter(call => call.method === 'Input.dispatchKeyEvent');
+  expect(keys.map(call => call.params.type)).toEqual(['rawKeyDown', 'keyUp']);
+  expect(keys[0]!.params).toMatchObject({ key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40 });
+  expect(calls.findIndex(call => String(call.params.expression).includes('.focus()'))).toBeLessThan(calls.findIndex(call => call.method === 'Input.dispatchKeyEvent'));
+  calls.length = 0;
+  await controller.press('p1', 't1', 'Enter');
+  expect(calls.map(call => call.method)).toEqual(['Input.dispatchKeyEvent', 'Input.dispatchKeyEvent']);
+  expect(calls[0]!.params).toMatchObject({ type: 'keyDown', key: 'Enter', text: '\r' });
+  await expect(controller.press('p1', 't1', 'F13')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  await expect(controller.press('p1', 't1', 'toString')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+  await expect(controller.press('p1', 't1', 'Tab', '9')).rejects.toMatchObject({ code: 'SELECTOR_NOT_FOUND' });
+  await expect(controller.press('p1', 'other', 'Tab')).rejects.toMatchObject({ code: 'TAB_NOT_FOUND' });
+});

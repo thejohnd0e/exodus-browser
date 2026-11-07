@@ -25,3 +25,16 @@ it('rejects invalid or extra fields and safely falls back on malformed stored se
   await expect(new AppSettingsService(root).getSettings()).resolves.toEqual({language:'en'});
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+it('stores the tray option and keeps it when only the language is updated',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'exodus-settings-'));
+ try{
+  const service=new AppSettingsService(root);
+  await writeFile(join(root,'settings.json'),'{"language":"ru"}\n');
+  await expect(service.getSettings()).resolves.toEqual({language:'ru'});
+  await expect(service.updateSettings({language:'ru',minimizeToTray:true})).resolves.toEqual({language:'ru',minimizeToTray:true});
+  await expect(service.updateSettings({language:'en'})).resolves.toEqual({language:'en',minimizeToTray:true});
+  await expect(new AppSettingsService(root).getSettings()).resolves.toEqual({language:'en',minimizeToTray:true});
+  await expect(service.updateSettings({language:'en',minimizeToTray:'yes'} as never)).rejects.toThrow();
+ }finally{await rm(root,{recursive:true,force:true});}
+});

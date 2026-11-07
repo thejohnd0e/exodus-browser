@@ -6,7 +6,7 @@ import {useI18n} from './i18n/provider';
 
 const languages:readonly {code:AppLanguage;name:string}[]=[{code:'en',name:en['language.en']},{code:'ru',name:ru['language.ru']}];
 
-export function AppSettings({disabled=false}:{disabled?:boolean}){
+export function AppSettings({disabled=false,minimizeToTray=false,onMinimizeToTrayChange}:{disabled?:boolean;minimizeToTray?:boolean;onMinimizeToTrayChange?:(enabled:boolean)=>void}){
   const {language,setLanguage,t}=useI18n();
   const [open,setOpen]=useState(false);
   const popupId=useId();
@@ -22,6 +22,7 @@ export function AppSettings({disabled=false}:{disabled?:boolean}){
     </button>
     {open&&<div id={popupId} className="language-popup">
       {languages.map(item=><button key={item.code} type="button" aria-pressed={item.code===language} onClick={()=>choose(item.code)}><span>{item.name}</span>{item.code===language&&<span aria-hidden="true">✓</span>}</button>)}
+      {onMinimizeToTrayChange&&<><hr/><button type="button" role="switch" aria-checked={minimizeToTray} onClick={()=>onMinimizeToTrayChange(!minimizeToTray)}><span>{t('tray.minimize')}</span>{minimizeToTray&&<span aria-hidden="true">✓</span>}</button></>}
     </div>}
   </div>;
 }

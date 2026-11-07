@@ -40,7 +40,7 @@ it('does not distinguish missing and unauthorized profile identifiers', async ()
 
 it('advertises only implemented capabilities and rejects unsupported actions', async () => {
   const management = fixture();
-  expect(await management.dispatch(identity, 'GET', '/api/v1/status', undefined)).toMatchObject({ apiVersion: '1', capabilities: ['profiles.read', 'profiles.create', 'profiles.start', 'profiles.stop', 'fingerprints.generate', 'proxies.read', 'tabs.read', 'page.navigate', 'page.snapshot', 'page.click', 'page.fill', 'page.screenshot'] });
+  expect(await management.dispatch(identity, 'GET', '/api/v1/status', undefined)).toMatchObject({ apiVersion: '1', capabilities: ['profiles.read', 'profiles.create', 'profiles.start', 'profiles.stop', 'fingerprints.generate', 'proxies.read', 'tabs.read', 'page.navigate', 'page.snapshot', 'page.click', 'page.fill', 'page.upload', 'page.press', 'page.screenshot'] });
   await expect(management.dispatch(identity, 'POST', '/api/v1/profiles', {})).rejects.toMatchObject({ status: 400, code: 'INVALID_INPUT' });
 });
 
@@ -110,4 +110,24 @@ it('generates fingerprints only for a known engine and supported operating syste
   expect(fingerprint.os).toBe('windows11');
   expect(fingerprint.screen.width).toBeGreaterThan(0);
   await expect(management.dispatch(identity, 'POST', '/api/v1/fingerprints', { os: 'beos' })).rejects.toMatchObject({ status: 400, code: 'INVALID_INPUT' });
+});
+
+it('routes upload and press to the browser controller and maps their failures', async () => {
+  const seen: unknown[] = [];
+  const browser = {
+    upload: async (...args: unknown[]) => { seen.push(['upload', ...args]); if ((args[3] as string[])[0] === 'bad') throw Object.assign(Error('x'), { code: 'INVALID_INPUT' }); },
+    press: async (...args: unknown[]) => { seen.push(['press', ...args]); if (args[2] === 'Nope') throw Object.assign(Error('x'), { code: 'OPTION_NOT_FOUND' }); },
+  } as unknown as import('../../src/main/agent-api/browser/controller').BrowserController;
+  const profile = { id: 'visible', name: 'visible', note: '', startUrls: ['about:blank'], languages: ['en-US'], proxyId: null, proxy: null, fingerprint: DEFAULT_FINGERPRINT, fingerprintSeed: 1, restoreLastSession: false, extensionIds: [], createdAt: '', updatedAt: '' };
+  const management = new AgentManagement({ list: async () => [profile], listProxies: () => [] }, undefined, browser);
+  const base = '/api/v1/profiles/visible/tabs/t1/';
+  expect(await management.dispatch(identity, 'POST', base + 'upload', { ref: '4', files: ['C:\\a.png'] })).toEqual({ ok: true });
+  expect(await management.dispatch(identity, 'POST', base + 'press', { key: 'Enter', ref: '4' })).toEqual({ ok: true });
+  expect(await management.dispatch(identity, 'POST', base + 'press', { key: 'Escape' })).toEqual({ ok: true });
+  expect(seen).toEqual([['upload', 'visible', 't1', '4', ['C:\\a.png']], ['press', 'visible', 't1', 'Enter', '4'], ['press', 'visible', 't1', 'Escape', undefined]]);
+  await expect(management.dispatch(identity, 'POST', base + 'upload', { ref: '4' })).rejects.toMatchObject({ status: 400, code: 'INVALID_INPUT' });
+  await expect(management.dispatch(identity, 'POST', base + 'upload', { ref: '4', files: ['bad'] })).rejects.toMatchObject({ status: 400, code: 'INVALID_INPUT' });
+  await expect(management.dispatch(identity, 'POST', base + 'press', { key: 5 })).rejects.toMatchObject({ status: 400, code: 'INVALID_INPUT' });
+  await expect(management.dispatch(identity, 'POST', base + 'press', { key: 'Nope' })).rejects.toMatchObject({ status: 409, code: 'OPTION_NOT_FOUND' });
+  await expect(management.dispatch(identity, 'POST', '/api/v1/profiles/hidden/tabs/t1/press', { key: 'Enter' })).rejects.toMatchObject({ status: 404 });
 });

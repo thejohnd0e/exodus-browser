@@ -4,4 +4,8 @@ export declare function createMcpHandler(options: {
   url: string;
   token: string;
   fetchImpl?: (input: string, init?: Record<string, unknown>) => Promise<{ ok: boolean; status: number; json(): Promise<any> }>;
+  originFile?: string | null;
+  readText?: (path: string) => string;
 }): { handle(message: McpToolCall): Promise<McpResponse> };
+export declare function resolveValue(value: string | undefined, readText?: (path: string) => string): string | undefined;
+export declare function defaultOriginFile(env?: Record<string, string | undefined>): string | null;
