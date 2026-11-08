@@ -1,13 +1,13 @@
 import {it,expect} from 'vitest';
-import {chromium} from 'playwright';
-import {existsSync,readdirSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {existsSync,readdirSync,mkdirSync,writeFileSync} from 'node:fs';
 import {ZipFile} from 'yazl';
 import {join} from 'node:path';
-import {chromiumArgs} from '../../src/main/engines/chromium';
+import {ChromiumAdapter} from '../../src/main/engines/chromium';
 import {ProfileService} from '../../src/main/profiles/service';
 import {ExtensionLibrary} from '../../src/main/extensions/library';
 import {DEFAULT_FINGERPRINT} from '../../src/shared/fingerprint';
 import {tempRoot,cleanup,testSecrets,valid} from '../fixtures/profiles';
+import type {EngineProcess} from '../../src/main/engines/types';
 
 const base=join(process.env.LOCALAPPDATA??'','ms-playwright');
 const candidates=existsSync(base)?readdirSync(base).filter(name=>name.startsWith('chromium-')).sort().reverse():[];
@@ -24,14 +24,31 @@ function fixture(root:string,version:string){
   return dir;
 }
 
-const waitForWorker=async(ctx:Awaited<ReturnType<typeof chromium.launchPersistentContext>>)=>{
-  for(let i=0;i<100;i++){
-    const worker=ctx.serviceWorkers().find(item=>item.url().includes('background.js'));
-    if(worker)return worker;
+// Google Chrome ignores --load-extension, so the engine loads extensions through the pipe
+// (Extensions.loadUnpacked). These tests go through the engine's own launch, the same path the
+// application uses, and read the extension's service worker over CDP.
+const launchProfile=(svc:ProfileService,library:ExtensionLibrary,root:string,profileId:string)=>{
+  const input=svc.getLaunchInput(profileId);
+  return new ChromiumAdapter(executable).launch({profileId,userDataDir:join(root,'profiles',profileId),languages:input.languages,startUrls:['about:blank'],fingerprint:DEFAULT_FINGERPRINT,
+    extensionDirs:input.extensionIds.map(extensionId=>library.directoryFor(extensionId))});
+};
+
+/** Evaluates an expression in the fixture's service worker; null when no such worker appears. */
+async function inWorker(process:EngineProcess,expression:string,waitMs=10000):Promise<unknown>{
+  const browser=process.browser!;const deadline=Date.now()+waitMs;
+  for(;;){
+    const {targetInfos}=await browser.send<{targetInfos:Array<{targetId:string;type:string;url:string}>}>('Target.getTargets',{},'');
+    const target=targetInfos.find(item=>item.type==='service_worker'&&item.url.startsWith('chrome-extension://')&&item.url.includes('background.js'));
+    if(target){
+      const {sessionId}=await browser.send<{sessionId:string}>('Target.attachToTarget',{targetId:target.targetId,flatten:true},'');
+      const result=await browser.send<{result:{value?:unknown};exceptionDetails?:unknown}>('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true},sessionId);
+      // The extension APIs appear a moment after the worker global exists: retry until they do.
+      if(!result.exceptionDetails)return result.result.value;
+    }
+    if(Date.now()>=deadline)return null;
     await new Promise(resolve=>setTimeout(resolve,100));
   }
-  return null;
-};
+}
 
 async function crxOf(version:string){
   const zip=new ZipFile();
@@ -42,6 +59,7 @@ async function crxOf(version:string){
   const header=Buffer.alloc(8);const prefix=Buffer.alloc(12);prefix.write('Cr24',0,'latin1');prefix.writeUInt32LE(3,4);prefix.writeUInt32LE(header.length,8);
   return Buffer.concat([prefix,header,body]);
 }
+const manifestVersion='chrome.runtime.getManifest().version';
 
 it('installs a store package into the library and loads it in Chromium',async()=>{
   if(!existsSync(executable))throw Error('BLOCKED: no local Chromium');
@@ -53,16 +71,8 @@ it('installs a store package into the library and loads it in Chromium',async()=
     const entry=await library.addFromStore('https://chromewebstore.google.com/detail/fixture/lieogkinebikhdchceieedcigeafdkid');
     expect(entry).toMatchObject({name:'Store fixture',version:'5.1.0',source:'store'});
     const profile=await svc.create({...valid,name:'Store profile',extensionIds:[entry.id]});
-    const input=svc.getLaunchInput(profile.id);
-    const args=chromiumArgs({profileId:profile.id,userDataDir:join(root,'profiles',profile.id),languages:input.languages,startUrls:['about:blank'],fingerprint:DEFAULT_FINGERPRINT,extensionDirs:input.extensionIds.map(extensionId=>library.directoryFor(extensionId))})
-      .filter(arg=>!arg.startsWith('--remote-debugging-port')&&!arg.startsWith('--remote-debugging-pipe')&&!arg.startsWith('--user-data-dir')&&arg!=='about:blank');
-    mkdirSync(join(root,'profiles',profile.id),{recursive:true});
-    const ctx=await chromium.launchPersistentContext(join(root,'profiles',profile.id),{executablePath:executable,headless:false,ignoreDefaultArgs:['--disable-extensions'],args});
-    try{
-      const worker=await waitForWorker(ctx);
-      expect(worker).not.toBeNull();
-      expect(await worker!.evaluate(()=>(globalThis as any).chrome.runtime.getManifest().version)).toBe('5.1.0');
-    }finally{await ctx.close();}
+    const process=await launchProfile(svc,library,root,profile.id);
+    try{expect(await inWorker(process,manifestVersion)).toBe('5.1.0');}finally{await process.stop();}
   }finally{
     service?.close();
     for(let attempt=0;attempt<10;attempt++){
@@ -81,36 +91,21 @@ it('loads enabled extensions only in the chosen profile, keeps their storage and
     const withExtension=await svc.create({...valid,name:'With extension',extensionIds:[entry.id]});
     const without=await svc.create({...valid,name:'Without extension'});
 
-    const launch=async (profileId:string)=>{
-      const input=svc.getLaunchInput(profileId);
-      const args=chromiumArgs({profileId,userDataDir:join(root,'profiles',profileId),languages:input.languages,startUrls:['about:blank'],fingerprint:DEFAULT_FINGERPRINT,extensionDirs:input.extensionIds.map(extensionId=>library.directoryFor(extensionId))})
-        .filter(arg=>!arg.startsWith('--remote-debugging-port')&&!arg.startsWith('--remote-debugging-pipe')&&!arg.startsWith('--user-data-dir')&&arg!=='about:blank');
-      mkdirSync(join(root,'profiles',profileId),{recursive:true});
-      return chromium.launchPersistentContext(join(root,'profiles',profileId),{executablePath:executable,headless:false,ignoreDefaultArgs:['--disable-extensions'],args});
-    };
+    const first=await launchProfile(svc,library,root,withExtension.id);
+    try{
+      expect(await inWorker(first,manifestVersion)).toBe('1.0.0');
+      await inWorker(first,"chrome.storage.local.set({token:'profile-a'})");
+    }finally{await first.stop();}
 
-    const first=await launch(withExtension.id);
-    const worker=await waitForWorker(first);
-    expect(worker).not.toBeNull();
-    expect(await worker!.evaluate(()=>(globalThis as any).chrome.runtime.getManifest().version)).toBe('1.0.0');
-    await worker!.evaluate(()=>(globalThis as any).chrome.storage.local.set({token:'profile-a'}));
-    await first.close();
+    const restarted=await launchProfile(svc,library,root,withExtension.id);
+    try{expect(await inWorker(restarted,"chrome.storage.local.get('token').then(value=>value.token)")).toBe('profile-a');}finally{await restarted.stop();}
 
-    const restarted=await launch(withExtension.id);
-    const restartedWorker=await waitForWorker(restarted);
-    expect(await restartedWorker!.evaluate(async()=>{const value=await (globalThis as any).chrome.storage.local.get('token');return value.token;})).toBe('profile-a');
-    await restarted.close();
-
-    const plain=await launch(without.id);
-    await new Promise(resolve=>setTimeout(resolve,2000));
-    expect(plain.serviceWorkers().filter(item=>item.url().includes('background.js'))).toEqual([]);
-    await plain.close();
+    const plain=await launchProfile(svc,library,root,without.id);
+    try{expect(await inWorker(plain,manifestVersion,2500)).toBeNull();}finally{await plain.stop();}
 
     await library.updateFromFolder(entry.id,fixture(root,'2.0.0'));
-    const updated=await launch(withExtension.id);
-    const updatedWorker=await waitForWorker(updated);
-    expect(await updatedWorker!.evaluate(()=>(globalThis as any).chrome.runtime.getManifest().version)).toBe('2.0.0');
-    await updated.close();
+    const updated=await launchProfile(svc,library,root,withExtension.id);
+    try{expect(await inWorker(updated,manifestVersion)).toBe('2.0.0');}finally{await updated.stop();}
 
     const copy=library.directoryFor(entry.id);
     await library.remove(entry.id);
@@ -123,3 +118,13 @@ it('loads enabled extensions only in the chosen profile, keeps their storage and
     }
   }
 },180000);
+
+it('refuses to start a profile whose extension cannot be loaded',async()=>{
+  if(!existsSync(executable))throw Error('BLOCKED: no local Chromium');
+  const root=tempRoot();
+  try{
+    mkdirSync(join(root,'broken'),{recursive:true});writeFileSync(join(root,'broken','manifest.json'),'{not json');
+    await expect(new ChromiumAdapter(executable).launch({profileId:'broken-extension',userDataDir:join(root,'profiles','x'),languages:['en-US'],startUrls:['about:blank'],fingerprint:DEFAULT_FINGERPRINT,extensionDirs:[join(root,'broken')]}))
+      .rejects.toThrow('EXTENSION_LOAD_FAILED');
+  }finally{cleanup(root);}
+},120000);

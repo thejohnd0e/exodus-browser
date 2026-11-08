@@ -13,8 +13,8 @@ it('keeps Unicode path as one argument and never exposes secrets',()=>{
   expect(args).toContain('--hide-crash-restore-bubble');
   expect(args.some(a=>a.startsWith('--remote-debugging-port'))).toBe(false);
   expect(args.some(a=>a.includes('no-sandbox')||a.includes('remote-debugging-address'))).toBe(false);
-  expect(args).toContain('--disable-extensions-except=C:\\Extensions\\a,C:\\Extensions\\b');
-  expect(args).toContain('--load-extension=C:\\Extensions\\a,C:\\Extensions\\b');
+  // Extensions are loaded through the pipe, not by switches that Google Chrome ignores.
+  expect(args.some(arg=>arg.startsWith('--load-extension')||arg.startsWith('--disable-extensions-except'))).toBe(false);
   expect(args.some(arg=>arg==='--disable-extensions')).toBe(false);
   expect(args.at(-1)).toBe('about:blank');
 });

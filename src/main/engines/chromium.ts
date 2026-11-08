@@ -14,7 +14,6 @@ import {SessionTracker} from '../sessions/tracker';
 export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerprint??DEFAULT_FINGERPRINT;return [
   '--user-data-dir='+input.userDataDir,'--lang='+input.languages[0],'--no-first-run','--no-default-browser-check','--hide-crash-restore-bubble','--remote-debugging-pipe','--disable-blink-features=AutomationControlled','--test-type','--disable-infobars',
   ...(input.proxyUrl?['--proxy-server='+input.proxyUrl,'--proxy-bypass-list=<-loopback>']:[]),
-  ...(input.extensionDirs?.length?['--disable-extensions-except='+input.extensionDirs.join(','),'--load-extension='+input.extensionDirs.join(',')]:[]),
   ...fingerprintArgs(fingerprint,{proxied:Boolean(input.proxyUrl)}),
   'about:blank'
 ];}
@@ -79,9 +78,15 @@ export class ChromiumAdapter implements BrowserEngineAdapter {
       try{const version=await client.send<{userAgent:string;product?:string}>('Browser.getVersion',{});engineUserAgent=version.userAgent;engineVersion=version.product?.split('/')[1];}catch{/* hints stay derived from the chosen UA */}
       const installed=await installFingerprint(client,{fingerprint,languages:input.languages,seed:input.fingerprintSeed??seedFor(input.profileId),engineUserAgent,engineVersion,strict:fingerprint.strictProtection===true,onPageFailure:(_reason,outcome)=>input.onProtectionFailure?.(outcome)});
       session=installed;
+      // Google Chrome ignores --load-extension, so the enabled copies are loaded through the pipe
+      // (Extensions.loadUnpacked) before the first page opens. A failure is not skipped: a profile
+      // that silently runs without its content blocker is worse than one that does not start.
+      for(const dir of input.extensionDirs??[]){
+        try{await client.send('Extensions.loadUnpacked',{path:dir});}catch{throw Error('EXTENSION_LOAD_FAILED');}
+      }
       await session.navigate(input.startUrls);
       await session.ready();
-    }catch(error){tracker?.dispose();await this.dispose(child,client,exit);throw Error('FINGERPRINT_UNAVAILABLE');}
+    }catch(error){tracker?.dispose();await this.dispose(child,client,exit);throw Error(error instanceof Error&&error.message==='EXTENSION_LOAD_FAILED'?'EXTENSION_LOAD_FAILED':'FINGERPRINT_UNAVAILABLE');}
     const cdp=client;
     const startedAt=new Date().toISOString();
     const browser:import('./types').EngineBrowser={
