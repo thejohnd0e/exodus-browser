@@ -32,6 +32,26 @@ export async function prepareProfilePreferences(input:{userDataDir:string;langua
   const profile=prefs.profile;const profileRecord=profile&&typeof profile==='object'&&!Array.isArray(profile)?profile as Record<string,unknown>:{};
   prefs.profile={...profileRecord,exit_type:'Normal',exited_cleanly:true};
   const partial=file+'.partial-'+randomUUID();try{await writeFile(partial,JSON.stringify(prefs),{flag:'wx'});await rename(partial,file);}finally{await rm(partial,{force:true});}
+  await seedPasswordCheck(input.userDataDir);
+}
+/**
+ * On Windows, Chrome probes whether the account has a blank password by calling LogonUser with an
+ * empty password (password_manager_util_win.cc, CheckBlankPasswordWithPrefs). With a real password
+ * every probe is a failed logon (Security event 4625), and a fresh user data directory probes on
+ * its first start, so creating or testing several profiles locked the Windows account (4740).
+ * Chrome skips the probe while Local State holds a password_manager.os_password_last_changed that
+ * is not older than the password, so it is set to the largest value before every launch; Chrome
+ * then stores the real date itself. The account is assumed to have a password. See DECISIONS #84.
+ */
+export const PASSWORD_CHECK_SEED={os_password_blank:false,os_password_last_changed:'9223372036854775807'};
+export async function seedPasswordCheck(userDataDir:string){
+  if(process.platform!=='win32')return;
+  const file=join(userDataDir,'Local State');let state:Record<string,unknown>={};
+  try{if((await lstat(file)).isSymbolicLink())throw Error('UNSAFE_PROFILE_FILE');state=JSON.parse(await readFile(file,'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+  if(!state||typeof state!=='object'||Array.isArray(state))throw Error('INVALID_PREFERENCES');
+  const current=state.password_manager;const record=current&&typeof current==='object'&&!Array.isArray(current)?current as Record<string,unknown>:{};
+  state.password_manager={...record,...PASSWORD_CHECK_SEED};
+  const partial=file+'.partial-'+randomUUID();try{await writeFile(partial,JSON.stringify(state),{flag:'wx'});await rename(partial,file);}finally{await rm(partial,{force:true});}
 }
 async function closeMainWindow(executable:string,pid:number|undefined,dir:string){
   if(process.platform!=='win32'||!pid)return false;

@@ -1,5 +1,7 @@
 import {MAX_COOKIE_EXPIRY} from '../../shared/cookies';
 import {spawn,type ChildProcess} from 'node:child_process';
+import {mkdir} from 'node:fs/promises';
+import {seedPasswordCheck} from '../engines/chromium';
 import type {CookieInput} from '../../shared/cookies';
 import {CdpClient} from '../cdp/client';
 import {waitForDevtools} from '../engines/devtools';
@@ -100,6 +102,10 @@ export async function openCookieSession({client, close}: {client: CookieCdp; clo
 }
 
 export async function launchCookieBrowser({executable, userDataDir}: {executable: string; userDataDir: string}): Promise<{client: CdpClient; close: () => Promise<void>}> {
+  // The cookie browser opens profiles that may never have run: without the seed Chrome would probe
+  // the Windows password with a failed logon (DECISIONS #84).
+  await mkdir(userDataDir, {recursive: true});
+  await seedPasswordCheck(userDataDir);
   const child = spawn(executable, cookieArgs(userDataDir), {shell: false, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true});
   let exited = false;
   const exit = new Promise<void>(resolve => {
