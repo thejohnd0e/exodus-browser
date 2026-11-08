@@ -103,13 +103,13 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
   // Other consumers may attach their own browser sessions on this pipe. Only follow
   // attachment trees rooted in this installer's page/worker sessions.
   const ownedSessions = new Map<string, { targetId: string; type: string; parent?: string }>();
-  /** The top-level page whose attachment tree contains this session, if any. */
-  const ownerPageOf = (sessionId: string): string | null => {
+  /** The top-level page session whose attachment tree contains this session, if any. */
+  const ownerPageOf = (sessionId: string): { sessionId: string; targetId: string } | null => {
     let current = ownedSessions.get(sessionId)?.parent;
     for (let depth = 0; current && depth < 32; depth++) {
       const info = ownedSessions.get(current);
       if (!info) return null;
-      if (info.type === 'page') return info.targetId;
+      if (info.type === 'page') return { sessionId: current, targetId: info.targetId };
       current = info.parent;
     }
     return null;
@@ -283,10 +283,15 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       try { await client.send('Target.closeTarget', { targetId }); options.onPageFailure?.(reason, 'closed'); return; }
       catch { /* Chromium refuses to close dedicated workers */ }
       if (options.strict) {
-        // Strict protection: the worker must not run with the host's values. Its page goes with it;
-        // a worker without a page (a shared or service worker) stays paused.
+        // Strict protection: the worker must not run with the host's values. The worker closes itself while
+        // paused and its page goes with it; a worker without a page is only closed.
+        // Closing the tab detaches this session, and Chrome resumes a paused worker when its debugger
+        // detaches: a real browser let the worker run with the host's values for an instant
+        // (tests/integration/strict-protection.test.ts, 16 real cores seen). Closing the worker from
+        // inside while it is still paused prevents its script from ever running.
+        await client.send('Runtime.evaluate', { expression: 'self.close()' }, sessionId).catch(() => undefined);
         const owner = ownerPageOf(sessionId);
-        if (owner) await client.send('Target.closeTarget', { targetId: owner }).catch(() => undefined);
+        if (owner) await client.send('Target.closeTarget', { targetId: owner.targetId }).catch(() => undefined);
         options.onPageFailure?.(reason, 'closed');
         return;
       }
