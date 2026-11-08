@@ -14,7 +14,7 @@ const base=join(process.env.LOCALAPPDATA??'','ms-playwright');const candidates=e
 const macUa='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
 const fingerprint:Fingerprint={...DEFAULT_FINGERPRINT,os:'macos',userAgent:macUa,timezone:{mode:'manual',value:'America/New_York'},screen:{mode:'manual',width:1512,height:982,dpr:2},canvas:'noise',webgl:'noise',clientRects:'noise',hardware:{mode:'manual',cores:12,memoryGb:8}};
 
-interface Report{ua:string;tz:string;lang:string;w:number;h:number;cores:number;mem:number;ch:string;platform?:string;tag?:string|null;fp?:boolean;canvasSample?:number[];pixels?:number;vendor?:string|null;renderer?:string|null;gpu?:string;rtc?:string;sdpPrivate?:boolean|null;errorCode?:number;lat?:number;lon?:number;accuracy?:number;error?:string}
+interface Report{ua:string;tz:string;lang:string;w:number;h:number;cores:number;mem:number;ch:string;platform?:string;tag?:string|null;fp?:boolean;canvasSample?:string;pixels?:number;vendor?:string|null;renderer?:string|null;gpu?:string;rtc?:string;sdpPrivate?:boolean|null;errorCode?:number;lat?:number;lon?:number;accuracy?:number;error?:string}
 
 it('audio noise is stable across repeated channel reads and copyFromChannel',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
@@ -133,7 +133,7 @@ it('webgl off also disables OffscreenCanvas WebGL in a worker',async()=>{
 
 it('worker OffscreenCanvas noise is coordinate-consistent and differs by seed',async()=>{
  if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');const reports:Array<{full:number[];single:number}>=[];
- const worker="const c=new OffscreenCanvas(16,16),x=c.getContext('2d');x.fillStyle='#808080';x.fillRect(0,0,16,16);const full=Array.from(x.getImageData(0,0,16,16).data).filter((_,i)=>i%4===0);const single=x.getImageData(5,7,1,1).data[0];postMessage({full,single})";
+ const worker="const c=new OffscreenCanvas(16,16),x=c.getContext('2d');for(let i=0;i<16;i++){x.fillStyle='rgb('+(i*16)+','+(255-i*9)+','+(i*7)+')';x.fillRect(i,0,1,16);}const full=Array.from(x.getImageData(0,0,16,16).data).filter((_,i)=>i%4===0);const single=x.getImageData(5,7,1,1).data[0];postMessage({full,single})";
  const server=createServer((req,res)=>{if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><script>const w=new Worker(URL.createObjectURL(new Blob([${JSON.stringify(worker)}])));w.onmessage=e=>fetch('/report?value='+encodeURIComponent(JSON.stringify(e.data)))</script>`);});
  server.listen(0,'127.0.0.1');await once(server,'listening');const url=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;const roots=[tempRoot(),tempRoot()];
  try{for(let i=0;i<2;i++){const p=await new ChromiumAdapter(exe).launch({profileId:'offscreen-'+i,userDataDir:roots[i],languages:['en-US'],startUrls:[url],fingerprint:{...DEFAULT_FINGERPRINT,canvas:'noise'},fingerprintSeed:i+1});try{await waitForReports(reports,i+1);}finally{await p.stop();}}expect(reports[0].single).toBe(reports[0].full[7*16+5]);expect(reports[0].full).not.toEqual(reports[1].full);}finally{for(const root of roots)cleanup(root);server.closeAllConnections();server.close();}
@@ -141,7 +141,7 @@ it('worker OffscreenCanvas noise is coordinate-consistent and differs by seed',a
 
 it('worker OffscreenCanvas serialization is stable and differs by seed',async()=>{
  if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');const reports:Array<{first:number[];second:number[]}>=[];
- const worker="(async()=>{const c=new OffscreenCanvas(16,16),x=c.getContext('2d');x.fillStyle='#808080';x.fillRect(0,0,16,16);const first=Array.from(new Uint8Array(await (await c.convertToBlob()).arrayBuffer()));const second=Array.from(new Uint8Array(await (await c.convertToBlob()).arrayBuffer()));postMessage({first,second})})()";
+ const worker="(async()=>{const c=new OffscreenCanvas(16,16),x=c.getContext('2d');for(let i=0;i<16;i++){x.fillStyle='rgb('+(i*16)+','+(255-i*9)+','+(i*7)+')';x.fillRect(i,0,1,16);}const first=Array.from(new Uint8Array(await (await c.convertToBlob()).arrayBuffer()));const second=Array.from(new Uint8Array(await (await c.convertToBlob()).arrayBuffer()));postMessage({first,second})})()";
  const server=createServer((req,res)=>{if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><script>const w=new Worker(URL.createObjectURL(new Blob([${JSON.stringify(worker)}])));w.onmessage=e=>fetch('/report?value='+encodeURIComponent(JSON.stringify(e.data)))</script>`);});
  server.listen(0,'127.0.0.1');await once(server,'listening');const url=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;const roots=[tempRoot(),tempRoot()];
  try{for(let i=0;i<2;i++){const p=await new ChromiumAdapter(exe).launch({profileId:'offscreen-blob-'+i,userDataDir:roots[i],languages:['en-US'],startUrls:[url],fingerprint:{...DEFAULT_FINGERPRINT,canvas:'noise'},fingerprintSeed:i+1});try{await waitForReports(reports,i+1);}finally{await p.stop();}}expect(reports[0].first).toEqual(reports[0].second);expect(reports[0].first).not.toEqual(reports[1].first);}finally{for(const root of roots)cleanup(root);server.closeAllConnections();server.close();}
@@ -170,13 +170,13 @@ it('service worker observes the configured hardware, platform and timezone',asyn
 },120000);
 
 const spoofReport=()=>`<!doctype html><meta charset="utf-8"><script>
-const c=document.createElement('canvas');c.width=32;c.height=32;const x=c.getContext('2d');x.fillStyle='#1a2b3c';x.fillRect(0,0,32,32);
+const c=document.createElement('canvas');c.width=32;c.height=32;const x=c.getContext('2d');for(let i=0;i<32;i++){x.fillStyle='rgb('+(i*8)+','+(255-i*5)+','+(i*3)+')';x.fillRect(i,0,1,32);}
 const gl=document.createElement('canvas').getContext('webgl');
 const pc=typeof RTCPeerConnection==='function'?new RTCPeerConnection({iceServers:[]}):null;
 const value=Promise.resolve().then(async()=>{let sdp=null;
 if(pc){pc.createDataChannel('x');const o=await pc.createOffer();await pc.setLocalDescription(o);sdp=pc.localDescription.sdp;}
- const pixels=x.getImageData(0,0,4,4).data;
- return {ch:c.toDataURL(),tag:new URL(location.href).searchParams.get('tag'),fp:!('__LP_FP__' in window)&&pixels.length>0,canvasSample:Array.from(pixels.slice(0,32)),pixels:Array.from(pixels).reduce((sum,value)=>sum+value,0),
+ const pixels=x.getImageData(0,0,32,32).data;
+ return {ch:c.toDataURL(),tag:new URL(location.href).searchParams.get('tag'),fp:!('__LP_FP__' in window)&&pixels.length>0,canvasSample:Array.from(pixels).filter((_,i)=>i%4<3).map(v=>v&1).join(''),pixels:Array.from(pixels).reduce((sum,value)=>sum+value,0),
 vendor:gl?gl.getParameter(37445):null,renderer:gl?gl.getParameter(37446):null,
 gpu:typeof navigator.gpu,rtc:typeof RTCPeerConnection,
 sdpPrivate:sdp?/^(10\\.|192\\.168\\.|172\\.(1[6-9]|2\\d|3[01])\\.)/m.test(sdp):null};})
