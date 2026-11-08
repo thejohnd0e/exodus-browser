@@ -328,13 +328,13 @@ const CLIENT_RECTS = `if(c.clientRectsNoise){
 
 const AUDIO = `if(c.audioNoise){
   if(typeof AnalyserNode!=='undefined'){
-    keep(AnalyserNode.prototype,'getFloatFrequencyData',f=>function(a){f.call(this,a);for(let i=0;i<a.length;i++)a[i]+=(H(i,0)-0.5)*1e-7;});
-    keep(AnalyserNode.prototype,'getByteFrequencyData',f=>function(a){f.call(this,a);for(let i=0;i<a.length;i++)if(H(i,1)<0.1)a[i]^=1;});
+    keep(AnalyserNode.prototype,'getFloatFrequencyData',f=>function(a){f.call(this,a);for(let i=0;i<a.length;i++)if(isFinite(a[i]))a[i]+=(H(i,0)-0.5)*1e-7;});
+    keep(AnalyserNode.prototype,'getByteFrequencyData',f=>function(a){f.call(this,a);for(let i=0;i<a.length;i++)if(a[i]>1&&H(i,1)<0.1)a[i]^=1;});
   }
   if(typeof AudioBuffer!=='undefined'){
     const seen=new WeakMap();
     const original=AudioBuffer.prototype.getChannelData;
-    const apply=(buffer,ch)=>{let channels=seen.get(buffer);if(!channels){channels=new Set();seen.set(buffer,channels);}const data=original.call(buffer,ch);if(!channels.has(ch)){for(let i=0;i<data.length;i+=100)data[i]+=(H(i,ch)-0.5)*1e-5;channels.add(ch);}return data;};
+    const apply=(buffer,ch)=>{let channels=seen.get(buffer);if(!channels){channels=new Set();seen.set(buffer,channels);}const data=original.call(buffer,ch);if(!channels.has(ch)){for(let i=0;i<data.length;i+=100)if(data[i]!==0&&data[i]===data[i])data[i]*=1+(H(i,ch)-0.5)*1e-4;channels.add(ch);}return data;};
     keep(AudioBuffer.prototype,'getChannelData',f=>function(ch){return apply(this,ch);});
     keep(AudioBuffer.prototype,'copyFromChannel',f=>function(dest,ch,start){apply(this,ch);return f.call(this,dest,ch,start);});
   }
@@ -393,11 +393,19 @@ const FRAME_SCREEN = `if(c.frameScreen&&c.screen){try{
   if(dd&&dd.get&&D!==realD)Object.defineProperty(window,'devicePixelRatio',{get:asGetter(dd.get,()=>D),set:dd.set,configurable:true,enumerable:dd.enumerable});
   const fmt=v=>String(Math.round(v*1e6)/1e6);
   const toHost=(feature,value)=>feature.indexOf('width')>=0?value*realW/W:feature.indexOf('height')>=0?value*realH/Hs:value*realD/D;
-  const rewrite=q=>q.replace(/[(][ ]*((?:-webkit-)?(?:min-|max-)?(?:-webkit-)?(?:device-width|device-height|resolution|device-pixel-ratio))[ ]*:[ ]*([0-9]*[.]?[0-9]+)[ ]*([a-zA-Z]*)[ ]*[)]/gi,(m,f,v,u)=>{
-    const feature=f.toLowerCase();
-    if((feature.indexOf('width')>=0||feature.indexOf('height')>=0)&&u.toLowerCase()!=='px')return m;
-    return '('+f+': '+fmt(toHost(feature,parseFloat(v)))+u+')';
-  });
+  // One value of a screen feature, for the host display. px, em and rem are accepted for sizes (em
+  // and rem are 16px in media queries), any resolution unit is kept; null leaves the text alone.
+  const NUM='([0-9]*[.]?[0-9]+)',UNIT='([a-zA-Z]*)',OP='([<>]=?|=)',FEAT='((?:-webkit-)?(?:min-|max-)?(?:-webkit-)?(?:device-width|device-height|resolution|device-pixel-ratio))',RANGE='(device-width|device-height|resolution)';
+  const conv=(feature,v,u)=>{
+    const size=feature.indexOf('width')>=0||feature.indexOf('height')>=0,unit=u.toLowerCase();
+    if(!size)return fmt(toHost(feature,parseFloat(v)))+u;
+    const px=unit==='px'?parseFloat(v):unit==='em'||unit==='rem'?parseFloat(v)*16:null;
+    return px===null?null:fmt(toHost(feature,px))+'px';
+  };
+  const rewrite=q=>q
+    .replace(new RegExp('[(][ ]*'+FEAT+'[ ]*:[ ]*'+NUM+'[ ]*'+UNIT+'[ ]*[)]','gi'),(m,f,v,u)=>{const r=conv(f.toLowerCase(),v,u);return r===null?m:'('+f+': '+r+')';})
+    .replace(new RegExp(RANGE+'([ ]*)'+OP+'([ ]*)'+NUM+'[ ]*'+UNIT,'gi'),(m,f,a,op,b,v,u)=>{const r=conv(f.toLowerCase(),v,u);return r===null?m:f+a+op+b+r;})
+    .replace(new RegExp(NUM+'[ ]*'+UNIT+'([ ]*)'+OP+'([ ]*)'+RANGE,'gi'),(m,v,u,a,op,b,f)=>{const r=conv(f.toLowerCase(),v,u);return r===null?m:r+a+op+b+f;});
   const written=new WeakMap(),back=new Map();
   keep(window,'matchMedia',f=>function(q){
     if(arguments.length===0)return f.apply(this,arguments);
