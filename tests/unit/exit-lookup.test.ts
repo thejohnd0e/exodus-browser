@@ -22,6 +22,7 @@ async function services(behaviour:{ip:string;country?:string|null;zone?:string|n
   const server=https.createServer({cert:TEST_TLS_CERT,key:TEST_TLS_KEY},(req,res)=>{
     const url=new URL(req.url??'/','https://localhost');seen.push(url.pathname);
     res.setHeader('Content-Type','application/json');
+    if(url.pathname==='/hang')return;
     if(url.pathname==='/ip'){res.end(JSON.stringify({ip:behaviour.ip}));return;}
     if(url.pathname.startsWith('/country/')){if(!behaviour.country){res.statusCode=500;res.end('{}');return;}res.end(JSON.stringify({ip:behaviour.ip,country:behaviour.country}));return;}
     if(url.pathname.startsWith('/zone/')){if(!behaviour.zone){res.statusCode=500;res.end('{}');return;}res.end(JSON.stringify({success:true,timezone:{id:behaviour.zone}}));return;}
@@ -32,7 +33,8 @@ async function services(behaviour:{ip:string;country?:string|null;zone?:string|n
   // The services live on a name that cannot be resolved, so they are reachable only through the
   // proxy below, which maps every tunnel to this server. A direct connection fails the test.
   const origin='https://exit-services.invalid';
-  return {seen,port:(server.address() as AddressInfo).port,endpoints:{ip:new URL(origin+'/ip'),country:origin+'/country/',zone:origin+'/zone/'}};
+  const open=()=>new Promise<number>(resolve=>server.getConnections((_e,n)=>resolve(n)));
+  return {seen,open,port:(server.address() as AddressInfo).port,endpoints:{ip:new URL(origin+'/ip'),country:origin+'/country/',zone:origin+'/zone/'}};
 }
 /** An HTTP proxy that tunnels every CONNECT to the local services and records the requested target. */
 async function upstream(servicesPort:number){
@@ -79,4 +81,21 @@ it('refuses plain HTTP and a certificate it does not trust',async()=>{
   // Without the test CA the self-signed certificate must be rejected: verification is not weakened.
   await expect(proxiedFetch(bridge.url)(endpoints.ip.href)).rejects.toThrow();
   await expect(checkProxy(proxy,{endpoint:endpoints.ip})).rejects.toThrow('PROXY_CHECK_FAILED');
+});
+
+it('closes the HTTPS request and the tunnel when a lookup is aborted or times out',async()=>{
+  const {seen,open,port}=await services({ip:'203.0.113.9'});
+  const {proxy}=await upstream(port);
+  const bridge=await openProxyBridge(proxy);closers.push(()=>bridge.close());
+  const settle=async()=>{for(let i=0;i<50&&await open()>0;i++)await new Promise(r=>setTimeout(r,20));return open();};
+  const controller=new AbortController();
+  const aborted=proxiedFetch(bridge.url,{ca:TEST_TLS_CERT})('https://exit-services.invalid/hang',{signal:controller.signal});
+  for(let i=0;i<100&&!seen.includes('/hang');i++)await new Promise(r=>setTimeout(r,10));
+  expect(await open(),'the request reached the service').toBe(1);
+  controller.abort();
+  await expect(aborted).rejects.toThrow('PROXIED_ABORTED');
+  expect(await settle(),'no connection left after abort').toBe(0);
+  const timed=proxiedFetch(bridge.url,{ca:TEST_TLS_CERT,timeoutMs:300})('https://exit-services.invalid/hang');
+  await expect(timed).rejects.toThrow('PROXIED_TIMEOUT');
+  expect(await settle(),'no connection left after a timeout').toBe(0);
 });

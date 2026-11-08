@@ -465,19 +465,55 @@ const FRAME_SCREEN = `if(c.frameScreen&&c.screen){try{
   if(dd&&dd.get&&D!==realD)Object.defineProperty(window,'devicePixelRatio',{get:asGetter(dd.get,()=>D),set:dd.set,configurable:true,enumerable:dd.enumerable});
   const fmt=v=>String(Math.round(v*1e6)/1e6);
   const toHost=(feature,value)=>feature.indexOf('width')>=0?value*realW/W:feature.indexOf('height')>=0?value*realH/Hs:value*realD/D;
-  // One value of a screen feature, for the host display. px, em and rem are accepted for sizes (em
-  // and rem are 16px in media queries), any resolution unit is kept; null leaves the text alone.
-  const NUM='([0-9]*[.]?[0-9]+)',UNIT='([a-zA-Z]*)',OP='([<>]=?|=)',FEAT='((?:-webkit-)?(?:min-|max-)?(?:-webkit-)?(?:device-width|device-height|resolution|device-pixel-ratio))',RANGE='(device-width|device-height|resolution)';
-  const conv=(feature,v,u)=>{
-    const size=feature.indexOf('width')>=0||feature.indexOf('height')>=0,unit=u.toLowerCase();
-    if(!size)return fmt(toHost(feature,parseFloat(v)))+u;
-    const px=unit==='px'?parseFloat(v):unit==='em'||unit==='rem'?parseFloat(v)*16:null;
-    return px===null?null:fmt(toHost(feature,px))+'px';
+  // The query is parsed, not pattern-matched (audit recheck 2026-11-08: a tab, calc() or inches
+  // slipped past regular expressions). Comments become spaces; every parenthesised block that holds
+  // a single screen feature (colon or range form, any whitespace) gets its values converted for the
+  // host display; everything else is kept as written. The browser itself evaluates each value with
+  // CSS Typed OM, so calc() and every absolute unit work; em and rem are 16px in media queries.
+  const parseNum=CSSNumericValue.parse,toUnit=CSSNumericValue.prototype.to;
+  const unitValue=(text,unit)=>{try{return Reflect.apply(toUnit,Reflect.apply(parseNum,CSSNumericValue,[text]),[unit]).value;}catch(e){return null;}};
+  // Whitespace in a media query (space, tab, line feed, carriage return, form feed), built without
+  // escapes because this script is a template literal.
+  const WS=new RegExp('['+String.fromCharCode(32,9,10,13,12)+']+','g');
+  const ZERO=/^[+-]?(?:0+[.]?0*|[.]0+)$/;
+  const toPx=v=>ZERO.test(v)?0:unitValue(v.replace(/([0-9.]+(?:e[+-]?[0-9]+)?)r?em(?![a-z])/gi,(m,n)=>(parseFloat(n)*16)+'px'),'px');
+  const toDppx=v=>unitValue(v.replace(/([0-9.])x(?![a-z])/gi,'$1dppx'),'dppx');
+  const conv=(feature,v)=>{
+    if(feature.indexOf('width')>=0||feature.indexOf('height')>=0){const n=toPx(v);return n===null?null:fmt(toHost(feature,n))+'px';}
+    if(feature.indexOf('device-pixel-ratio')>=0){if(!/^[+-]?(?:[0-9]+[.]?[0-9]*|[.][0-9]+)(?:e[+-]?[0-9]+)?$/i.test(v))return null;return fmt(toHost(feature,Number(v)));}
+    const n=toDppx(v);return n===null?null:fmt(toHost(feature,n))+'dppx';
   };
-  const rewrite=q=>q
-    .replace(new RegExp('[(][ ]*'+FEAT+'[ ]*:[ ]*'+NUM+'[ ]*'+UNIT+'[ ]*[)]','gi'),(m,f,v,u)=>{const r=conv(f.toLowerCase(),v,u);return r===null?m:'('+f+': '+r+')';})
-    .replace(new RegExp(RANGE+'([ ]*)'+OP+'([ ]*)'+NUM+'[ ]*'+UNIT,'gi'),(m,f,a,op,b,v,u)=>{const r=conv(f.toLowerCase(),v,u);return r===null?m:f+a+op+b+r;})
-    .replace(new RegExp(NUM+'[ ]*'+UNIT+'([ ]*)'+OP+'([ ]*)'+RANGE,'gi'),(m,v,u,a,op,b,f)=>{const r=conv(f.toLowerCase(),v,u);return r===null?m:r+a+op+b+f;});
+  const NAMED=/^(?:-webkit-)?(?:min-|max-)?(?:-webkit-)?(?:device-width|device-height|resolution|device-pixel-ratio)$/i,RANGED=/^(?:device-width|device-height|resolution)$/i;
+  const feature=content=>{
+    const t=content.replace(WS,' ').trim();
+    if(!/[<>=]/.test(t)){
+      const at=t.indexOf(':');if(at<=0)return content;
+      const name=t.slice(0,at).trim();if(!NAMED.test(name))return content;
+      const v=conv(name.toLowerCase(),t.slice(at+1).trim());return v===null?content:name+': '+v;
+    }
+    const parts=t.split(/(<=|>=|<|>|=)/);if(parts.length!==3&&parts.length!==5)return content;
+    const terms=parts.filter((_,k)=>k%2===0).map(x=>x.trim());
+    const at=terms.findIndex(x=>RANGED.test(x));if(at<0||terms.filter(x=>RANGED.test(x)).length!==1)return content;
+    const name=terms[at].toLowerCase();const values=terms.map((x,k)=>k===at?terms[at]:conv(name,x));
+    if(values.some(x=>x===null))return content;
+    let out='';for(let k=0;k<values.length;k++){out+=values[k];if(k<values.length-1)out+=' '+parts[2*k+1]+' ';}
+    return out;
+  };
+  const rewrite=query=>{
+    const q=String(query).replace(/[/][*][^]*?[*][/]/g,' ');
+    // Returns the text up to the closing parenthesis that matches the opening one before position from.
+    const block=(from,inParens)=>{
+      let text='',j=from,plain=true;
+      while(j<q.length){
+        const ch=q[j];
+        if(ch==='('){const fn=/[A-Za-z0-9_-]$/.test(text);const inner=block(j+1,!fn);if(!fn)plain=false;text+='('+inner.text+')';j=inner.end+1;continue;}
+        if(ch===')'&&inParens!==null)return {text:inParens&&plain?feature(text):text,end:j};
+        text+=ch;j++;
+      }
+      return {text,end:j};
+    };
+    return block(0,null).text;
+  };
   const written=new WeakMap(),back=new Map();
   keep(window,'matchMedia',f=>function(q){
     if(arguments.length===0)return f.apply(this,arguments);

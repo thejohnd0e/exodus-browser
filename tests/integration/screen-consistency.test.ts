@@ -179,6 +179,17 @@ it('a cross-origin iframe reports the profile screen in JavaScript, including de
       mqEmBelow:matchMedia('(max-device-width: ${(spoof.width-16)/16}em)').matches,
       mqRem:matchMedia('(device-width = ${spoof.width/16}rem)').matches,
       mqNotRange:matchMedia('not all and (device-width = ${spoof.width}px)').matches,
+      mqTab:matchMedia('(device-width:'+String.fromCharCode(9)+'${spoof.width}px)').matches,
+      mqNewline:matchMedia('(device-width'+String.fromCharCode(10)+': ${spoof.width}px)').matches,
+      mqCalc:matchMedia('(device-width:calc(${spoof.width}px))').matches,
+      mqCalcMixed:matchMedia('(device-width: calc(${spoof.width-16}px + 1em))').matches,
+      mqCalcBelow:matchMedia('(device-width: calc(${spoof.width}px - 1px))').matches,
+      mqInches:matchMedia('(device-width: ${spoof.width/96}in)').matches,
+      mqComment:matchMedia('(/*a*/device-width/*b*/:/*c*/${spoof.width}px)').matches,
+      mqUpper:matchMedia('(DEVICE-WIDTH: ${spoof.width}PX)').matches,
+      mqCalcRange:matchMedia('(device-width >= calc(${spoof.width}px - 1px))').matches,
+      mqNested:matchMedia('((device-width: ${spoof.width}px) and (device-height: ${spoof.height}px))').matches,
+      mqList:matchMedia('print, (device-width: ${spoof.width}px)').matches,
       matchMediaSource:Function.prototype.toString.call(matchMedia),
       cssWidth:getComputedStyle(document.getElementById('p')).width})));</script>`;
   const childServer=createServer((req,res)=>{
@@ -205,6 +216,7 @@ it('a cross-origin iframe reports the profile screen in JavaScript, including de
         mqSpoof:true,media:`(device-width: ${spoof.width}px)`,mqReal:false,mqMinSpoof:true,mqMaxBelow:false,mqHeight:true,
         mqResolution:true,mqWebkit:true,mqUnrelated:true,
         mqEq:true,mqGe:true,mqLt:false,mqFlipped:true,mqChain:true,mqHeightRange:true,mqEm:true,mqEmBelow:false,mqRem:true,mqNotRange:false,
+        mqTab:true,mqNewline:true,mqCalc:true,mqCalcMixed:true,mqCalcBelow:false,mqInches:true,mqComment:true,mqUpper:true,mqCalcRange:true,mqNested:true,mqList:true,
         matchMediaSource:'function matchMedia() { [native code] }',
       });
       // Known limitation: stylesheet media queries in the frame still follow the host display.

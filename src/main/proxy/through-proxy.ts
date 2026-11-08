@@ -22,12 +22,17 @@ export function proxiedFetch(bridgeUrl: string, options: { ca?: string | Buffer;
     const tlsOptions = { servername: target.hostname, ...(options.ca ? { ca: options.ca } : {}) };
     let settled = false;
     let connect: http.ClientRequest | undefined;
+    // Everything opened for this request; an abort or a timeout closes all of it, not only the
+    // promise (audit recheck 2026-11-08: the HTTPS request and the tunnel stayed open).
+    let tunnel: import('node:net').Socket | undefined;
+    let request: http.ClientRequest | undefined;
+    let agent: https.Agent | undefined;
     const finish = (error: Error | null, response?: Response) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       init.signal?.removeEventListener('abort', onAbort);
-      if (error) { connect?.destroy(); reject(error); } else resolve(response!);
+      if (error) { request?.destroy(); tunnel?.destroy(); connect?.destroy(); agent?.destroy(); reject(error); } else resolve(response!);
     };
     const onAbort = () => finish(Error('PROXIED_ABORTED'));
     const timer = setTimeout(() => finish(Error('PROXIED_TIMEOUT')), options.timeoutMs ?? 10000);
@@ -36,14 +41,16 @@ export function proxiedFetch(bridgeUrl: string, options: { ca?: string | Buffer;
     connect = http.request({ host: bridge.hostname, port: Number(bridge.port), method: 'CONNECT', path: `${target.hostname}:${port}`, headers: { host: `${target.hostname}:${port}` } });
     connect.on('error', () => finish(Error('PROXIED_CONNECT_FAILED')));
     connect.on('connect', (answer, socket) => {
+      tunnel = socket;
+      if (settled) { socket.destroy(); return; }
       if (answer.statusCode !== 200) { socket.destroy(); finish(Error('PROXIED_CONNECT_FAILED')); return; }
       // The request must use the TLS socket inside the tunnel. `createConnection` in the request
       // options is ignored together with `agent: false` and Node then connects to the service
       // directly, from the host's address; an agent whose createConnection returns the tunnelled
       // socket is the documented way and the only one that never falls back to a direct connection.
-      const agent = new https.Agent({ keepAlive: false, maxSockets: 1 });
+      agent = new https.Agent({ keepAlive: false, maxSockets: 1 });
       (agent as unknown as { createConnection: () => tls.TLSSocket }).createConnection = () => tls.connect({ socket, ...tlsOptions });
-      const request = https.request({
+      request = https.request({
         host: target.hostname, port, method: 'GET', path: target.pathname + target.search,
         headers: { ...init.headers, host: target.host }, agent, ...tlsOptions,
       }, response => {
@@ -51,13 +58,13 @@ export function proxiedFetch(bridgeUrl: string, options: { ca?: string | Buffer;
         let size = 0;
         response.on('data', (chunk: Buffer) => {
           size += chunk.length;
-          if (size > MAX_BYTES) { request.destroy(); finish(Error('PROXIED_TOO_LARGE')); } else chunks.push(chunk);
+          if (size > MAX_BYTES) finish(Error('PROXIED_TOO_LARGE')); else chunks.push(chunk);
         });
         response.on('end', () => finish(null, new Response(Buffer.concat(chunks), { status: response.statusCode ?? 502 })));
         response.on('error', () => finish(Error('PROXIED_FAILED')));
       });
       request.on('error', () => { socket.destroy(); finish(Error('PROXIED_FAILED')); });
-      request.on('close', () => agent.destroy());
+      request.on('close', () => agent?.destroy());
       request.end();
     });
     connect.end();
