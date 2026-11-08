@@ -34,11 +34,13 @@ it('keeps credentials isolated and scopes keys by route', async () => {
 });
 
 it('persists completed operations across restarts', async () => {
+  const marker = 'profile-marker-7f3a9c41e2';
   const { root, secrets, store } = await open();
-  await store.run('client-a', 'POST', '/api/v1/profiles', 'key-1', { name: 'A' }, async () => ({ id: 'p1' }));
+  await store.run('client-a', 'POST', '/api/v1/profiles', 'key-1', { name: 'A' }, async () => ({ id: marker }));
   const restarted = await IdempotencyStore.open(root, secrets);
-  expect(await restarted.run('client-a', 'POST', '/api/v1/profiles', 'key-1', { name: 'A' }, async () => { throw Error('must not run'); })).toEqual({ id: 'p1' });
-  expect((await readFile(join(root, 'agent-api-idempotency.bin'))).toString()).not.toContain('p1');
+  expect(await restarted.run('client-a', 'POST', '/api/v1/profiles', 'key-1', { name: 'A' }, async () => { throw Error('must not run'); })).toEqual({ id: marker });
+  // A two-character marker occurs by chance in random ciphertext; a long one does not (CI failure 2026-11-08).
+  expect((await readFile(join(root, 'agent-api-idempotency.bin'))).toString('latin1')).not.toContain(marker);
 });
 
 it('does not cache failures and allows a retry', async () => {
