@@ -171,7 +171,7 @@ it('service worker observes the configured hardware, platform and timezone',asyn
 
 const spoofReport=()=>`<!doctype html><meta charset="utf-8"><script>
 const c=document.createElement('canvas');c.width=32;c.height=32;const x=c.getContext('2d');for(let i=0;i<32;i++){x.fillStyle='rgb('+(i*8)+','+(255-i*5)+','+(i*3)+')';x.fillRect(i,0,1,32);}
-const gl=document.createElement('canvas').getContext('webgl');
+const gl=document.createElement('canvas').getContext('webgl');if(gl)gl.getExtension('WEBGL_debug_renderer_info');
 const pc=typeof RTCPeerConnection==='function'?new RTCPeerConnection({iceServers:[]}):null;
 const value=Promise.resolve().then(async()=>{let sdp=null;
 if(pc){pc.createDataChannel('x');const o=await pc.createOffer();await pc.setLocalDescription(o);sdp=pc.localDescription.sdp;}

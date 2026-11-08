@@ -135,6 +135,13 @@ const asGetter=(orig,compute,name)=>{
 };
 // Method syntax: not constructible and no prototype, like a native method.
 const asMethod=(orig,impl)=>mask({x(){try{return Reflect.apply(impl,this,arguments);}catch(e){throw cleanStack(e);}}}.x,orig);
+/** True when an argument must reach the browser untouched: converting it can only throw. */
+const nzOdd=(v)=>typeof v==='symbol'||typeof v==='bigint';
+/**
+ * The browser's own receiver check for a method of proto, run before any argument is converted,
+ * as Chrome's bindings do; null when proto has no attribute to check with.
+ */
+const brandOf=(proto,attr)=>{const d=Object.getOwnPropertyDescriptor(proto,attr);return d&&d.get?d.get:null;};
 const resolveOrig=(fn)=>{
   const m=getMap();
   let cur=fn;
@@ -223,18 +230,29 @@ const nzApply=(ext,es,w,h,out,os,base,li,hi,lj,hj)=>{
       const k=nzMix((c.seed^nzMix(vc^nzMix(((l+r)>>>0)^nzMix((u+d)>>>0))))>>>0);
       if(k&1)continue;
       const o=base+j*os+i*4+((k>>>1)%3),bit=(k>>>8)&1;
-      if((out[o]&1)!==bit){out[o]=(out[o]&254)|bit;changed.push(i,j);}
+      if((out[o]&1)!==bit){out[o]=(out[o]&254)|bit;changed.push(i,j,(k>>>1)%3);}
     }
   }
   return changed;
 };
-/** Noises ImageData that getImageData returned for (x,y,w,h); null when its pixels are not bytes. */
-const nz2d=(f,ctx,d,x,y,w,h,settings)=>{
-  const a=d.data;if(!ArrayBuffer.isView(a)||a.BYTES_PER_ELEMENT!==1)return null;
-  let sx=Math.trunc(x),sy=Math.trunc(y);if(Math.trunc(w)<0)sx+=Math.trunc(w);if(Math.trunc(h)<0)sy+=Math.trunc(h);
+/** Noises ImageData that getImageData returned for the already converted (x,y,w,h). Byte and
+ * floating-point pixel formats get the same noise: float values are compared as the bytes they
+ * stand for, and a changed channel is set to the float of its new byte. */
+const nzTag=(a)=>Object.prototype.toString.call(a);
+const nz2d=(f,ctx,d,x,y,w,h)=>{
+  const a=d.data,tag=nzTag(a);
+  const bytes=tag==='[object Uint8ClampedArray]'||tag==='[object Uint8Array]',float=tag==='[object Float16Array]'||tag==='[object Float32Array]';
+  if(!bytes&&!float)return null;
+  let sx=x,sy=y;if(w<0)sx+=w;if(h<0)sy+=h;
   const dw=d.width,dh=d.height,cv=ctx.canvas,cw=cv.width,chh=cv.height;
-  const ext=(settings===undefined?f.call(ctx,sx-1,sy-1,dw+2,dh+2):f.call(ctx,sx-1,sy-1,dw+2,dh+2,settings)).data;
-  return nzApply(ext,(dw+2)*4,dw,dh,a,dw*4,0,1-sx,cw+1-sx,1-sy,chh+1-sy);
+  // The neighbours are read with the settings of the returned image, never the page's object again.
+  const settings={};if(d.colorSpace)settings.colorSpace=d.colorSpace;if(d.pixelFormat)settings.pixelFormat=d.pixelFormat;
+  const ext=f.call(ctx,sx-1,sy-1,dw+2,dh+2,settings).data;
+  if(bytes)return nzApply(ext,(dw+2)*4,dw,dh,a,dw*4,0,1-sx,cw+1-sx,1-sy,chh+1-sy);
+  const q=(arr)=>{const b=new Uint8Array(arr.length);for(let k=0;k<arr.length;k++){const v=Math.round(arr[k]*255);b[k]=v>255?255:v>0?v:0;}return b;};
+  const ob=q(a),changed=nzApply(q(ext),(dw+2)*4,dw,dh,ob,dw*4,0,1-sx,cw+1-sx,1-sy,chh+1-sy);
+  for(let k=0;k<changed.length;k+=3){const o=changed[k+1]*dw*4+changed[k]*4+changed[k+2];a[o]=ob[o]/255;}
+  return changed;
 };
 /** Noises a private copy of a canvas in place, writing only the pixels that changed. */
 const nzCopy=(f,ctx)=>{
@@ -242,20 +260,43 @@ const nzCopy=(f,ctx)=>{
   if(!ArrayBuffer.isView(a)||a.BYTES_PER_ELEMENT!==1)return;
   // One read: the enlarged image is noised in place and its changed pixels are written back.
   const changed=nzApply(a,(w+2)*4,w,h,a,(w+2)*4,(w+2)*4+4,1,w+1,1,h+1);
-  for(let k=0;k<changed.length;k+=2)ctx.putImageData(ext,-1,-1,changed[k]+1,changed[k+1]+1,1,1);
+  for(let k=0;k<changed.length;k+=3)ctx.putImageData(ext,-1,-1,changed[k]+1,changed[k+1]+1,1,1);
 };
-/** WebGL readPixels into a byte view: the same noise, with the drawing buffer as the surface. */
-const nzGL=(gl,f,gl2,args)=>{
-  const x=args[0],y=args[1],w=args[2],h=args[3],format=args[4],type=args[5],pix=args[6];const off=args.length>7?Number(args[7])||0:0;
-  if(format!==0x1908||type!==0x1401||!ArrayBuffer.isView(pix)||pix.BYTES_PER_ELEMENT!==1||!(w>0)||!(h>0))return;
-  if(gl2&&(gl.getParameter(0x88ED)||gl.getParameter(0x0D02)||gl.getParameter(0x0D03)||gl.getParameter(0x0D04)))return;
-  const align=gl.getParameter(0x0D05),os=Math.ceil(w*4/align)*align;
-  if(pix.length-off<os*(h-1)+w*4)return;
+/**
+ * WebGL readPixels with RGBA/UNSIGNED_BYTE, into a byte view or a pixel pack buffer, honouring
+ * PACK_ALIGNMENT, PACK_ROW_LENGTH, PACK_SKIP_ROWS, PACK_SKIP_PIXELS and the destination offset:
+ * the same noise as the 2D canvas, with the drawing buffer as the surface. The neighbours are read
+ * tightly packed into private memory and every pack setting is restored.
+ */
+const nzGL=(gl,f,gl2,x,y,w,h,format,type,pix,off,pbo)=>{
+  if(format!==0x1908||type!==0x1401||!(w>0)||!(h>0)||gl.isContextLost())return;
+  const align=gl.getParameter(0x0D05),rowLen=gl2?gl.getParameter(0x0D02):0,skipRows=gl2?gl.getParameter(0x0D03):0,skipPix=gl2?gl.getParameter(0x0D04):0;
+  const stride=Math.ceil((rowLen>0?rowLen:w)*4/align)*align,start=skipRows*stride+skipPix*4,need=start+(h-1)*stride+w*4;
+  let buffer=null;
+  if(pbo<0){if(pix.BYTES_PER_ELEMENT!==1||pix.length-off<need)return;}
+  else{buffer=gl.getParameter(0x88ED);if(!buffer||pbo+need>gl.getBufferParameter(0x88EB,0x8764))return;}
   const fbo=gl.getParameter(gl2?0x8CAA:0x8CA6);
   const ew=w+2,eh=h+2,ext=new Uint8Array(ew*eh*4);
-  gl.pixelStorei(0x0D05,1);try{f.call(gl,x-1,y-1,ew,eh,format,type,ext);}finally{gl.pixelStorei(0x0D05,align);}
+  gl.pixelStorei(0x0D05,1);if(gl2){gl.pixelStorei(0x0D02,0);gl.pixelStorei(0x0D03,0);gl.pixelStorei(0x0D04,0);if(buffer)gl.bindBuffer(0x88EB,null);}
+  try{f.call(gl,x-1,y-1,ew,eh,format,type,ext);}
+  finally{gl.pixelStorei(0x0D05,align);if(gl2){gl.pixelStorei(0x0D02,rowLen);gl.pixelStorei(0x0D03,skipRows);gl.pixelStorei(0x0D04,skipPix);if(buffer)gl.bindBuffer(0x88EB,buffer);}}
   const bw=gl.drawingBufferWidth,bh=gl.drawingBufferHeight;
-  if(fbo)nzApply(ext,ew*4,w,h,pix,os,off,-1,ew,-1,eh);else nzApply(ext,ew*4,w,h,pix,os,off,1-x,bw+1-x,1-y,bh+1-y);
+  const li=fbo?-1:1-x,hi=fbo?ew:bw+1-x,lj=fbo?-1:1-y,hj=fbo?eh:bh+1-y;
+  if(!buffer){nzApply(ext,ew*4,w,h,pix,stride,off+start,li,hi,lj,hj);return;}
+  // A pixel pack buffer gets the same noise, written byte by byte where it changes.
+  const tight=new Uint8Array(w*h*4);for(let j=0;j<h;j++)tight.set(ext.subarray((j+1)*ew*4+4,(j+1)*ew*4+4+w*4),j*w*4);
+  const changed=nzApply(ext,ew*4,w,h,tight,w*4,0,li,hi,lj,hj);
+  for(let k=0;k<changed.length;k+=3){const t=changed[k+1]*w*4+changed[k]*4+changed[k+2];gl.bufferSubData(0x88EB,pbo+start+changed[k+1]*stride+changed[k]*4+changed[k+2],tight.subarray(t,t+1));}
+};
+/** getImageData with every argument converted exactly once, in the browser's order. */
+const getImageDataOnce=(f,brand,self,a,off)=>{
+  if(a.length<4||!brand)return {d:f.apply(self,a)};
+  brand.call(self);
+  for(let k=0;k<4;k++)if(nzOdd(a[k]))return {d:f.apply(self,a)};
+  const x=+a[0],y=+a[1],w=+a[2],h=+a[3];
+  const d=a.length>4?f.call(self,x,y,w,h,a[4]):f.call(self,x,y,w,h);
+  if(!off)try{nz2d(f,self,d,x|0,y|0,w|0,h|0);}catch(e){}
+  return {d};
 };
 `;
 
@@ -263,10 +304,10 @@ const CANVAS = `if(c.canvas!=='real'){
 const empty=(w,h)=>new ImageData(new Uint8ClampedArray(Math.max(0,w*h*4)),w,h);
 const patchCanvas=(C2D,HC)=>{
 if(!C2D||!HC||ownMap.has(HC.prototype.toDataURL)||getMap().has(HC.prototype.toDataURL))return;
+const brand=brandOf(C2D.prototype,'canvas');
 const realGet=keep(C2D.prototype,'getImageData',f=>function(x,y,w,h){
-  const d=f.apply(this,arguments);if(c.canvas==='off')return empty(d.width,d.height);
-  try{nz2d(f,this,d,x,y,w,h,arguments.length>4?arguments[4]:undefined);}catch(e){}
-  return d;
+  const d=getImageDataOnce(f,brand,this,arguments,c.canvas==='off').d;
+  return c.canvas==='off'?empty(d.width,d.height):d;
 });
 // The page's canvas is never changed: the encoders run on a private copy. A zero-sized canvas
 // cannot be drawn and is encoded as it is, like Chrome does.
@@ -283,27 +324,54 @@ keep(HC.prototype,'toBlob',f=>function(cb,type,quality){
 patchCanvas(CanvasRenderingContext2D,HTMLCanvasElement);
 frameHooks.push(w=>patchCanvas(w.CanvasRenderingContext2D,w.HTMLCanvasElement));}`;
 
-const WEBGL = `if(c.webgl==='off'){
- keep(HTMLCanvasElement.prototype,'getContext',f=>function(t){if(t==='webgl'||t==='webgl2'||t==='experimental-webgl')return null;return f.apply(this,arguments);});
-}else{
- if(c.webglInfo){const gp=(proto)=>{const real=proto.getParameter;proto.getParameter=asMethod(real,function(p){if(p===37445)return c.webglInfo.vendor;if(p===37446)return c.webglInfo.renderer;return real.call(this,p);});};gp(WebGLRenderingContext.prototype);if(window.WebGL2RenderingContext)gp(WebGL2RenderingContext.prototype);}
- if(c.webgl==='noise'){const read=(proto,gl2)=>keep(proto,'readPixels',f=>function(x,y,w,h,format,type,pix){const r=f.apply(this,arguments);try{nzGL(this,f,gl2,arguments);}catch(e){}return r;});read(WebGLRenderingContext.prototype,false);if(window.WebGL2RenderingContext)read(WebGL2RenderingContext.prototype,true);}
- }`;
-
-const OFFSCREEN_WEBGL_OFF = `if(c.webgl==='off'&&typeof OffscreenCanvas!=='undefined'){
- keep(OffscreenCanvas.prototype,'getContext',f=>function(t){if(t==='webgl'||t==='webgl2'||t==='experimental-webgl')return null;return f.apply(this,arguments);});
+const WEBGL = `if(c.webgl!=='off'&&typeof WebGLRenderingContext!=='undefined'){
+ const glInfo=(proto)=>{if(!proto)return;const real=proto.getParameter,brand=brandOf(proto,'canvas');if(!real||!brand)return;
+  // The receiver is checked and the argument converted once, then the browser answers; a value
+  // is replaced only where the browser itself returned one, so a missing extension or a lost
+  // context still gives null (audit 2026-11-08 recheck: a string or an object reached the real GPU).
+  proto.getParameter=asMethod(real,function(p){
+    if(arguments.length<1)return real.apply(this,arguments);
+    brand.call(this);
+    if(nzOdd(p))return real.call(this,p);
+    const v=+p,n=v>>>0,r=real.call(this,v);
+    if(r!==null&&n===37445)return c.webglInfo.vendor;
+    if(r!==null&&n===37446)return c.webglInfo.renderer;
+    return r;
+  });};
+ const glRead=(proto,gl2)=>{if(!proto)return;const brand=brandOf(proto,'canvas');keep(proto,'readPixels',f=>function(){
+  const a=arguments;if(a.length<7||!brand)return f.apply(this,a);
+  brand.call(this);
+  const dst=a[6],view=ArrayBuffer.isView(dst);
+  if(!view&&!gl2)return f.apply(this,a);
+  for(let k=0;k<a.length&&k<8;k++)if(nzOdd(a[k]))return f.apply(this,a);
+  const x=+a[0],y=+a[1],w=+a[2],h=+a[3],format=+a[4],type=+a[5];
+  if(view){const off=a.length>7?+a[7]:0;const r=a.length>7?f.call(this,x,y,w,h,format,type,dst,off):f.call(this,x,y,w,h,format,type,dst);
+    try{nzGL(this,f,gl2,x|0,y|0,w|0,h|0,format>>>0,type>>>0,dst,off>>>0,-1);}catch(e){}return r;}
+  const off=+dst;const r=f.call(this,x,y,w,h,format,type,off);
+  try{const o=off===off&&isFinite(off)?Math.trunc(off):0;if(o>=0)nzGL(this,f,gl2,x|0,y|0,w|0,h|0,format>>>0,type>>>0,null,0,o);}catch(e){}
+  return r;
+ });};
+ if(c.webglInfo){glInfo(WebGLRenderingContext.prototype);if(typeof WebGL2RenderingContext!=='undefined')glInfo(WebGL2RenderingContext.prototype);}
+ if(c.webgl==='noise'){glRead(WebGLRenderingContext.prototype,false);if(typeof WebGL2RenderingContext!=='undefined')glRead(WebGL2RenderingContext.prototype,true);}
 }`;
 
-const WORKER_WEBGL = `if(c.webgl!=='off'&&typeof WebGLRenderingContext!=='undefined'){
- if(c.webglInfo){const gp=(proto)=>{const real=proto.getParameter;proto.getParameter=asMethod(real,function(p){if(p===37445)return c.webglInfo.vendor;if(p===37446)return c.webglInfo.renderer;return real.call(this,p);});};gp(WebGLRenderingContext.prototype);if(typeof WebGL2RenderingContext!=='undefined')gp(WebGL2RenderingContext.prototype);}
- if(c.webgl==='noise'){const read=(proto,gl2)=>keep(proto,'readPixels',f=>function(x,y,w,h,format,type,pix){const r=f.apply(this,arguments);try{nzGL(this,f,gl2,arguments);}catch(e){}return r;});read(WebGLRenderingContext.prototype,false);if(typeof WebGL2RenderingContext!=='undefined')read(WebGL2RenderingContext.prototype,true);}
+// WebGL Off: the engine switch covers canvas elements; OffscreenCanvas, in pages and workers,
+// still creates a context. The context type is converted once, as Chrome converts the enum.
+const OFFSCREEN_WEBGL_OFF = `if(c.webgl==='off'&&typeof OffscreenCanvas!=='undefined'){const brand=brandOf(OffscreenCanvas.prototype,'width');
+ keep(OffscreenCanvas.prototype,'getContext',f=>function(t){
+  if(arguments.length<1||!brand)return f.apply(this,arguments);
+  brand.call(this);
+  if(typeof t==='symbol')return f.apply(this,arguments);
+  const s=String(t);if(s==='webgl'||s==='webgl2')return null;
+  const a=Array.prototype.slice.call(arguments);a[0]=s;return f.apply(this,a);
+ });
 }`;
 
 const OFFSCREEN_CANVAS = `if(c.canvas!=='real'&&typeof OffscreenCanvasRenderingContext2D!=='undefined'){
+ const offBrand=brandOf(OffscreenCanvasRenderingContext2D.prototype,'canvas');
  const offGet=keep(OffscreenCanvasRenderingContext2D.prototype,'getImageData',f=>function(x,y,w,h){
-  const d=f.apply(this,arguments);if(c.canvas==='off')return new ImageData(new Uint8ClampedArray(d.data.length),d.width,d.height);
-  try{nz2d(f,this,d,x,y,w,h,arguments.length>4?arguments[4]:undefined);}catch(e){}
-  return d;
+  const d=getImageDataOnce(f,offBrand,this,arguments,c.canvas==='off').d;
+  return c.canvas==='off'?new ImageData(new Uint8ClampedArray(d.width*d.height*4),d.width,d.height):d;
  });
  if(typeof OffscreenCanvas!=='undefined')keep(OffscreenCanvas.prototype,'convertToBlob',f=>function(options){
   if(!this.width||!this.height)return f.apply(this,arguments);
@@ -334,9 +402,13 @@ const AUDIO = `if(c.audioNoise){
   if(typeof AudioBuffer!=='undefined'){
     const seen=new WeakMap();
     const original=AudioBuffer.prototype.getChannelData;
-    const apply=(buffer,ch)=>{let channels=seen.get(buffer);if(!channels){channels=new Set();seen.set(buffer,channels);}const data=original.call(buffer,ch);if(!channels.has(ch)){for(let i=0;i<data.length;i+=100)if(data[i]!==0&&data[i]===data[i])data[i]*=1+(H(i,ch)-0.5)*1e-4;channels.add(ch);}return data;};
-    keep(AudioBuffer.prototype,'getChannelData',f=>function(ch){return apply(this,ch);});
-    keep(AudioBuffer.prototype,'copyFromChannel',f=>function(dest,ch,start){apply(this,ch);return f.call(this,dest,ch,start);});
+    const brand=brandOf(AudioBuffer.prototype,'length');
+    const apply=(buffer,ch)=>{let channels=seen.get(buffer);if(!channels){channels=new Set();seen.set(buffer,channels);}const data=original.call(buffer,ch);const n=ch>>>0;if(!channels.has(n)){for(let i=0;i<data.length;i+=100)if(data[i]!==0&&data[i]===data[i])data[i]*=1+(H(i,n)-0.5)*1e-4;channels.add(n);}return data;};
+    keep(AudioBuffer.prototype,'getChannelData',f=>function(ch){
+      if(arguments.length<1||!brand)return f.apply(this,arguments);brand.call(this);if(nzOdd(ch))return f.call(this,ch);return apply(this,+ch);});
+    keep(AudioBuffer.prototype,'copyFromChannel',f=>function(dest,ch,start){
+      if(arguments.length<2||!brand)return f.apply(this,arguments);brand.call(this);if(nzOdd(ch)||nzOdd(start))return f.apply(this,arguments);
+      const n=+ch,s=arguments.length>2&&start!==undefined?+start:undefined;try{apply(this,n);}catch(e){}return s===undefined?f.call(this,dest,n):f.call(this,dest,n,s);});
   }
 }`;
 
@@ -426,7 +498,7 @@ export function buildSpoofScript(fingerprint: Fingerprint, seed: number, availab
     config.canvas !== 'real' || config.webgl === 'noise' ? NOISE_CORE : null,
     config.canvas !== 'real' ? CANVAS : null,
     config.canvas !== 'real' ? OFFSCREEN_CANVAS : null,
-    config.webgl !== 'real' || config.webglInfo ? WEBGL : null,
+    config.webgl === 'noise' || (config.webgl !== 'off' && config.webglInfo) ? WEBGL : null,
     config.webgl === 'off' ? OFFSCREEN_WEBGL_OFF : null,
     config.webgpuInfo ? WEBGPU_INFO : null,
     config.clientRectsNoise ? CLIENT_RECTS : null,
@@ -452,8 +524,8 @@ export function buildWorkerSpoofScript(fingerprint: Fingerprint, seed: number): 
     config.hardware ? HARDWARE : null,
     config.canvas !== 'real' || config.webgl === 'noise' ? NOISE_CORE : null,
     config.canvas !== 'real' ? OFFSCREEN_CANVAS : null,
+    config.webgl === 'noise' || (config.webgl !== 'off' && config.webglInfo) ? WEBGL : null,
     config.webgl === 'off' ? OFFSCREEN_WEBGL_OFF : null,
-    config.webgl !== 'real' || config.webglInfo ? WORKER_WEBGL : null,
     config.webgpuInfo ? WEBGPU_INFO : null,
     needPlatform ? `try{const defProp=(proto,p,v)=>{try{const orig=Object.getOwnPropertyDescriptor(proto,p);const getter=asGetter(orig&&orig.get,()=>v,'get '+p);Object.defineProperty(proto,p,{get:getter,configurable:true,enumerable:true});}catch(e){}};if(typeof WorkerNavigator!=='undefined')defProp(WorkerNavigator.prototype,'platform',${JSON.stringify(platform)});}catch(e){}` : null,
   ].filter(Boolean);

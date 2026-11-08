@@ -20,6 +20,11 @@ export function fingerprintArgs(fingerprint: Fingerprint, options: { proxied?: b
   // prototype getter. A JavaScript patch could be stepped around (DECISIONS #76). Measured on Chrome
   // 157 and Chromium 149; --disable-blink-features=WebGPU and --disable-features=WebGPU had no effect.
   if (fingerprint.webgpu === 'off') args.push('--disable-features=WebGPUService');
+  // WebGL Off is Chrome's own switch: getContext('webgl'/'webgl2') on a canvas element returns null
+  // whatever the argument is; a getContext patch was bypassed with new String('webgl') (audit
+  // recheck 2026-11-08). OffscreenCanvas still creates a context with this or --disable-3d-apis, so
+  // page and worker scripts guard that path (OFFSCREEN_WEBGL_OFF). Measured on Chrome 157.
+  if (fingerprint.webgl === 'off') args.push('--disable-webgl');
   return args;
 }
 
