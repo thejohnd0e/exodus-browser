@@ -15,6 +15,8 @@ export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerp
   '--user-data-dir='+input.userDataDir,'--lang='+input.languages[0],'--no-first-run','--no-default-browser-check','--hide-crash-restore-bubble','--remote-debugging-pipe','--disable-blink-features=AutomationControlled','--test-type','--disable-infobars',
   ...(input.proxyUrl?['--proxy-server='+input.proxyUrl,'--proxy-bypass-list=<-loopback>']:[]),
   ...fingerprintArgs(fingerprint,{proxied:Boolean(input.proxyUrl)}),
+  // Diagnostics for CI only: EXODUS_CHROME_LOG_DIR makes each launch write its own Chromium log file.
+  ...(process.env.EXODUS_CHROME_LOG_DIR?['--enable-logging','--v=0','--log-file='+join(process.env.EXODUS_CHROME_LOG_DIR,input.profileId+'-'+Date.now()+'.log')]:[]),
   'about:blank'
 ];}
 export async function prepareProfilePreferences(input:{userDataDir:string;languages:string[]}){

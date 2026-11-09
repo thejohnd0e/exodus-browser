@@ -35,6 +35,7 @@ jobs:
         # Collected before the tests so the GPU and browser facts are visible even when they fail.
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\chrome-logs" | Out-Null
           Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, VideoProcessor | Format-List
           Get-ChildItem "$env:LOCALAPPDATA\ms-playwright" | Select-Object Name, FullName | Format-Table -AutoSize
           $exe = Get-ChildItem "$env:LOCALAPPDATA\ms-playwright" -Recurse -Filter chrome.exe -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -42,3 +43,16 @@ jobs:
           "Display: $((Get-CimInstance Win32_DesktopMonitor | Measure-Object).Count) monitor(s)"
           "Interactive session: $([Environment]::UserInteractive)"
       - run: npm run test:integration
+        env:
+          # The runner has no GPU (Hyper-V Video only), so GPU vendor/renderer tests are skipped.
+          EXODUS_TEST_GPU: none
+          # Each Chromium launch writes its own log here; uploaded below even when tests fail.
+          EXODUS_CHROME_LOG_DIR: ${{ runner.temp }}/chrome-logs
+      - name: Upload Chromium logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-logs-${{ github.run_id }}
+          path: ${{ runner.temp }}/chrome-logs
+          if-no-files-found: warn
+          retention-days: 14

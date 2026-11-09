@@ -1,3 +1,4 @@
+import {itWithGpu} from '../fixtures/gpu';
 import {it,expect} from 'vitest';
 import {createServer} from 'node:http';
 import {createSocket} from 'node:dgram';
@@ -73,7 +74,7 @@ it('a new popup window receives the same UA and timezone',async()=>{
   }finally{cleanup(root);server.closeAllConnections();server.close();}
 },120000);
 
-it('workers match the page for hardware, timezone, platform and GPU',async()=>{
+itWithGpu('workers match the page for hardware, timezone, platform and GPU',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   type Probe={cores:number;mem:number;tz:string;platform:string;vendor:string|null;renderer:string|null};
   const reports:Array<{page:Probe;worker:Probe}>=[];
@@ -147,7 +148,7 @@ it('worker OffscreenCanvas serialization is stable and differs by seed',async()=
  try{for(let i=0;i<2;i++){const p=await new ChromiumAdapter(exe).launch({profileId:'offscreen-blob-'+i,userDataDir:roots[i],languages:['en-US'],startUrls:[url],fingerprint:{...DEFAULT_FINGERPRINT,canvas:'noise'},fingerprintSeed:i+1});try{await waitForReports(reports,i+1);}finally{await p.stop();}}expect(reports[0].first).toEqual(reports[0].second);expect(reports[0].first).not.toEqual(reports[1].first);}finally{for(const root of roots)cleanup(root);server.closeAllConnections();server.close();}
 },120000);
 
-it('worker OffscreenCanvas WebGL reports the configured vendor and renderer',async()=>{
+itWithGpu('worker OffscreenCanvas WebGL reports the configured vendor and renderer',async()=>{
  if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');const reports:Array<{vendor:string|null;renderer:string|null}>=[];
  const worker="const gl=new OffscreenCanvas(4,4).getContext('webgl');const e=gl&&gl.getExtension('WEBGL_debug_renderer_info');postMessage({vendor:e?gl.getParameter(e.UNMASKED_VENDOR_WEBGL):null,renderer:e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):null})";
  const server=createServer((req,res)=>{if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url,'http://local').searchParams.get('value')!));res.end('ok');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><script>const w=new Worker(URL.createObjectURL(new Blob([${JSON.stringify(worker)}])));w.onmessage=e=>fetch('/report?value='+encodeURIComponent(JSON.stringify(e.data)))</script>`);});
@@ -207,7 +208,7 @@ it('noise is stable within a profile and differs between profiles',async()=>{
   }finally{server.closeAllConnections();server.close();}
 },180000);
 
-it('webgl exposes the configured vendor and renderer, webgpu is disabled and canvas off does not crash the page',async()=>{
+itWithGpu('webgl exposes the configured vendor and renderer, webgpu is disabled and canvas off does not crash the page',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const reports:Report[]=[];const server=createServer((req,res)=>{if(req.url?.startsWith('/report')){reports.push(JSON.parse(new URL(req.url!,'http://local').searchParams.get('value')!));res.end('ok');return;}res.setHeader('Content-Type','text/html');res.end(spoofReport());});
   server.listen(0,'127.0.0.1');await once(server,'listening');const url=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;const engine=new ChromiumAdapter(exe);

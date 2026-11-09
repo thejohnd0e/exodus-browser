@@ -1,3 +1,4 @@
+import {itWithGpu} from '../fixtures/gpu';
 import {it,expect} from 'vitest';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
@@ -108,7 +109,7 @@ it('a Windows user agent keeps high-entropy client hints populated',async()=>{
   expect((r.hints.fullVersionList as unknown[]).length).toBeGreaterThan(0);
 },120000);
 
-it('WebGPU adapter identity follows the configured WebGL vendor',async()=>{
+itWithGpu('WebGPU adapter identity follows the configured WebGL vendor',async()=>{
   const fp:Fingerprint={...DEFAULT_FINGERPRINT,webglInfo:{mode:'manual',vendor:'Google Inc. (NVIDIA)',renderer:'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)'}};
   const r=await probe<{available:boolean;vendor?:string;architecture?:string;error?:string}>('webgpu-align',fp,`
     const a=navigator.gpu&&await navigator.gpu.requestAdapter();

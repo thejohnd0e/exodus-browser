@@ -1,3 +1,4 @@
+import {itWithGpu} from '../fixtures/gpu';
 import {it,expect} from 'vitest';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
@@ -113,7 +114,7 @@ function expectedGl(stock:Record<string,any>){
     values:stock.values.map((v:unknown,i:number)=>spoofed(v,i>=5?'Google Inc. (Apple)':renderer))};
 }
 
-it('spoofed WebGL and canvas methods convert arguments, check receivers and read pixels like Chrome',async()=>{
+itWithGpu('spoofed WebGL and canvas methods convert arguments, check receivers and read pixels like Chrome',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const stock=await run(DEFAULT_FINGERPRINT,pageProbe);
   const spoof=await run({...DEFAULT_FINGERPRINT,canvas:'noise',webgl:'noise',audio:'noise',webglInfo:{mode:'manual',vendor:'Google Inc. (Apple)',renderer}},pageProbe);

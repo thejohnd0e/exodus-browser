@@ -1,3 +1,4 @@
+import {itWithGpu} from '../fixtures/gpu';
 import {it,expect} from 'vitest';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
@@ -75,7 +76,7 @@ const checks=['uniform','partAgrees','roundTrip','translated','encoded','blobbed
 /** Differences from stock, which must be lowest-bit changes of colour channels only. */
 function diff(a:number[],b:number[]){let changed=0;let onlyLowBit=true;for(let i=0;i<a.length;i++)if(a[i]!==b[i]){changed++;if(i%4===3||(a[i]^b[i])!==1)onlyLowBit=false;}return {changed,onlyLowBit};}
 
-it('canvas and WebGL noise change only edges, consistently on every read path',async()=>{
+itWithGpu('canvas and WebGL noise change only edges, consistently on every read path',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const stock=await run(DEFAULT_FINGERPRINT,1);
   const noise={...DEFAULT_FINGERPRINT,canvas:'noise' as const,webgl:'noise' as const};
