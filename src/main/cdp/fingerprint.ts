@@ -46,7 +46,9 @@ export interface FingerprintSession {
   attach(targetId: string): Promise<string>;
 }
 
-const PAGE_WAIT_MS = 5000;
+// Cold starts on loaded CI runners took longer than 5 s before the first page target appeared.
+// Still fails closed: the browser is closed if no page appears in time.
+const PAGE_WAIT_MS = 15000;
 const READY_WAIT_MS = 15000;
 // An ordinary new page answers Page.enable within a few tens of milliseconds while it is paused.
 const PAGE_ANSWER_WAIT_MS = 300;

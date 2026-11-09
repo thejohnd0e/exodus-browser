@@ -18,9 +18,10 @@ jobs:
   integration:
     runs-on: windows-latest
     timeout-minutes: 45
-    # Temporary: the first run failed on GitHub's runner for environment reasons (no GPU, WebGL
-    # renderer null, pages without reports), not for product regressions that reproduce locally.
-    # Remove this line once the job is green on the runner or moves to a self-hosted GPU runner.
+    # Non-blocking on purpose. Runs on GitHub's runner still fail intermittently (timing on cold
+    # starts, which changes from run to run) and some GPU-only checks cannot run there. A green
+    # result here does not mean the suite passes. Remove this line once runs are consistently
+    # green, or move the job to a self-hosted runner with a GPU.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
