@@ -24,6 +24,8 @@ export function cookieArgs(userDataDir: string): string[] {
     '--host-resolver-rules=MAP * ~NOTFOUND',
     '--proxy-server=http://127.0.0.1:9',
     '--proxy-bypass-list=<-loopback>',
+    // Test-only, same gate as chromiumArgs: the GitHub runner cannot start the Chrome sandbox.
+    ...(process.env.VITEST && process.env.EXODUS_TEST_NO_SANDBOX === '1' ? ['--no-sandbox'] : []),
     'about:blank',
   ];
 }
