@@ -30,7 +30,19 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright Chromium
+        # Install outside the user profile. Under C:\Users\runneradmin the Chrome sandbox cannot
+        # access chrome.exe ("Access is denied (0x5)"), the network service dies and pages stay on
+        # about:blank. Tests read the executable path from LOCAL_PROFILES_TEST_CHROMIUM.
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
         run: npx playwright install chromium
+      - name: Point tests at the installed Chromium
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "$env:RUNNER_TEMP\ms-playwright" -Recurse -Filter chrome.exe | Where-Object { $_.FullName -match 'chromium-\d+\\chrome-win64' } | Select-Object -First 1
+          if (-not $exe) { throw 'Playwright Chromium not found' }
+          "LOCAL_PROFILES_TEST_CHROMIUM=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "EXE=$($exe.FullName)"
       - name: Diagnose runner environment
         # Collected before the tests so the GPU and browser facts are visible even when they fail.
         shell: pwsh
