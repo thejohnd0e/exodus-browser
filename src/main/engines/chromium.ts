@@ -9,7 +9,7 @@ import type {BrowserEngineAdapter,EngineLaunch,EngineProcess} from './types';
 import {fingerprintArgs,seedFor} from './fingerprint';
 import {CdpClient} from '../cdp/client';
 import {waitForDevtools} from './devtools';
-import {installFingerprint} from '../cdp/fingerprint';
+import {installFingerprint,diagnoseFailure} from '../cdp/fingerprint';
 import {SessionTracker} from '../sessions/tracker';
 export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerprint??DEFAULT_FINGERPRINT;return [
   '--user-data-dir='+input.userDataDir,'--lang='+input.languages[0],'--no-first-run','--no-default-browser-check','--hide-crash-restore-bubble','--remote-debugging-pipe','--disable-blink-features=AutomationControlled','--test-type','--disable-infobars',
@@ -111,7 +111,7 @@ export class ChromiumAdapter implements BrowserEngineAdapter {
       }
       await session.navigate(input.startUrls);
       await session.ready();
-    }catch(error){tracker?.dispose();await this.dispose(child,client,exit);throw Error(error instanceof Error&&error.message==='EXTENSION_LOAD_FAILED'?'EXTENSION_LOAD_FAILED':'FINGERPRINT_UNAVAILABLE');}
+    }catch(error){tracker?.dispose();await this.dispose(child,client,exit);await diagnoseFailure('launch',error instanceof Error?error.stack??error.message:String(error));throw Error(error instanceof Error&&error.message==='EXTENSION_LOAD_FAILED'?'EXTENSION_LOAD_FAILED':'FINGERPRINT_UNAVAILABLE');}
     const cdp=client;
     const startedAt=new Date().toISOString();
     const browser:import('./types').EngineBrowser={

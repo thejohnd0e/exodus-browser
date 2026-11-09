@@ -65,10 +65,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 // CI-only diagnostics: with EXODUS_CHROME_LOG_DIR set, a readiness timeout leaves a JSON file that
 // records the last state the poll saw. Never affects the outcome; write errors are ignored.
 async function dumpReadyTimeout(last: string, targets: TargetInfo[]): Promise<void> {
+  await diagnoseFailure('ready-timeout', { last, targets: targets.map(t => ({ type: t.type, url: t.url })) });
+}
+
+/** CI-only: writes a JSON diagnostic into EXODUS_CHROME_LOG_DIR when it is set. Never throws. */
+export async function diagnoseFailure(kind: string, detail: unknown): Promise<void> {
   const dir = process.env.EXODUS_CHROME_LOG_DIR;
   if (!dir) return;
   try {
-    await writeFile(join(dir, `ready-timeout-${randomUUID()}.json`), JSON.stringify({ last, targets: targets.map(t => ({ type: t.type, url: t.url })) }, null, 2));
+    await writeFile(join(dir, `${kind}-${randomUUID()}.json`), JSON.stringify({ kind, detail }, null, 2));
   } catch { /* diagnostics only */ }
 }
 // An ordinary new page answers Page.enable within a few tens of milliseconds while it is paused.
