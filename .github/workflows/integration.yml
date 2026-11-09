@@ -58,6 +58,8 @@ jobs:
         env:
           # The runner has no GPU (Hyper-V Video only), so GPU vendor/renderer tests are skipped.
           EXODUS_TEST_GPU: none
+          # The runner cannot start the Chrome sandbox; honored only inside vitest.
+          EXODUS_TEST_NO_SANDBOX: '1'
           # Each Chromium launch writes its own log here; uploaded below even when tests fail.
           EXODUS_CHROME_LOG_DIR: ${{ runner.temp }}/chrome-logs
       - name: Upload Chromium logs

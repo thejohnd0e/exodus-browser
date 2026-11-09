@@ -17,6 +17,9 @@ export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerp
   ...fingerprintArgs(fingerprint,{proxied:Boolean(input.proxyUrl)}),
   // Diagnostics for CI only: EXODUS_CHROME_LOG_DIR makes each launch write its own Chromium log file.
   ...(process.env.EXODUS_CHROME_LOG_DIR?['--enable-logging','--v=0','--log-file='+join(process.env.EXODUS_CHROME_LOG_DIR,input.profileId+'-'+Date.now()+'.log')]:[]),
+  // Test-only: the GitHub runner cannot start the Chrome sandbox ("Access is denied" for chrome.exe),
+  // so the network service dies. Honored only inside vitest, never in the packaged application.
+  ...(process.env.VITEST&&process.env.EXODUS_TEST_NO_SANDBOX==='1'?['--no-sandbox']:[]),
   'about:blank'
 ];}
 export async function prepareProfilePreferences(input:{userDataDir:string;languages:string[]}){
