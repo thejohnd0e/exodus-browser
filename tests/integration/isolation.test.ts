@@ -23,7 +23,7 @@ it('keeps cookies, localStorage and IndexedDB isolated between profiles and acro
   });server.listen(0,'127.0.0.1');await once(server,'listening');const origin=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const dirs=[mkdtempSync(join(tmpdir(),'lp-a-')),mkdtempSync(join(tmpdir(),'lp-b-'))];
   // Test-only engine: an already installed local Playwright Chromium build. Production uses the explicitly installed engine.
-  let executable=chromium.executablePath();
+  let executable=process.env.LOCAL_PROFILES_TEST_CHROMIUM??chromium.executablePath();
   if(!existsSync(executable)){
     const root=join(process.env.LOCALAPPDATA??'','ms-playwright');
     const candidates=existsSync(root)?readdirSync(root).filter(n=>n.startsWith('chromium-')).sort().reverse():[];
