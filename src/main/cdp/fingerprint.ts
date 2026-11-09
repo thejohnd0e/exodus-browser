@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { CdpClient, CdpMessage } from './client';
 import type { Fingerprint } from '../../shared/fingerprint';
 import { buildSpoofScript, buildWorkerSpoofScript, deriveScreenAvailability, type ScreenAvailability } from '../engines/spoof-script';
@@ -50,6 +52,25 @@ export interface FingerprintSession {
 // Still fails closed: the browser is closed if no page appears in time.
 const PAGE_WAIT_MS = 15000;
 const READY_WAIT_MS = 15000;
+const EVALUATE_WAIT_MS = 2000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error('EVALUATE_TIMEOUT')), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+// CI-only diagnostics: with EXODUS_CHROME_LOG_DIR set, a readiness timeout leaves a JSON file that
+// records the last state the poll saw. Never affects the outcome; write errors are ignored.
+async function dumpReadyTimeout(last: string, targets: TargetInfo[]): Promise<void> {
+  const dir = process.env.EXODUS_CHROME_LOG_DIR;
+  if (!dir) return;
+  try {
+    await writeFile(join(dir, `ready-timeout-${randomUUID()}.json`), JSON.stringify({ last, targets: targets.map(t => ({ type: t.type, url: t.url })) }, null, 2));
+  } catch { /* diagnostics only */ }
+}
 // An ordinary new page answers Page.enable within a few tens of milliseconds while it is paused.
 const PAGE_ANSWER_WAIT_MS = 300;
 async function waitForPage(client: CdpClient): Promise<TargetInfo> {
@@ -433,17 +454,25 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     async ready(): Promise<void> {
       const deadline = Date.now() + (options.readyTimeoutMs ?? READY_WAIT_MS);
       let sessionId: string | undefined;
+      let last = 'no-page';
+      let targets: TargetInfo[] = [];
       for (;;) {
-        const { targetInfos } = await client.send<{ targetInfos: TargetInfo[] }>('Target.getTargets', {});
-        const page = targetInfos.find(t => t.type === 'page');
+        ({ targetInfos: targets } = await client.send<{ targetInfos: TargetInfo[] }>('Target.getTargets', {}));
+        const page = targets.find(t => t.type === 'page');
         if (page) sessionId = await ensurePageSession(page.targetId);
+        last = sessionId ? 'page-attached' : page ? 'page-without-session' : 'no-page';
         if (sessionId) {
           try {
-            const state = await client.send<{ result: { value?: string } }>('Runtime.evaluate', { expression: 'document.readyState', returnByValue: true }, sessionId);
+            // Bounded: a call that never answers must not keep the loop from reaching the deadline.
+            const state = await withTimeout(client.send<{ result: { value?: string } }>('Runtime.evaluate', { expression: 'document.readyState', returnByValue: true }, sessionId), EVALUATE_WAIT_MS);
+            last = `readyState=${String(state.result?.value)}`;
             if (state.result?.value === 'complete') return;
-          } catch { /* navigation in flight: retry until the deadline */ }
+          } catch (error) { last = `evaluate-failed: ${error instanceof Error ? error.message : String(error)}`; }
         }
-        if (Date.now() >= deadline) throw Error('FINGERPRINT_UNAVAILABLE');
+        if (Date.now() >= deadline) {
+          await dumpReadyTimeout(last, targets);
+          throw Error('FINGERPRINT_UNAVAILABLE');
+        }
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     },
