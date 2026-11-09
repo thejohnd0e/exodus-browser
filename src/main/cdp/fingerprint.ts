@@ -79,7 +79,10 @@ async function waitForPage(client: CdpClient): Promise<TargetInfo> {
     const { targetInfos } = await client.send<{ targetInfos: TargetInfo[] }>('Target.getTargets', {});
     const page = targetInfos.find(t => t.type === 'page');
     if (page) return page;
-    if (Date.now() >= deadline) throw Error('FINGERPRINT_UNAVAILABLE');
+    if (Date.now() >= deadline) {
+      await dumpReadyTimeout('waitForPage: no page target', targetInfos);
+      throw Error('FINGERPRINT_UNAVAILABLE');
+    }
     await new Promise(resolve => setTimeout(resolve, 50));
   }
 }
