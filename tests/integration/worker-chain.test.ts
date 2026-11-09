@@ -1,4 +1,5 @@
 import {it,expect} from 'vitest';
+import {itWithGpu} from '../fixtures/gpu';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import type {AddressInfo} from 'node:net';
@@ -26,7 +27,7 @@ report();
 ${level<depth?`new Worker('/worker.js?kind=${kind}&level=${level+1}&depth=${depth}'${kind==='module'?",{type:'module'}":''});`:''}
 `;
 
-it('applies the profile to every worker in a chain, classic and module, however deeply nested',async()=>{
+itWithGpu('applies the profile to every worker in a chain, classic and module, however deeply nested',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const reports:Report[]=[];
   const server=createServer((req,res)=>{

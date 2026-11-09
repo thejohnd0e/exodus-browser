@@ -1,4 +1,5 @@
 import {it,expect} from 'vitest';
+import {itWithGpu} from '../fixtures/gpu';
 import {createServer} from 'node:http';
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {once} from 'node:events';
@@ -49,7 +50,7 @@ const pageProbe=`(async()=>{
   return out;
 })()`;
 
-it('one profile with every spoof on is consistent in the page, nested workers and a cross-origin frame',async()=>{
+itWithGpu('one profile with every spoof on is consistent in the page, nested workers and a cross-origin frame',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const reports:Array<{tag:string;v:Record<string,any>}>=[];
   const sink=(req:IncomingMessage,res:ServerResponse)=>{let b='';req.on('data',c=>b+=c);req.on('end',()=>{reports.push(JSON.parse(b));res.end('ok');});};

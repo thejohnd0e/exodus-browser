@@ -132,7 +132,7 @@ itWithGpu('spoofed WebGL and canvas methods convert arguments, check receivers a
   expect(spoof.webgl2.tight,'readPixels is noised').not.toEqual(stock.webgl2.tight);
 },240000);
 
-it('WebGL Off is the engine switch: no context in pages, workers or OffscreenCanvas, whatever the argument',async()=>{
+itWithGpu('WebGL Off is the engine switch: no context in pages, workers or OffscreenCanvas, whatever the argument',async()=>{
   if(!existsSync(exe))throw Error('BLOCKED: no local Chromium');
   const stock=await run(DEFAULT_FINGERPRINT,offProbe);
   const off=await run({...DEFAULT_FINGERPRINT,webgl:'off'},offProbe);
