@@ -74,7 +74,8 @@ export class CdpClient {
     const socket = await (options.factory ?? defaultSocket)(url);
     return new CdpClient(socket);
   }
-  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeoutMs = 5000): Promise<T> {
+  // 15 s: on loaded machines (CI runners in particular) launch-time commands took longer than 5 s.
+  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeoutMs = 15000): Promise<T> {
     if (this.closed) return Promise.reject(Error('CDP_CLOSED'));
     const id = this.nextId++;
     const payload = JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) });
