@@ -18,11 +18,8 @@ jobs:
   integration:
     runs-on: windows-latest
     timeout-minutes: 45
-    # Non-blocking on purpose. Runs on GitHub's runner still fail intermittently (timing on cold
-    # starts, which changes from run to run) and some GPU-only checks cannot run there. A green
-    # result here does not mean the suite passes. Remove this line once runs are consistently
-    # green, or move the job to a self-hosted runner with a GPU.
-    continue-on-error: true
+    # GPU-only checks are skipped on this runner (EXODUS_TEST_GPU=none) and failed tests are
+    # retried twice, because cold-start failures move between tests from run to run.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
