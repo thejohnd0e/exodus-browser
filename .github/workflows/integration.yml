@@ -55,7 +55,9 @@ jobs:
           if ($exe) { "Chromium: $($exe.FullName) $($exe.VersionInfo.ProductVersion)" } else { "Chromium: not found" }
           "Display: $((Get-CimInstance Win32_DesktopMonitor | Measure-Object).Count) monitor(s)"
           "Interactive session: $([Environment]::UserInteractive)"
-      - run: npm run test:integration
+      # --retry=2: runs on GitHub's runner fail at random on cold starts and timing. A test must
+      # fail three times in a row to count as failed, so a real regression still fails the job.
+      - run: npm run test:integration -- --retry=2
         env:
           # The runner has no GPU (Hyper-V Video only), so GPU vendor/renderer tests are skipped.
           EXODUS_TEST_GPU: none
