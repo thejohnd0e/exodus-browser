@@ -322,7 +322,11 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
         // inside while it is still paused prevents its script from ever running.
         await client.send('Runtime.evaluate', { expression: 'self.close()' }, sessionId).catch(() => undefined);
         const owner = ownerPageOf(sessionId);
-        if (owner) await client.send('Target.closeTarget', { targetId: owner.targetId }).catch(() => undefined);
+        if (owner) {
+          await client.send('Target.closeTarget', { targetId: owner.targetId }).catch(error => diagnoseFailure('strict-close', { reason: 'closeTarget failed', error: String(error) }));
+        } else {
+          await diagnoseFailure('strict-close', { reason: 'no owner page for worker session', sessionId });
+        }
         options.onPageFailure?.(reason, 'closed');
         return;
       }
