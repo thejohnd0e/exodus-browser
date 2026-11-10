@@ -21,7 +21,7 @@ jobs:
     # GPU-only checks are skipped on this runner (EXODUS_TEST_GPU=none) and failed tests are
     # retried twice, because cold-start failures move between tests from run to run.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
