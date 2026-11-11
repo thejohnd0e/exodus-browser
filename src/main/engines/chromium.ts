@@ -2,6 +2,7 @@ import {access,mkdir,readFile,writeFile,rename,rm,lstat} from 'node:fs/promises'
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {languagesSchema} from '../../shared/validation';
+import {browserLanguages} from '../../shared/accept-languages';
 import {DEFAULT_FINGERPRINT,type Fingerprint} from '../../shared/fingerprint';
 import {spawn,execFile,type ChildProcess} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -29,7 +30,7 @@ export async function prepareProfilePreferences(input:{userDataDir:string;langua
   try{if((await lstat(file)).isSymbolicLink())throw Error('UNSAFE_PROFILE_FILE');prefs=JSON.parse(await readFile(file,'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
   if(!prefs||typeof prefs!=='object'||Array.isArray(prefs))throw Error('INVALID_PREFERENCES');
   const intl=prefs.intl;if(intl!==undefined&&(!intl||typeof intl!=='object'||Array.isArray(intl)))throw Error('INVALID_PREFERENCES');
-  prefs.intl={...(intl as Record<string,unknown>|undefined),accept_languages:languages.join(','),selected_languages:languages.join(',')};
+  prefs.intl={...(intl as Record<string,unknown>|undefined),accept_languages:browserLanguages(languages[0]).join(','),selected_languages:browserLanguages(languages[0]).join(',')};
   // Chromium must never restore its own tabs: Exodus restores the saved URLs itself, and doing both
   // duplicated every tab. `restore_on_startup` 5 ("continue where you left off") was the usual cause.
   const session=prefs.session;const sessionRecord=session&&typeof session==='object'&&!Array.isArray(session)?session as Record<string,unknown>:{};

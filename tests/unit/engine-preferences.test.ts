@@ -16,7 +16,7 @@ it('disables Chromium session restore so saved tabs are not duplicated',async()=
   expect(prefs.session).toMatchObject({restore_on_startup:1,startup_urls:[],keep:true});
   expect(prefs.profile).toMatchObject({name:'Work',exit_type:'Normal',exited_cleanly:true});
   expect(prefs.other).toBe(1);
-  expect(prefs.intl).toMatchObject({accept_languages:'en-US',selected_languages:'en-US'});
+  expect(prefs.intl).toMatchObject({accept_languages:'en-US,en',selected_languages:'en-US,en'});
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
@@ -26,7 +26,7 @@ it('creates preferences for a fresh profile',async()=>{
   await prepareProfilePreferences({userDataDir:dir,languages:['de-DE']});
   const prefs=JSON.parse(await readFile(join(dir,'Default','Preferences'),'utf8'));
   expect(prefs.session.restore_on_startup).toBe(1);
-  expect(prefs.intl.accept_languages).toBe('de-DE');
+  expect(prefs.intl.accept_languages).toBe('de-DE,de');
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 

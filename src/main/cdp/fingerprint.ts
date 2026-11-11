@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { CdpClient, CdpMessage } from './client';
 import type { Fingerprint } from '../../shared/fingerprint';
 import { buildSpoofScript, buildWorkerSpoofScript, deriveScreenAvailability, type ScreenAvailability } from '../engines/spoof-script';
+import { browserLanguages } from '../../shared/accept-languages';
 import { metadataFor, navigatorPlatformByOs, reduceUserAgent, uaForOs } from '../../shared/user-agent';
 
 export interface InstallOptions {
@@ -117,6 +118,8 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
   const overridesAnything = (): boolean =>
     pageScript() !== '' || Boolean(effectiveUa && metadata) || fingerprint.timezone.mode === 'manual'
     || fingerprint.geolocation.mode === 'manual' || fingerprint.screen.mode === 'manual';
+  // The header and navigator.languages of a default Chrome list the base language after the code.
+  const acceptLanguage = browserLanguages(languages[0]).join(',');
   const pageSessions = new Map<string, { sessionId: string; ready: Promise<void> }>();
   // A middle click or Ctrl+click opens a background tab that the browser starts loading before it
   // is attached, with an empty address at attach time. With an instant answer its main frame
@@ -206,7 +209,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     const script = pageScript(!topLevel);
     if (script) commands.push(['Page.addScriptToEvaluateOnNewDocument', { source: `if(location.protocol !== 'chrome:'){${script}\n}` }]);
     if (effectiveUa && metadata)
-      commands.push(['Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage: languages.join(','), platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }]);
+      commands.push(['Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage, platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }]);
     if (fingerprint.timezone.mode === 'manual') commands.push(['Emulation.setTimezoneOverride', { timezoneId: fingerprint.timezone.value }]);
     if (fingerprint.geolocation.mode === 'manual') commands.push(['Emulation.setGeolocationOverride', { latitude: fingerprint.geolocation.latitude, longitude: fingerprint.geolocation.longitude, accuracy: fingerprint.geolocation.accuracy }]);
     return commands;
@@ -301,7 +304,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
       if (fingerprint.timezone.mode === 'manual')
         await client.send('Emulation.setTimezoneOverride', { timezoneId: fingerprint.timezone.value }, sessionId);
       if (effectiveUa && metadata)
-        await client.send('Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage: languages.join(','), platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }, sessionId);
+        await client.send('Network.setUserAgentOverride', { userAgent: effectiveUa, acceptLanguage, platform: navigatorPlatformByOs[fingerprint.os], userAgentMetadata: metadata }, sessionId);
       if (workerScript) {
         let evaluation=workerEvaluations.get(targetId);
         if(!evaluation){evaluation=client.send<{exceptionDetails?:unknown}>('Runtime.evaluate',{expression:workerScript},sessionId).then(result=>{if(result.exceptionDetails)throw Error('FINGERPRINT_UNAVAILABLE');});workerEvaluations.set(targetId,evaluation);}
