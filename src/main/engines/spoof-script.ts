@@ -497,8 +497,11 @@ const SCREEN = `if(c.screen){const w=c.screen.width,h=c.screen.height;try{
 try{
   const ow=Object.getOwnPropertyDescriptor(window,'outerWidth');
   const oh=Object.getOwnPropertyDescriptor(window,'outerHeight');
-  const wg=asGetter(ow&&ow.get,()=>w,'get outerWidth');
-  const hg=asGetter(oh&&oh.get,()=>h,'get outerHeight');
+  // The real window decides the outer size, as in an unmodified browser; it is only held to the reported
+  // screen. Zero means the window has not been measured yet (the first document of a new window) and
+  // never describes a visible window, so the reported screen stands in until the real size is known.
+  const wg=asGetter(ow&&ow.get,function(){const r=ow&&ow.get?RA(ow.get,this,[]):w;return r>0&&r<w?r:w;},'get outerWidth');
+  const hg=asGetter(oh&&oh.get,function(){const r=oh&&oh.get?RA(oh.get,this,[]):h;return r>0&&r<h?r:h;},'get outerHeight');
   Object.defineProperty(window,'outerWidth',{get:wg,configurable:true,enumerable:ow?ow.enumerable:true});
   Object.defineProperty(window,'outerHeight',{get:hg,configurable:true,enumerable:oh?oh.enumerable:true});
 }catch(e){}}`;
