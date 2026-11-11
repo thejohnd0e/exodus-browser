@@ -278,3 +278,31 @@ Found by an external audit on 2026-11-08 and fixed the same day (Decision #76):
 - If a hold appears, use the account review flow once and stop signing in.
 - Engine updates are manual. Profiles and proxies never move during an
   application update; they live in `%APPDATA%\Local Profiles`.
+
+## Audit of 2026-11-11: comparison with an unmodified Chrome
+
+A profile was compared with the same Google Chrome 157.0.8103.39 binary started with the same switches and a bare DevTools pipe (no overrides). The comparison is permanent: `tests/integration/differential.test.ts`.
+
+| Observation | Profile before | Unmodified Chrome |
+|---|---|---|
+| `Accept-Language` for language `en-US` | `en-US` | `en-US,en;q=0.9` |
+| `navigator.languages` | `["en-US"]` | `["en-US","en"]` |
+| `getHighEntropyValues(['formFactors'])` | `[]` | `["Desktop"]` |
+| Header order (found after the above) | `accept-language` before `accept` | after `accept-encoding` |
+| GREASE entry of `fullVersionList` | `99` | `99.0.0.0` |
+| Page replaces `WeakMap.prototype.has`, calls any `toString()` | receives the map of wrappers, reads the real core count | hook never called |
+| Hooks on `Function.prototype.apply`, `Document.prototype.createElement`, `canvas.toDataURL()` | each fires | never fires |
+| `Object.setPrototypeOf(Function.prototype.toString, Object.create(Function.prototype.toString))` | no exception | `TypeError` |
+| WebGL vendor containing `$'` | the generated script does not compile | n/a |
+| `outerWidth` after the window is resized to 900x700 | still the screen size | 900 |
+| Maximized window, emulated screen 1366x768 on a 2560x1440 host | `innerWidth` 2560, `screen.width` 1366 | n/a |
+| `--window-size=3840,2160` on a 2560 px display | window 3840 px wide | n/a |
+
+What changed is in Decisions 87 to 91. What is still visible:
+
+- **Wrapper source in an error message.** `Reflect.construct(String, [], wrapper)` prints the source of a JavaScript wrapper in its `TypeError`. A wrapper cannot be given a native-looking source in JavaScript. The differential test lists this explicitly.
+- **Stack frames.** A page that sets `Error.prepareStackTrace` or raises `Error.stackTraceLimit` before calling a spoofed API can still see wrapper frames; stack depth at a `RangeError` differs by the wrapper frames. Both need a native implementation.
+- **Fonts and graphics limits.** Fonts, text rendering, WebGL limits and extensions, and the WebGPU feature list come from the host, whatever operating system and card the profile reports.
+- **Layout is real.** The window cannot be larger than the reported screen without contradicting it; this is why generated screens cover the host display (Decision 89).
+- **Out-of-process frames.** The `matchMedia` rewrite there still uses regular expressions and `Map`, so a hostile page that controls those inside the frame can observe it.
+- **Destination DNS.** The net log shows no resolver job for hosts that go through the proxy (Decision 91); a packet capture was not made.
