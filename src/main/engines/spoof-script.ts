@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import vm from 'node:vm';
 import type { Fingerprint } from '../../shared/fingerprint';
 import { navigatorPlatformByOs } from '../../shared/user-agent';
 
@@ -528,6 +529,15 @@ const FRAME_SCREEN = `if(c.frameScreen&&c.screen){try{
 }catch(e){}}`;
 
 const WEBRTC = `if(c.webRtc==='off'){const kill=(n)=>{try{Object.defineProperty(window,n,{value:undefined,writable:true,configurable:true});}catch(e){}};kill('RTCPeerConnection');kill('webkitRTCPeerConnection');kill('RTCSessionDescription');kill('RTCIceCandidate');}`;
+/**
+ * A script that does not compile is registered by the browser without an error and then runs nowhere,
+ * so the page would load with no script-based overrides. Failing here fails the launch closed.
+ */
+export function assertCompiles(source: string): string {
+  try { new vm.Script(source); } catch { throw Error('FINGERPRINT_UNAVAILABLE'); }
+  return source;
+}
+
 export function buildSpoofScript(fingerprint: Fingerprint, seed: number, available?: ScreenAvailability, options: { outOfProcessFrame?: boolean } = {}): string {
   const config = spoofConfig(fingerprint, seed, available, options.outOfProcessFrame === true);
   const sections = [
@@ -547,9 +557,11 @@ export function buildSpoofScript(fingerprint: Fingerprint, seed: number, availab
   ].filter(Boolean);
   if (sections.length === 0) return '';
   const nonce = JSON.stringify(randomUUID());
-  return `(()=>{${PRELUDE}${sections.join('')}})();`
-    .replace('__NONCE__', nonce)
-    .replace('__CFG__', JSON.stringify(config).replace(/</g, '\\u003c'));
+  const configJson = JSON.stringify(config).replace(/</g, '\\u003c');
+  // Function replacers: the config holds user-editable text, and "$&" or "$'" in a replacement string are patterns.
+  return assertCompiles(`(()=>{${PRELUDE}${sections.join('')}})();`
+    .replace('__NONCE__', () => nonce)
+    .replace('__CFG__', () => configJson));
 }
 
 export function buildWorkerSpoofScript(fingerprint: Fingerprint, seed: number): string {
@@ -567,7 +579,9 @@ export function buildWorkerSpoofScript(fingerprint: Fingerprint, seed: number): 
   ].filter(Boolean);
   if (sections.length === 0) return '';
   const nonce = JSON.stringify(randomUUID());
-  return `(()=>{${PRELUDE}${sections.join('')}})();`
-    .replace('__NONCE__', nonce)
-    .replace('__CFG__', JSON.stringify(config).replace(/</g, '\\u003c'));
+  const configJson = JSON.stringify(config).replace(/</g, '\\u003c');
+  // Function replacers: the config holds user-editable text, and "$&" or "$'" in a replacement string are patterns.
+  return assertCompiles(`(()=>{${PRELUDE}${sections.join('')}})();`
+    .replace('__NONCE__', () => nonce)
+    .replace('__CFG__', () => configJson));
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildSpoofScript, buildWorkerSpoofScript, deriveScreenAvailability, spoofConfig, webgpuInfoFor } from '../../src/main/engines/spoof-script';
+import vm from 'node:vm';
+import { assertCompiles, buildSpoofScript, buildWorkerSpoofScript, deriveScreenAvailability, spoofConfig, webgpuInfoFor } from '../../src/main/engines/spoof-script';
 import { DEFAULT_FINGERPRINT } from '../../src/shared/fingerprint';
 
 const hardware = { mode: 'manual' as const, cores: 12, memoryGb: 8 as const };
@@ -169,5 +170,22 @@ describe('out-of-process frame screen',()=>{
   it('adds the matchMedia rewrite to the frame script and never to the top page script',()=>{
     expect(buildSpoofScript(manual,1,undefined,{outOfProcessFrame:true})).toContain("keep(window,'matchMedia'");
     expect(buildSpoofScript(manual,1)).not.toContain("keep(window,'matchMedia'");
+  });
+});
+
+describe('fingerprint values that look like replacement patterns', () => {
+  const nasty = ["A$'B", 'x$&y', 'p$`q', 'm$$n', 'k$1l'];
+  for (const value of nasty) {
+    it(`keeps ${value} verbatim and the script compiles`, () => {
+      const fp = { ...DEFAULT_FINGERPRINT, canvas: 'noise' as const, hardware, webglInfo: { mode: 'manual' as const, vendor: value, renderer: value } };
+      for (const script of [buildSpoofScript(fp, 1), buildWorkerSpoofScript(fp, 1)]) {
+        expect(() => new vm.Script(script)).not.toThrow();
+        expect(script).toContain(JSON.stringify(value).slice(1, -1));
+      }
+    });
+  }
+  it('a script that does not compile fails the build instead of failing open', () => {
+    expect(() => assertCompiles('(()=>{ const ; })();')).toThrow('FINGERPRINT_UNAVAILABLE');
+    expect(assertCompiles('(()=>{})();')).toBe('(()=>{})();');
   });
 });
