@@ -98,12 +98,13 @@ it('a Windows user agent keeps high-entropy client hints populated',async()=>{
   const engineVersion=(()=>{try{return execFileSync('powershell.exe',['-NoProfile','-Command',`(Get-Item '${exe}').VersionInfo.ProductVersion`],{encoding:'utf8'}).trim();}catch{return '156.0.0.0';}})();
   const fp:Fingerprint={...DEFAULT_FINGERPRINT,os:'windows11',userAgent:uaForOs('windows11',engineVersion)};
   const r=await probe<{ua:string;hints:Record<string,unknown>;error?:string}>('ua-hints',fp,`
-    const hints=await navigator.userAgentData.getHighEntropyValues(['architecture','bitness','platformVersion','uaFullVersion','fullVersionList']);
+    const hints=await navigator.userAgentData.getHighEntropyValues(['architecture','bitness','platformVersion','uaFullVersion','fullVersionList','formFactors']);
     report({ua:navigator.userAgent,hints});`);
   expect(r.error).toBeUndefined();
   expect(r.ua).toMatch(/Chrome\/\d+\.0\.0\.0 /);
   expect(r.hints.architecture).toBe('x86');
   expect(r.hints.bitness).toBe('64');
+  expect(r.hints.formFactors).toEqual(['Desktop']);
   expect(r.hints.platformVersion).not.toBe('');
   expect(r.hints.uaFullVersion).toBe(engineVersion);
   expect((r.hints.fullVersionList as unknown[]).length).toBeGreaterThan(0);

@@ -139,3 +139,10 @@ it('turns WebGPU off in the engine instead of in page script',()=>{
   expect(fingerprintArgs({...DEFAULT_FINGERPRINT,webgpu:'off'})).toContain('--disable-features=WebGPUService');
   expect(fingerprintArgs({...DEFAULT_FINGERPRINT,webgpu:'on'}).some(arg=>arg.startsWith('--disable-features'))).toBe(false);
 });
+
+describe('form factors', () => {
+  it('every OS reports a Desktop form factor', () => {
+    for (const os of ['windows11', 'windows10', 'macos', 'linux'] as const)
+      expect(metadataFor(uaForOs(os, '157.0.8103.39'), os, '157.0.8103.39').formFactors).toEqual(['Desktop']);
+  });
+});

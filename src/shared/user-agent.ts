@@ -11,6 +11,7 @@ export interface UserAgentMetadata {
   mobile: boolean;
   bitness: string;
   wow64: boolean;
+  formFactors: string[];
 }
 
 const platformByOs: Record<FingerprintOs, string> = { windows11: 'Windows', windows10: 'Windows', macos: 'macOS', linux: 'Linux' };
@@ -100,6 +101,7 @@ export function metadataFor(ua: string, os: FingerprintOs, engineVersionOrUserAg
     mobile: false,
     bitness: '64',
     wow64: false,
+    formFactors: ['Desktop'],
   };
 }
 
