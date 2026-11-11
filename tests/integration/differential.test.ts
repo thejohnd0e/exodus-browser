@@ -85,7 +85,6 @@ const ALLOWED_GENERATED:Array<[RegExp,string]>=[
   [/^screen\.(width|height|availWidth|availHeight)$|^mq\./,'manual screen'],
   [/^webgl\.(vendor|renderer)$/,'manual WebGL identity'],
   [/^fn\..*\.construct$/,'KNOWN LIMIT: V8 prints the source of a JavaScript wrapper in "is not a constructor" when it is passed as newTarget; a wrapper cannot have a native-looking source'],
-  [/^fn\.toString\.cycle$/,'TODO(task 5b): Function.prototype.toString is still a Proxy; remove this entry when it is not'],
 ];
 /** A control that is not Google Chrome (Playwright Chromium) lacks the Chrome brand and its hints. */
 const BRAND_KEYS=/^uach\.(he\.)?brands$|^uach\.he\.fullVersionList$|^header\..*\.sec-ch-ua(-full-version-list)?$|^uach\.he\.uaFullVersion$/;

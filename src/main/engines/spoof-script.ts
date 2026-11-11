@@ -85,34 +85,52 @@ export function spoofConfig(fingerprint: Fingerprint, seed: number, available?: 
 }
 
 const PRELUDE = `const c=__CFG__;
-const H=(x,y)=>{let h=(c.seed^Math.imul(x|0,374761393)^Math.imul(y|0,668265263))>>>0;h=Math.imul(h^h>>>13,1274126177);h^=h>>>16;return(h>>>0)/4294967296};
+// Everything the injected code needs from the platform is captured here, before any page script runs.
+// Looking a built-in up when a wrapper runs would let a page replace it first and watch the wrapper
+// call it, or read the map from wrappers to native functions through WeakMap.prototype.has
+// (DECISIONS #87). Calls go through RA, never through .call/.apply, and no hot path uses regular
+// expressions, spread, iteration or Math, because each of those looks something up on the page's side.
+const RA=Reflect.apply,GOPD=Object.getOwnPropertyDescriptor,DP=Object.defineProperty;
+const $Object=Object,$String=String,$isFinite=isFinite,$isView=ArrayBuffer.isView;
+const $WeakMap=WeakMap,$Set=Set,$U8=Uint8Array,$U32=Uint32Array,$U8C=Uint8ClampedArray;
+const imul=Math.imul,mround=Math.round,mtrunc=Math.trunc,mceil=Math.ceil;
+const WM_HAS=WeakMap.prototype.has,WM_GET=WeakMap.prototype.get,WM_SET=WeakMap.prototype.set;
+const SET_HAS=Set.prototype.has,SET_ADD=Set.prototype.add;
+const wmHas=(m,k)=>RA(WM_HAS,m,[k]),wmGet=(m,k)=>RA(WM_GET,m,[k]),wmSet=(m,k,v)=>RA(WM_SET,m,[k,v]);
+const setHas=(s,k)=>RA(SET_HAS,s,[k]),setAdd=(s,k)=>RA(SET_ADD,s,[k]);
+const strValueOf=String.prototype.valueOf;
+const TA_TAG=(()=>{try{return GOPD(Object.getPrototypeOf(Uint8Array.prototype),Symbol.toStringTag).get;}catch(e){return null;}})();
+const accessor=(proto,name)=>{try{return proto?GOPD(proto,name)||null:null;}catch(e){return null;}};
+const getter=(proto,name)=>{const d=accessor(proto,name),g=d&&d.get;return g?(o)=>RA(g,o,[]):null;};
+const setter=(proto,name)=>{const d=accessor(proto,name),s=d&&d.set;return s?(o,v)=>{RA(s,o,[v]);}:null;};
+const H=(x,y)=>{let h=(c.seed^imul(x|0,374761393)^imul(y|0,668265263))>>>0;h=imul(h^h>>>13,1274126177);h^=h>>>16;return(h>>>0)/4294967296};
 const nativeToString=Function.prototype.toString;
 const HANDSHAKE=__NONCE__;
-const ownMap=new WeakMap();
+const ownMap=new $WeakMap();
 let rootMap=ownMap;
-const childMaps=new Set();
+const childMaps=[];
+const topFrame=(()=>{try{return typeof window==='undefined'||window.parent===window;}catch(e){return false;}})();
 const getMap=()=>{
-  if(rootMap!==ownMap)return rootMap;
+  if(topFrame||rootMap!==ownMap)return rootMap;
   try{
-    if(typeof window!=='undefined'){
-      let cur=window;
-      while(cur.parent&&cur.parent!==cur){
-        try{
-          const m=cur.parent.Function.prototype.toString.call(Object(HANDSHAKE));
-          if(m&&typeof m.has==='function'){rootMap=m;break;}
-        }catch(e){}
-        cur=cur.parent;
-      }
+    let cur=window;
+    while(cur.parent&&cur.parent!==cur){
+      try{
+        const m=RA(cur.parent.Function.prototype.toString,$Object(HANDSHAKE),[]);
+        wmHas(m,nativeToString);
+        rootMap=m;break;
+      }catch(e){}
+      cur=cur.parent;
     }
   }catch(e){}
   return rootMap;
 };
 const mask=(fn,orig)=>{
   try{
-    if(orig&&orig.name)Object.defineProperty(fn,'name',{value:orig.name,configurable:true});
-    if(orig&&typeof orig.length==='number')Object.defineProperty(fn,'length',{value:orig.length,configurable:true});
+    if(orig&&orig.name)DP(fn,'name',{value:orig.name,configurable:true});
+    if(orig&&typeof orig.length==='number')DP(fn,'length',{value:orig.length,configurable:true});
   }catch(e){}
-  if(orig){ownMap.set(fn,orig);getMap().set(fn,orig);}
+  if(orig){wmSet(ownMap,fn,orig);wmSet(getMap(),fn,orig);}
   return fn;
 };
 const cleanStack=(e)=>{
@@ -123,92 +141,83 @@ const cleanStack=(e)=>{
   }catch(_){}
   return e;
 };
-const strValueOf=String.prototype.valueOf;
 // The cross-frame handshake is a String wrapper. String.prototype.valueOf checks the internal slot
 // natively, so an arbitrary object passed to Function.prototype.toString never runs page code.
-const isHandshake=(v)=>{if(!v||typeof v!=='object')return false;try{return Reflect.apply(strValueOf,v,[])===HANDSHAKE;}catch(e){return false;}};
+const isHandshake=(v)=>{if(!v||typeof v!=='object')return false;try{return RA(strValueOf,v,[])===HANDSHAKE;}catch(e){return false;}};
 // Accessor syntax gives a getter that, like the browser's own, cannot be constructed and has no
 // prototype. Calling the original first keeps its receiver check (TypeError: Illegal invocation).
 const asGetter=(orig,compute,name)=>{
-  const g=Object.getOwnPropertyDescriptor({get x(){if(orig){try{Reflect.apply(orig,this,[]);}catch(e){throw cleanStack(e);}}return Reflect.apply(compute,this,[]);}},'x').get;
-  if(!orig&&name)try{Object.defineProperty(g,'name',{value:name,configurable:true});}catch(e){}
+  const g=GOPD({get x(){if(orig){try{RA(orig,this,[]);}catch(e){throw cleanStack(e);}}return RA(compute,this,[]);}},'x').get;
+  if(!orig&&name)try{DP(g,'name',{value:name,configurable:true});}catch(e){}
   return mask(g,orig);
 };
 // Method syntax: not constructible and no prototype, like a native method.
-const asMethod=(orig,impl)=>mask({x(){try{return Reflect.apply(impl,this,arguments);}catch(e){throw cleanStack(e);}}}.x,orig);
+const asMethod=(orig,impl)=>mask({x(){try{return RA(impl,this,arguments);}catch(e){throw cleanStack(e);}}}.x,orig);
 /** True when an argument must reach the browser untouched: converting it can only throw. */
 const nzOdd=(v)=>typeof v==='symbol'||typeof v==='bigint';
 /**
  * The browser's own receiver check for a method of proto, run before any argument is converted,
  * as Chrome's bindings do; null when proto has no attribute to check with.
  */
-const brandOf=(proto,attr)=>{const d=Object.getOwnPropertyDescriptor(proto,attr);return d&&d.get?d.get:null;};
+const brandOf=(proto,attr)=>{const d=GOPD(proto,attr);return d&&d.get?d.get:null;};
 const resolveOrig=(fn)=>{
   const m=getMap();
   let cur=fn;
   for(;;){
-    if(ownMap.has(cur)){cur=ownMap.get(cur);continue;}
-    if(m.has(cur)){cur=m.get(cur);continue;}
+    if(wmHas(ownMap,cur)){cur=wmGet(ownMap,cur);continue;}
+    if(wmHas(m,cur)){cur=wmGet(m,cur);continue;}
     let found=false;
-    for(const cm of childMaps){if(cm.has(cur)){cur=cm.get(cur);found=true;break;}}
+    for(let i=0;i<childMaps.length;i++){const cm=childMaps[i];if(wmHas(cm,cur)){cur=wmGet(cm,cur);found=true;break;}}
     if(!found)break;
   }
   return cur;
 };
+// Method syntax again: Function.prototype.toString is not a Proxy, so setting a prototype cycle on it
+// throws like it does for any native function, and it has no prototype and is not constructible.
 const makeToString=(fts)=>{
-  const p=new Proxy(fts,{
-    apply(target,thisArg,args){
-      if(isHandshake(thisArg))return ownMap;
-      try{
-        return Reflect.apply(target,resolveOrig(thisArg),args);
-      }catch(e){
-        throw cleanStack(e);
-      }
-    }
-  });
-  ownMap.set(p,fts);
-  getMap().set(p,fts);
-  return p;
+  const f={toString(){
+    if(isHandshake(this))return ownMap;
+    try{return RA(fts,resolveOrig(this),[]);}catch(e){throw cleanStack(e);}
+  }}.toString;
+  wmSet(ownMap,f,fts);wmSet(getMap(),f,fts);
+  return f;
 };
-try{Function.prototype.toString=makeToString(nativeToString);}catch(e){}
+try{DP(Function.prototype,'toString',{value:makeToString(nativeToString),writable:true,configurable:true,enumerable:false});}catch(e){}
 const frameHooks=[];
 const patchFrame=(w)=>{
   try{
     if(!w||!w.Function)return;
     const m=getMap();
     const fts=w.Function.prototype.toString;
-    try{
-      const cm=fts.call(Object(HANDSHAKE));
-      if(cm&&typeof cm.has==='function'){childMaps.add(cm);m.set(fts,cm.get(fts)||fts);}
-    }catch(e){}
-    if(!m.has(fts)&&!ownMap.has(fts)){
-      w.Function.prototype.toString=makeToString(fts);
+    let cm=null;
+    try{const r=RA(fts,$Object(HANDSHAKE),[]);wmHas(r,fts);cm=r;}catch(e){}
+    if(cm){
+      let known=false;for(let i=0;i<childMaps.length;i++)if(childMaps[i]===cm)known=true;
+      if(!known)childMaps[childMaps.length]=cm;
+      wmSet(m,fts,wmGet(cm,fts)||fts);
+    }
+    if(!wmHas(m,fts)&&!wmHas(ownMap,fts)){
+      DP(w.Function.prototype,'toString',{value:makeToString(fts),writable:true,configurable:true,enumerable:false});
     }
     if(c.hardware&&w.Navigator){
-      const d=(k,v)=>{const o=w.Object.getOwnPropertyDescriptor(w.Navigator.prototype,k);if(o&&o.get&&!m.has(o.get)&&!ownMap.has(o.get)){const g=asGetter(o.get,()=>v);w.Object.defineProperty(w.Navigator.prototype,k,{get:g,configurable:true,enumerable:true});}};
+      const d=(k,v)=>{const o=GOPD(w.Navigator.prototype,k);if(o&&o.get&&!wmHas(m,o.get)&&!wmHas(ownMap,o.get)){const g=asGetter(o.get,()=>v);DP(w.Navigator.prototype,k,{get:g,configurable:true,enumerable:true});}};
       d('hardwareConcurrency',c.hardware.cores);
       d('deviceMemory',c.hardware.memoryGb);
     }
-    for(const h of frameHooks)try{h(w);}catch(e){}
+    for(let i=0;i<frameHooks.length;i++)try{frameHooks[i](w);}catch(e){}
   }catch(e){}
 };
 if(typeof HTMLIFrameElement!=='undefined'){
   try{
-    const cwDesc=Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype,'contentWindow');
+    const cwDesc=GOPD(HTMLIFrameElement.prototype,'contentWindow');
     if(cwDesc&&cwDesc.get){
       const origCw=cwDesc.get;
-      const getCw=asGetter(origCw,function(){const w=origCw.call(this);patchFrame(w);return w;});
-      Object.defineProperty(HTMLIFrameElement.prototype,'contentWindow',{get:getCw,configurable:true,enumerable:true});
+      const getCw=asGetter(origCw,function(){const w=RA(origCw,this,[]);patchFrame(w);return w;});
+      DP(HTMLIFrameElement.prototype,'contentWindow',{get:getCw,configurable:true,enumerable:true});
     }
   }catch(e){}
 }
-const keep=(o,p,w)=>{const f=o[p];if(!f)return;o[p]=asMethod(f,w(f));return f};
-// ClientRects noise moves the values of the rects the browser returned, in place. DOMRectList holds
-// mutable DOMRect objects, so indexing, item(), descriptors, iteration and the native methods all
-// read the same noised numbers and the list stays a real DOMRectList (audit 2026-11-08: a Proxy
-// over the list leaked the real values through descriptors and broke native item/length).
-const noiseRect=(r)=>{if(!r)return r;const d=H(Math.round(r.x*100),Math.round(r.y*100))*0.04-0.02;r.x=r.x+d;r.y=r.y+d;r.width=r.width+d*0.5;r.height=r.height+d*0.5;return r};
-const noiseRectList=(list)=>{if(list)for(let i=0;i<list.length;i++)noiseRect(list[i]);return list};`;
+const keep=(o,p,w)=>{const f=o[p];if(!f)return;o[p]=asMethod(f,w(f));return f};`;
 
 const NOISE_CORE = `// Canvas and WebGL noise (DECISIONS #81). Only pixels on an edge change, so a uniform area stays
 // uniform and cannot be used to read the mask. The key is the pixel and the sums of its opposite
@@ -216,11 +225,11 @@ const NOISE_CORE = `// Canvas and WebGL noise (DECISIONS #81). Only pixels on an
 // surface and in either row order (readPixels is bottom-up), and noising a noised image changes
 // nothing, as a getImageData/putImageData round trip does in Chrome. Only the lowest bit of one
 // colour channel of an opaque pixel is ever set.
-const nzMix=(h)=>{h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return (h^(h>>>16))>>>0;};
+const nzMix=(h)=>{h=imul(h^(h>>>16),2246822507);h=imul(h^(h>>>13),3266489909);return (h^(h>>>16))>>>0;};
 // ext holds the region one pixel larger on every side (es bytes per row); ext columns li..hi-1 and
 // rows lj..hj-1 lie on the surface, a neighbour outside it counts as equal to the pixel.
 const nzApply=(ext,es,w,h,out,os,base,li,hi,lj,hj)=>{
-  const changed=[],ew=w+2,m=new Uint32Array(ew*(h+2));
+  const changed=[],ew=w+2,m=new $U32(ew*(h+2));
   for(let j=0;j<h+2;j++){let o=j*es,q=j*ew;for(let i=0;i<ew;i++,o+=4,q++)m[q]=(((ext[o]&254)<<24)|((ext[o+1]&254)<<16)|((ext[o+2]&254)<<8)|(ext[o+3]&254))>>>0;}
   for(let j=0;j<h;j++){
     const up=j>=lj&&j<hj,down=j+2>=lj&&j+2<hj;
@@ -231,152 +240,182 @@ const nzApply=(ext,es,w,h,out,os,base,li,hi,lj,hj)=>{
       const k=nzMix((c.seed^nzMix(vc^nzMix(((l+r)>>>0)^nzMix((u+d)>>>0))))>>>0);
       if(k&1)continue;
       const o=base+j*os+i*4+((k>>>1)%3),bit=(k>>>8)&1;
-      if((out[o]&1)!==bit){out[o]=(out[o]&254)|bit;changed.push(i,j,(k>>>1)%3);}
+      if((out[o]&1)!==bit){out[o]=(out[o]&254)|bit;const n=changed.length;changed[n]=i;changed[n+1]=j;changed[n+2]=(k>>>1)%3;}
     }
   }
   return changed;
 };
+// A context flavour holds the platform accessors of one kind of 2D context (canvas element or
+// OffscreenCanvas), captured now: the size of its surface, the pixels of an ImageData, putImageData.
+const idData=typeof ImageData!=='undefined'?getter(ImageData.prototype,'data'):null;
+const idW=typeof ImageData!=='undefined'?getter(ImageData.prototype,'width'):null;
+const idH=typeof ImageData!=='undefined'?getter(ImageData.prototype,'height'):null;
+const idCS=typeof ImageData!=='undefined'?getter(ImageData.prototype,'colorSpace'):null;
+const idPF=typeof ImageData!=='undefined'?getter(ImageData.prototype,'pixelFormat'):null;
+const flavor=(ctxCtor,cvCtor)=>{
+  if(!idData||!idW||!idH||typeof ctxCtor==='undefined'||typeof cvCtor==='undefined')return null;
+  const cg=getter(ctxCtor.prototype,'canvas'),w=getter(cvCtor.prototype,'width'),h=getter(cvCtor.prototype,'height'),put=accessor(ctxCtor.prototype,'putImageData');
+  if(!cg||!w||!h||!put||typeof put.value!=='function')return null;
+  const PUT=put.value;
+  return {surface:(ctx)=>{const cv=cg(ctx);return [w(cv),h(cv)];},put:(ctx,img,dx,dy,sx,sy,sw,sh)=>{RA(PUT,ctx,[img,dx,dy,sx,sy,sw,sh]);}};
+};
+const F2D=flavor(typeof CanvasRenderingContext2D!=='undefined'?CanvasRenderingContext2D:undefined,typeof HTMLCanvasElement!=='undefined'?HTMLCanvasElement:undefined);
+const FOFF=flavor(typeof OffscreenCanvasRenderingContext2D!=='undefined'?OffscreenCanvasRenderingContext2D:undefined,typeof OffscreenCanvas!=='undefined'?OffscreenCanvas:undefined);
+const nzTag=(a)=>TA_TAG?RA(TA_TAG,a,[]):undefined;
 /** Noises ImageData that getImageData returned for the already converted (x,y,w,h). Byte and
  * floating-point pixel formats get the same noise: float values are compared as the bytes they
  * stand for, and a changed channel is set to the float of its new byte. */
-const nzTag=(a)=>Object.prototype.toString.call(a);
-const nz2d=(f,ctx,d,x,y,w,h)=>{
-  const a=d.data,tag=nzTag(a);
-  const bytes=tag==='[object Uint8ClampedArray]'||tag==='[object Uint8Array]',float=tag==='[object Float16Array]'||tag==='[object Float32Array]';
+const nz2d=(f,ctx,d,x,y,w,h,F)=>{
+  const a=idData(d),tag=nzTag(a);
+  const bytes=tag==='Uint8ClampedArray'||tag==='Uint8Array',float=tag==='Float16Array'||tag==='Float32Array';
   if(!bytes&&!float)return null;
   let sx=x,sy=y;if(w<0)sx+=w;if(h<0)sy+=h;
-  const dw=d.width,dh=d.height,cv=ctx.canvas,cw=cv.width,chh=cv.height;
+  const dw=idW(d),dh=idH(d),sz=F.surface(ctx),cw=sz[0],chh=sz[1];
   // The neighbours are read with the settings of the returned image, never the page's object again.
-  const settings={};if(d.colorSpace)settings.colorSpace=d.colorSpace;if(d.pixelFormat)settings.pixelFormat=d.pixelFormat;
-  const ext=f.call(ctx,sx-1,sy-1,dw+2,dh+2,settings).data;
+  const settings={};const cs=idCS?idCS(d):undefined,pf=idPF?idPF(d):undefined;if(cs)settings.colorSpace=cs;if(pf)settings.pixelFormat=pf;
+  const ext=idData(RA(f,ctx,[sx-1,sy-1,dw+2,dh+2,settings]));
   if(bytes)return nzApply(ext,(dw+2)*4,dw,dh,a,dw*4,0,1-sx,cw+1-sx,1-sy,chh+1-sy);
-  const q=(arr)=>{const b=new Uint8Array(arr.length);for(let k=0;k<arr.length;k++){const v=Math.round(arr[k]*255);b[k]=v>255?255:v>0?v:0;}return b;};
+  const q=(arr)=>{const b=new $U8(arr.length);for(let k=0;k<arr.length;k++){const v=mround(arr[k]*255);b[k]=v>255?255:v>0?v:0;}return b;};
   const ob=q(a),changed=nzApply(q(ext),(dw+2)*4,dw,dh,ob,dw*4,0,1-sx,cw+1-sx,1-sy,chh+1-sy);
   for(let k=0;k<changed.length;k+=3){const o=changed[k+1]*dw*4+changed[k]*4+changed[k+2];a[o]=ob[o]/255;}
   return changed;
 };
 /** Noises a private copy of a canvas in place, writing only the pixels that changed. */
-const nzCopy=(f,ctx)=>{
-  const w=ctx.canvas.width,h=ctx.canvas.height;const ext=f.call(ctx,-1,-1,w+2,h+2);const a=ext.data;
-  if(!ArrayBuffer.isView(a)||a.BYTES_PER_ELEMENT!==1)return;
+const nzCopy=(f,ctx,F)=>{
+  const sz=F.surface(ctx),w=sz[0],h=sz[1];const img=RA(f,ctx,[-1,-1,w+2,h+2]);const a=idData(img);
+  if(!$isView(a)||a.BYTES_PER_ELEMENT!==1)return;
   // One read: the enlarged image is noised in place and its changed pixels are written back.
   const changed=nzApply(a,(w+2)*4,w,h,a,(w+2)*4,(w+2)*4+4,1,w+1,1,h+1);
-  for(let k=0;k<changed.length;k+=3)ctx.putImageData(ext,-1,-1,changed[k]+1,changed[k+1]+1,1,1);
+  for(let k=0;k<changed.length;k+=3)F.put(ctx,img,-1,-1,changed[k]+1,changed[k+1]+1,1,1);
 };
 /**
  * WebGL readPixels with RGBA/UNSIGNED_BYTE, into a byte view or a pixel pack buffer, honouring
  * PACK_ALIGNMENT, PACK_ROW_LENGTH, PACK_SKIP_ROWS, PACK_SKIP_PIXELS and the destination offset:
  * the same noise as the 2D canvas, with the drawing buffer as the surface. The neighbours are read
- * tightly packed into private memory and every pack setting is restored.
+ * tightly packed into private memory and every pack setting is restored. G holds the context
+ * type's own methods, captured before any wrapper replaced them.
  */
-const nzGL=(gl,f,gl2,x,y,w,h,format,type,pix,off,pbo)=>{
-  if(format!==0x1908||type!==0x1401||!(w>0)||!(h>0)||gl.isContextLost())return;
-  const align=gl.getParameter(0x0D05),rowLen=gl2?gl.getParameter(0x0D02):0,skipRows=gl2?gl.getParameter(0x0D03):0,skipPix=gl2?gl.getParameter(0x0D04):0;
-  const stride=Math.ceil((rowLen>0?rowLen:w)*4/align)*align,start=skipRows*stride+skipPix*4,need=start+(h-1)*stride+w*4;
+const nzGL=(gl,f,G,gl2,x,y,w,h,format,type,pix,off,pbo)=>{
+  if(format!==0x1908||type!==0x1401||!(w>0)||!(h>0)||RA(G.isContextLost,gl,[]))return;
+  const gp=(p)=>RA(G.getParameter,gl,[p]),ps=(p,v)=>{RA(G.pixelStorei,gl,[p,v]);},bb=(t,b)=>{RA(G.bindBuffer,gl,[t,b]);};
+  const align=gp(0x0D05),rowLen=gl2?gp(0x0D02):0,skipRows=gl2?gp(0x0D03):0,skipPix=gl2?gp(0x0D04):0;
+  const stride=mceil((rowLen>0?rowLen:w)*4/align)*align,start=skipRows*stride+skipPix*4,need=start+(h-1)*stride+w*4;
   let buffer=null;
   if(pbo<0){if(pix.BYTES_PER_ELEMENT!==1||pix.length-off<need)return;}
-  else{buffer=gl.getParameter(0x88ED);if(!buffer||pbo+need>gl.getBufferParameter(0x88EB,0x8764))return;}
-  const fbo=gl.getParameter(gl2?0x8CAA:0x8CA6);
-  const ew=w+2,eh=h+2,ext=new Uint8Array(ew*eh*4);
-  gl.pixelStorei(0x0D05,1);if(gl2){gl.pixelStorei(0x0D02,0);gl.pixelStorei(0x0D03,0);gl.pixelStorei(0x0D04,0);if(buffer)gl.bindBuffer(0x88EB,null);}
-  try{f.call(gl,x-1,y-1,ew,eh,format,type,ext);}
-  finally{gl.pixelStorei(0x0D05,align);if(gl2){gl.pixelStorei(0x0D02,rowLen);gl.pixelStorei(0x0D03,skipRows);gl.pixelStorei(0x0D04,skipPix);if(buffer)gl.bindBuffer(0x88EB,buffer);}}
-  const bw=gl.drawingBufferWidth,bh=gl.drawingBufferHeight;
+  else{buffer=gp(0x88ED);if(!buffer||pbo+need>RA(G.getBufferParameter,gl,[0x88EB,0x8764]))return;}
+  const fbo=gp(gl2?0x8CAA:0x8CA6);
+  const ew=w+2,eh=h+2,ext=new $U8(ew*eh*4);
+  ps(0x0D05,1);if(gl2){ps(0x0D02,0);ps(0x0D03,0);ps(0x0D04,0);if(buffer)bb(0x88EB,null);}
+  try{RA(f,gl,[x-1,y-1,ew,eh,format,type,ext]);}
+  finally{ps(0x0D05,align);if(gl2){ps(0x0D02,rowLen);ps(0x0D03,skipRows);ps(0x0D04,skipPix);if(buffer)bb(0x88EB,buffer);}}
+  const bw=G.dbw(gl),bh=G.dbh(gl);
   const li=fbo?-1:1-x,hi=fbo?ew:bw+1-x,lj=fbo?-1:1-y,hj=fbo?eh:bh+1-y;
   if(!buffer){nzApply(ext,ew*4,w,h,pix,stride,off+start,li,hi,lj,hj);return;}
   // A pixel pack buffer gets the same noise, written byte by byte where it changes.
-  const tight=new Uint8Array(w*h*4);for(let j=0;j<h;j++)tight.set(ext.subarray((j+1)*ew*4+4,(j+1)*ew*4+4+w*4),j*w*4);
+  const tight=new $U8(w*h*4);for(let j=0;j<h;j++)tight.set(ext.subarray((j+1)*ew*4+4,(j+1)*ew*4+4+w*4),j*w*4);
   const changed=nzApply(ext,ew*4,w,h,tight,w*4,0,li,hi,lj,hj);
-  for(let k=0;k<changed.length;k+=3){const t=changed[k+1]*w*4+changed[k]*4+changed[k+2];gl.bufferSubData(0x88EB,pbo+start+changed[k+1]*stride+changed[k]*4+changed[k+2],tight.subarray(t,t+1));}
+  for(let k=0;k<changed.length;k+=3){const t=changed[k+1]*w*4+changed[k]*4+changed[k+2];RA(G.bufferSubData,gl,[0x88EB,pbo+start+changed[k+1]*stride+changed[k]*4+changed[k+2],tight.subarray(t,t+1)]);}
 };
 /** getImageData with every argument converted exactly once, in the browser's order. */
-const getImageDataOnce=(f,brand,self,a,off)=>{
-  if(a.length<4||!brand)return {d:f.apply(self,a)};
-  brand.call(self);
-  for(let k=0;k<4;k++)if(nzOdd(a[k]))return {d:f.apply(self,a)};
+const getImageDataOnce=(f,brand,self,a,off,F)=>{
+  if(a.length<4||!brand||!F)return {d:RA(f,self,a)};
+  RA(brand,self,[]);
+  for(let k=0;k<4;k++)if(nzOdd(a[k]))return {d:RA(f,self,a)};
   const x=+a[0],y=+a[1],w=+a[2],h=+a[3];
-  const d=a.length>4?f.call(self,x,y,w,h,a[4]):f.call(self,x,y,w,h);
-  if(!off)try{nz2d(f,self,d,x|0,y|0,w|0,h|0);}catch(e){}
+  const d=a.length>4?RA(f,self,[x,y,w,h,a[4]]):RA(f,self,[x,y,w,h]);
+  if(!off)try{nz2d(f,self,d,x|0,y|0,w|0,h|0,F);}catch(e){}
   return {d};
 };
 `;
 
 const CANVAS = `if(c.canvas!=='real'){
-const empty=(w,h)=>new ImageData(new Uint8ClampedArray(Math.max(0,w*h*4)),w,h);
+const $ImageData=ImageData,CE=Document.prototype.createElement;
+const empty=(w,h)=>new $ImageData(new $U8C(w*h>0?w*h*4:0),w,h);
 const patchCanvas=(C2D,HC)=>{
-if(!C2D||!HC||ownMap.has(HC.prototype.toDataURL)||getMap().has(HC.prototype.toDataURL))return;
+if(!C2D||!HC||wmHas(ownMap,HC.prototype.toDataURL)||wmHas(getMap(),HC.prototype.toDataURL))return;
 const brand=brandOf(C2D.prototype,'canvas');
+const cvW=getter(HC.prototype,'width'),cvH=getter(HC.prototype,'height'),setW=setter(HC.prototype,'width'),setH=setter(HC.prototype,'height');
+const HC_CTX=HC.prototype.getContext,DRAW=C2D.prototype.drawImage;
 const realGet=keep(C2D.prototype,'getImageData',f=>function(x,y,w,h){
-  const d=getImageDataOnce(f,brand,this,arguments,c.canvas==='off').d;
-  return c.canvas==='off'?empty(d.width,d.height):d;
+  const d=getImageDataOnce(f,brand,this,arguments,c.canvas==='off',F2D).d;
+  return c.canvas==='off'?empty(idW(d),idH(d)):d;
 });
 // The page's canvas is never changed: the encoders run on a private copy. A zero-sized canvas
-// cannot be drawn and is encoded as it is, like Chrome does.
-const copyOf=(src)=>{const cv=document.createElement('canvas');cv.width=src.width;cv.height=src.height;
-  if(c.canvas!=='off'){const x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(src,0,0);try{nzCopy(realGet,x);}catch(e){}}return cv;};
+// cannot be drawn and is encoded as it is, like Chrome does. A receiver that is not a canvas goes
+// to the browser, which reports it in its own words.
+const sizeOf=(self)=>{try{return [cvW(self),cvH(self)];}catch(e){return null;}};
+const copyOf=(src,sz)=>{const cv=RA(CE,document,['canvas']);setW(cv,sz[0]);setH(cv,sz[1]);
+  if(c.canvas!=='off'){const x=RA(HC_CTX,cv,['2d',{willReadFrequently:true}]);RA(DRAW,x,[src,0,0]);try{nzCopy(realGet,x,F2D);}catch(e){}}return cv;};
 keep(HC.prototype,'toDataURL',f=>function(type,quality){
-  if(!this.width||!this.height)return f.apply(this,arguments);
-  return f.apply(copyOf(this),arguments);
+  const sz=sizeOf(this);if(!sz||!sz[0]||!sz[1])return RA(f,this,arguments);
+  return RA(f,copyOf(this,sz),arguments);
 });
 keep(HC.prototype,'toBlob',f=>function(cb,type,quality){
-  if(!this.width||!this.height)return f.apply(this,arguments);
-  return f.apply(copyOf(this),arguments);
+  const sz=sizeOf(this);if(!sz||!sz[0]||!sz[1])return RA(f,this,arguments);
+  return RA(f,copyOf(this,sz),arguments);
 });};
 patchCanvas(CanvasRenderingContext2D,HTMLCanvasElement);
-frameHooks.push(w=>patchCanvas(w.CanvasRenderingContext2D,w.HTMLCanvasElement));}`;
+frameHooks[frameHooks.length]=w=>patchCanvas(w.CanvasRenderingContext2D,w.HTMLCanvasElement);}`;
 
 const WEBGL = `if(c.webgl!=='off'&&typeof WebGLRenderingContext!=='undefined'){
+ // The context type's own methods, captured before glInfo replaces getParameter.
+ const prim=(proto)=>proto?{getParameter:proto.getParameter,pixelStorei:proto.pixelStorei,bindBuffer:proto.bindBuffer,getBufferParameter:proto.getBufferParameter,bufferSubData:proto.bufferSubData,isContextLost:proto.isContextLost,dbw:getter(proto,'drawingBufferWidth'),dbh:getter(proto,'drawingBufferHeight')}:null;
+ const G1=prim(WebGLRenderingContext.prototype),G2=typeof WebGL2RenderingContext!=='undefined'?prim(WebGL2RenderingContext.prototype):null;
  const glInfo=(proto)=>{if(!proto)return;const real=proto.getParameter,brand=brandOf(proto,'canvas');if(!real||!brand)return;
   // The receiver is checked and the argument converted once, then the browser answers; a value
   // is replaced only where the browser itself returned one, so a missing extension or a lost
   // context still gives null (audit 2026-11-08 recheck: a string or an object reached the real GPU).
   proto.getParameter=asMethod(real,function(p){
-    if(arguments.length<1)return real.apply(this,arguments);
-    brand.call(this);
-    if(nzOdd(p))return real.call(this,p);
-    const v=+p,n=v>>>0,r=real.call(this,v);
+    if(arguments.length<1)return RA(real,this,arguments);
+    RA(brand,this,[]);
+    if(nzOdd(p))return RA(real,this,[p]);
+    const v=+p,n=v>>>0,r=RA(real,this,[v]);
     if(r!==null&&n===37445)return c.webglInfo.vendor;
     if(r!==null&&n===37446)return c.webglInfo.renderer;
     return r;
   });};
- const glRead=(proto,gl2)=>{if(!proto)return;const brand=brandOf(proto,'canvas');keep(proto,'readPixels',f=>function(){
-  const a=arguments;if(a.length<7||!brand)return f.apply(this,a);
-  brand.call(this);
-  const dst=a[6],view=ArrayBuffer.isView(dst);
-  if(!view&&!gl2)return f.apply(this,a);
-  for(let k=0;k<a.length&&k<8;k++)if(nzOdd(a[k]))return f.apply(this,a);
+ const glRead=(proto,gl2,G)=>{if(!proto||!G)return;const brand=brandOf(proto,'canvas');keep(proto,'readPixels',f=>function(){
+  const a=arguments;if(a.length<7||!brand)return RA(f,this,a);
+  RA(brand,this,[]);
+  const dst=a[6],view=$isView(dst);
+  if(!view&&!gl2)return RA(f,this,a);
+  for(let k=0;k<a.length&&k<8;k++)if(nzOdd(a[k]))return RA(f,this,a);
   const x=+a[0],y=+a[1],w=+a[2],h=+a[3],format=+a[4],type=+a[5];
-  if(view){const off=a.length>7?+a[7]:0;const r=a.length>7?f.call(this,x,y,w,h,format,type,dst,off):f.call(this,x,y,w,h,format,type,dst);
-    try{nzGL(this,f,gl2,x|0,y|0,w|0,h|0,format>>>0,type>>>0,dst,off>>>0,-1);}catch(e){}return r;}
-  const off=+dst;const r=f.call(this,x,y,w,h,format,type,off);
-  try{const o=off===off&&isFinite(off)?Math.trunc(off):0;if(o>=0)nzGL(this,f,gl2,x|0,y|0,w|0,h|0,format>>>0,type>>>0,null,0,o);}catch(e){}
+  if(view){const off=a.length>7?+a[7]:0;const r=a.length>7?RA(f,this,[x,y,w,h,format,type,dst,off]):RA(f,this,[x,y,w,h,format,type,dst]);
+    try{nzGL(this,f,G,gl2,x|0,y|0,w|0,h|0,format>>>0,type>>>0,dst,off>>>0,-1);}catch(e){}return r;}
+  const off=+dst;const r=RA(f,this,[x,y,w,h,format,type,off]);
+  try{const o=off===off&&$isFinite(off)?mtrunc(off):0;if(o>=0)nzGL(this,f,G,gl2,x|0,y|0,w|0,h|0,format>>>0,type>>>0,null,0,o);}catch(e){}
   return r;
  });};
  if(c.webglInfo){glInfo(WebGLRenderingContext.prototype);if(typeof WebGL2RenderingContext!=='undefined')glInfo(WebGL2RenderingContext.prototype);}
- if(c.webgl==='noise'){glRead(WebGLRenderingContext.prototype,false);if(typeof WebGL2RenderingContext!=='undefined')glRead(WebGL2RenderingContext.prototype,true);}
+ if(c.webgl==='noise'){glRead(WebGLRenderingContext.prototype,false,G1);if(typeof WebGL2RenderingContext!=='undefined')glRead(WebGL2RenderingContext.prototype,true,G2);}
 }`;
 
 // WebGL Off: the engine switch covers canvas elements; OffscreenCanvas, in pages and workers,
 // still creates a context. The context type is converted once, as Chrome converts the enum.
 const OFFSCREEN_WEBGL_OFF = `if(c.webgl==='off'&&typeof OffscreenCanvas!=='undefined'){const brand=brandOf(OffscreenCanvas.prototype,'width');
  keep(OffscreenCanvas.prototype,'getContext',f=>function(t){
-  if(arguments.length<1||!brand)return f.apply(this,arguments);
-  brand.call(this);
-  if(typeof t==='symbol')return f.apply(this,arguments);
-  const s=String(t);if(s==='webgl'||s==='webgl2')return null;
-  const a=Array.prototype.slice.call(arguments);a[0]=s;return f.apply(this,a);
+  if(arguments.length<1||!brand)return RA(f,this,arguments);
+  RA(brand,this,[]);
+  if(typeof t==='symbol')return RA(f,this,arguments);
+  const s=$String(t);if(s==='webgl'||s==='webgl2')return null;
+  const a=[];for(let i=0;i<arguments.length;i++)a[i]=arguments[i];a[0]=s;return RA(f,this,a);
  });
 }`;
 
 const OFFSCREEN_CANVAS = `if(c.canvas!=='real'&&typeof OffscreenCanvasRenderingContext2D!=='undefined'){
+ const $ImageData=ImageData,$OC=OffscreenCanvas,PR=Promise.reject,$Promise=Promise;
  const offBrand=brandOf(OffscreenCanvasRenderingContext2D.prototype,'canvas');
+ const ocW=getter(OffscreenCanvas.prototype,'width'),ocH=getter(OffscreenCanvas.prototype,'height'),OC_CTX=OffscreenCanvas.prototype.getContext,OFF_DRAW=OffscreenCanvasRenderingContext2D.prototype.drawImage;
  const offGet=keep(OffscreenCanvasRenderingContext2D.prototype,'getImageData',f=>function(x,y,w,h){
-  const d=getImageDataOnce(f,offBrand,this,arguments,c.canvas==='off').d;
-  return c.canvas==='off'?new ImageData(new Uint8ClampedArray(d.width*d.height*4),d.width,d.height):d;
+  const d=getImageDataOnce(f,offBrand,this,arguments,c.canvas==='off',FOFF).d;
+  const dw=idW(d),dh=idH(d);
+  return c.canvas==='off'?new $ImageData(new $U8C(dw*dh>0?dw*dh*4:0),dw,dh):d;
  });
- if(typeof OffscreenCanvas!=='undefined')keep(OffscreenCanvas.prototype,'convertToBlob',f=>function(options){
-  if(!this.width||!this.height)return f.apply(this,arguments);
-  try{const copy=new OffscreenCanvas(this.width,this.height),ctx=copy.getContext('2d',{willReadFrequently:true});if(c.canvas!=='off'){ctx.drawImage(this,0,0);try{nzCopy(offGet,ctx);}catch(e){}}return f.apply(copy,arguments);}catch(error){return Promise.reject(error);}
+ if(ocW&&ocH)keep(OffscreenCanvas.prototype,'convertToBlob',f=>function(options){
+  let w,h;try{w=ocW(this);h=ocH(this);}catch(e){return RA(f,this,arguments);}
+  if(!w||!h)return RA(f,this,arguments);
+  try{const copy=new $OC(w,h),ctx=RA(OC_CTX,copy,['2d',{willReadFrequently:true}]);if(c.canvas!=='off'){RA(OFF_DRAW,ctx,[this,0,0]);try{nzCopy(offGet,ctx,FOFF);}catch(e){}}return RA(f,copy,arguments);}catch(error){return RA(PR,$Promise,[error]);}
  });
 }`;
 
@@ -387,29 +426,42 @@ const WEBGPU_INFO = `if(c.webgpuInfo&&typeof GPUAdapterInfo!=='undefined'){try{
 }catch(e){}}`;
 
 const CLIENT_RECTS = `if(c.clientRectsNoise){
-  keep(Element.prototype,'getBoundingClientRect',f=>function(){return noiseRect(f.call(this));});
-  keep(Element.prototype,'getClientRects',f=>function(){return noiseRectList(f.call(this));});
+  // ClientRects noise moves the values of the rects the browser returned, in place. DOMRectList holds
+  // mutable DOMRect objects, so indexing, item(), descriptors, iteration and the native methods all
+  // read the same noised numbers and the list stays a real DOMRectList (audit 2026-11-08: a Proxy
+  // over the list leaked the real values through descriptors and broke native item/length).
+  const rg={x:getter(DOMRect.prototype,'x'),y:getter(DOMRect.prototype,'y'),w:getter(DOMRect.prototype,'width'),h:getter(DOMRect.prototype,'height')};
+  const rs={x:setter(DOMRect.prototype,'x'),y:setter(DOMRect.prototype,'y'),w:setter(DOMRect.prototype,'width'),h:setter(DOMRect.prototype,'height')};
+  const listLen=getter(DOMRectList.prototype,'length');
+  const rectOk=rg.x&&rg.y&&rg.w&&rg.h&&rs.x&&rs.y&&rs.w&&rs.h&&listLen;
+  const noiseRect=(r)=>{if(!r)return r;
+    const x=rg.x(r),y=rg.y(r),w=rg.w(r),h=rg.h(r);const d=H(mround(x*100),mround(y*100))*0.04-0.02;
+    rs.x(r,x+d);rs.y(r,y+d);rs.w(r,w+d*0.5);rs.h(r,h+d*0.5);return r};
+  const noiseRectList=(list)=>{if(list){const n=listLen(list);for(let i=0;i<n;i++)noiseRect(list[i]);}return list};
+  if(rectOk){
+  keep(Element.prototype,'getBoundingClientRect',f=>function(){return noiseRect(RA(f,this,[]));});
+  keep(Element.prototype,'getClientRects',f=>function(){return noiseRectList(RA(f,this,[]));});
   if(typeof Range!=='undefined'){
-    keep(Range.prototype,'getBoundingClientRect',f=>function(){return noiseRect(f.call(this));});
-    keep(Range.prototype,'getClientRects',f=>function(){return noiseRectList(f.call(this));});
-  }
+    keep(Range.prototype,'getBoundingClientRect',f=>function(){return noiseRect(RA(f,this,[]));});
+    keep(Range.prototype,'getClientRects',f=>function(){return noiseRectList(RA(f,this,[]));});
+  }}
 }`;
 
 const AUDIO = `if(c.audioNoise){
   if(typeof AnalyserNode!=='undefined'){
-    keep(AnalyserNode.prototype,'getFloatFrequencyData',f=>function(a){f.call(this,a);for(let i=0;i<a.length;i++)if(isFinite(a[i]))a[i]+=(H(i,0)-0.5)*1e-7;});
-    keep(AnalyserNode.prototype,'getByteFrequencyData',f=>function(a){f.call(this,a);for(let i=0;i<a.length;i++)if(a[i]>1&&H(i,1)<0.1)a[i]^=1;});
+    keep(AnalyserNode.prototype,'getFloatFrequencyData',f=>function(a){RA(f,this,arguments);for(let i=0;i<a.length;i++)if($isFinite(a[i]))a[i]+=(H(i,0)-0.5)*1e-7;});
+    keep(AnalyserNode.prototype,'getByteFrequencyData',f=>function(a){RA(f,this,arguments);for(let i=0;i<a.length;i++)if(a[i]>1&&H(i,1)<0.1)a[i]^=1;});
   }
   if(typeof AudioBuffer!=='undefined'){
-    const seen=new WeakMap();
+    const seen=new $WeakMap();
     const original=AudioBuffer.prototype.getChannelData;
     const brand=brandOf(AudioBuffer.prototype,'length');
-    const apply=(buffer,ch)=>{let channels=seen.get(buffer);if(!channels){channels=new Set();seen.set(buffer,channels);}const data=original.call(buffer,ch);const n=ch>>>0;if(!channels.has(n)){for(let i=0;i<data.length;i+=100)if(data[i]!==0&&data[i]===data[i])data[i]*=1+(H(i,n)-0.5)*1e-4;channels.add(n);}return data;};
+    const apply=(buffer,ch)=>{let channels=wmGet(seen,buffer);if(!channels){channels=new $Set();wmSet(seen,buffer,channels);}const data=RA(original,buffer,[ch]);const n=ch>>>0;if(!setHas(channels,n)){for(let i=0;i<data.length;i+=100)if(data[i]!==0&&data[i]===data[i])data[i]*=1+(H(i,n)-0.5)*1e-4;setAdd(channels,n);}return data;};
     keep(AudioBuffer.prototype,'getChannelData',f=>function(ch){
-      if(arguments.length<1||!brand)return f.apply(this,arguments);brand.call(this);if(nzOdd(ch))return f.call(this,ch);return apply(this,+ch);});
+      if(arguments.length<1||!brand)return RA(f,this,arguments);RA(brand,this,[]);if(nzOdd(ch))return RA(f,this,[ch]);return apply(this,+ch);});
     keep(AudioBuffer.prototype,'copyFromChannel',f=>function(dest,ch,start){
-      if(arguments.length<2||!brand)return f.apply(this,arguments);brand.call(this);if(nzOdd(ch)||nzOdd(start))return f.apply(this,arguments);
-      const n=+ch,s=arguments.length>2&&start!==undefined?+start:undefined;try{apply(this,n);}catch(e){}return s===undefined?f.call(this,dest,n):f.call(this,dest,n,s);});
+      if(arguments.length<2||!brand)return RA(f,this,arguments);RA(brand,this,[]);if(nzOdd(ch)||nzOdd(start))return RA(f,this,arguments);
+      const n=+ch,s=arguments.length>2&&start!==undefined?+start:undefined;try{apply(this,n);}catch(e){}return s===undefined?RA(f,this,[dest,n]):RA(f,this,[dest,n,s]);});
   }
 }`;
 
