@@ -74,7 +74,7 @@ export function generateBrandVersionList(seed: number, major: string, fullVersio
   brands[order[2]] = { brand: 'Google Chrome', version: major };
 
   const fullVersionList: { brand: string; version: string }[] = new Array(3);
-  fullVersionList[order[0]] = { brand: greaseBrand, version: greaseVersion };
+  fullVersionList[order[0]] = { brand: greaseBrand, version: `${greaseVersion}.0.0.0` };
   fullVersionList[order[1]] = { brand: 'Chromium', version: fullVersion };
   fullVersionList[order[2]] = { brand: 'Google Chrome', version: fullVersion };
 

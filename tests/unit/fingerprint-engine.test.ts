@@ -125,7 +125,8 @@ describe('client hints coherence', () => {
     const metadata = metadataFor(uaForOs('windows11', '157.0.0.1'), 'windows11', '157.0.6000.1')!;
     // 157: seed=157, grease="Not-A.Brand", version="99", order=[0, 2, 1]
     expect(metadata.brands).toContainEqual({ brand: 'Not-A.Brand', version: '99' });
-    expect(metadata.fullVersionList).toContainEqual({ brand: 'Not-A.Brand', version: '99' });
+    // Chrome reports the GREASE entry of the full version list with a full-form version (measured on 157).
+    expect(metadata.fullVersionList).toContainEqual({ brand: 'Not-A.Brand', version: '99.0.0.0' });
     expect(metadata.fullVersionList).toContainEqual({ brand: 'Chromium', version: '157.0.6000.1' });
   });
 
