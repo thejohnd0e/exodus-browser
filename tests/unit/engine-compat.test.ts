@@ -2,7 +2,7 @@ import {it,expect,vi} from 'vitest';
 import {createHash} from 'node:crypto';
 import {mkdir,writeFile,readdir,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {engineCompatibility,assertEngineReplaceable,SUPPORTED_CHROME_MAJORS} from '../../src/main/engines/compat';
+import {canActivateEngine,engineCompatibility,assertEngineReplaceable,SUPPORTED_CHROME_MAJORS} from '../../src/main/engines/compat';
 import {EngineInstaller} from '../../src/main/engines/installation';
 import {installBrandedEngine,removeOtherBrandedVersions} from '../../src/main/engines/branded';
 import {tempRoot,cleanup} from '../fixtures/profiles';
@@ -78,4 +78,30 @@ it('refuses to replace a working engine while profiles or maintenance are active
   expect(()=>assertEngineReplaceable('ready',false)).not.toThrow();
   expect(()=>assertEngineReplaceable('missing',true)).not.toThrow();
   expect(()=>assertEngineReplaceable('unsupported',true)).not.toThrow();
+});
+
+it('replaces a working engine only with a tested version',()=>{
+  const supported={state:'ready' as const,source:'branded' as const,compatibility:'supported' as const};
+  expect(canActivateEngine(supported,`${max}.0.1.1`)).toBe(true);
+  expect(canActivateEngine(supported,`${max+1}.0.1.1`)).toBe(false);
+  expect(canActivateEngine({...supported,compatibility:'newer'},`${max+2}.0.1.1`)).toBe(false);
+  // Nothing installed, a linked browser, or an engine already below the tested range: any version is better than none.
+  expect(canActivateEngine({state:'missing'},`${max+1}.0.1.1`)).toBe(true);
+  expect(canActivateEngine({state:'ready',source:'external'},`${max+1}.0.1.1`)).toBe(true);
+  expect(canActivateEngine({...supported,compatibility:'older'},`${max+1}.0.1.1`)).toBe(true);
+});
+
+it('remembers the newest version known when the engine was installed',async()=>{
+  const root=tempRoot();
+  try{
+    const exe=join(root,'branded','157.0.8103.51','Chrome-bin','chrome.exe');
+    await mkdir(join(root,'branded','157.0.8103.51','Chrome-bin'),{recursive:true});await writeFile(exe,'fake chrome');
+    const sha256=createHash('sha256').update('fake chrome').digest('hex');
+    const installer=new EngineInstaller(root,async()=>{});
+    await writeFile(join(root,'branded.json'),JSON.stringify({version:'157.0.8103.51',executable:exe,sha256}));
+    expect(await installer.offeredAtInstall()).toBeNull();
+    await writeFile(join(root,'branded.json'),JSON.stringify({version:'157.0.8103.51',executable:exe,sha256,latestSeen:'157.0.8103.79'}));
+    expect(await installer.offeredAtInstall()).toBe('157.0.8103.79');
+    expect((await installer.status()).version).toBe('157.0.8103.51');
+  }finally{cleanup(root);}
 });

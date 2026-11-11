@@ -7,6 +7,7 @@ import {pipeline} from 'node:stream/promises';
 import {ProfileService} from './profiles/service';
 import {SecretStore} from './security/secrets';
 import {EngineInstaller,type EngineRelease} from './engines/installation';
+import {LatestEngineVersion,withLatest} from './engines/latest';
 import type {EngineStatus} from '../shared/contracts';
 import {ChromiumAdapter} from './engines/chromium';
 import {gpuModelsFromDevices,gpuVendorsFromDevices} from './engines/gpu-vendor';
@@ -41,6 +42,7 @@ if(process.env.LOCAL_PROFILES_DATA&&!app.isPackaged)app.setPath('userData',proce
 if(!app.requestSingleInstanceLock())app.quit();
 else void app.whenReady().then(async()=>{
   const root=app.getPath('userData');const secrets=new SecretStore(safeStorage);const profiles=new ProfileService(root,secrets);
+  const latestEngine=new LatestEngineVersion();
   const installer=new EngineInstaller(join(root,'engine'),async(url,destination,onBytes)=>{
     const response=await net.fetch(url,{signal:AbortSignal.timeout(600000)});if(!response.ok||!response.body)throw Error('ENGINE_DOWNLOAD_FAILED');
     const total=Number(response.headers.get('content-length')??0)||null;
@@ -112,21 +114,24 @@ else void app.whenReady().then(async()=>{
       onState:state=>{if(!win.isDestroyed())win.webContents.send('app:update-state',state);},
     });
     // Opt-in only (DECISIONS #71): with the option off nothing is scheduled and no request is made.
-    const updateScheduler=new UpdateScheduler({store:new FileCheckTimeStore(root),check:()=>update.check({background:true})});
+    // Both checks run together: the application release and the newest Chrome (DECISIONS #92).
+    const updateScheduler=new UpdateScheduler({store:new FileCheckTimeStore(root),check:()=>Promise.allSettled([update.check({background:true}),latestEngine.check()])});
     await updateScheduler.setEnabled(initialSettings.autoCheckUpdates===true);
   const dispatcher=createDispatcher({
     list:()=>profiles.list(),create:input=>profiles.create(input),update:(id,input)=>supervisor.withStopped(id,()=>profiles.update(id,input)),
        remove:async id=>{await supervisor.withStopped(id,async()=>{await profiles.remove(id);await sessions.remove(id).catch(()=>undefined);});},
     start:id=>supervisor.start(id),stop:id=>supervisor.stop(id),states:async()=>supervisor.states(),warnings:async()=>supervisor.warnings(),protectionIssues:async()=>supervisor.protectionIssues(),engineStatus:async()=>{
        const status=await installer.status();
-       const merged:EngineStatus=engineInstall?{...status,state:'installing',progress:engineInstall}:status;
+       const merged:EngineStatus=engineInstall?{...status,state:'installing',progress:engineInstall}:withLatest(status,latestEngine.value(),await installer.offeredAtInstall());
        return {...merged,hostGpuVendors:(await hostGpuVendors)?.vendors,hostGpuModels:(await hostGpuVendors)?.models};
      },
     installEngine:async()=>{
       // Replacing a working engine needs every profile browser and maintenance operation stopped; nothing is closed for the user (DECISIONS #72).
       assertEngineReplaceable((await installer.status()).state,supervisor.hasActiveWork()||cookies.hasActiveWork()||portable.hasActiveWork());
       engineInstall={stage:'download',received:0,total:null};
-      try{await installer.installBranded(resolveSevenZip(),progress=>{engineInstall=progress;});}
+      // Remember what the newest version is now: Google's installer can lag behind it (DECISIONS #92).
+      await latestEngine.check();
+      try{await installer.installBranded(resolveSevenZip(),progress=>{engineInstall=progress;},undefined,latestEngine.value());}
       finally{engineInstall=null;}
     },
     linkEngine:async()=>{
@@ -146,7 +151,7 @@ else void app.whenReady().then(async()=>{
       updateExtension:async extensionId=>{if(extensions.list().find(entry=>entry.id===extensionId)?.source==='store')return extensions.updateFromStore(extensionId);const r=await dialog.showOpenDialog(win,{title:nativeMessage('extension.choose.folder',currentLanguage),properties:['openDirectory']});return r.canceled||!r.filePaths[0]?null:extensions.updateFromFolder(extensionId,r.filePaths[0]);},
       addExtensionFromStore:async link=>extensions.addFromStore(link),
       removeExtension:async extensionId=>{await extensions.remove(extensionId);},
-      getUpdateState:async()=>update.state(),checkForUpdate:()=>update.check(),downloadUpdate:()=>update.download(),cancelUpdate:()=>update.cancel(),
+      getUpdateState:async()=>update.state(),checkForUpdate:async()=>{const [state]=await Promise.all([update.check(),latestEngine.check()]);return state;},downloadUpdate:()=>update.download(),cancelUpdate:()=>update.cancel(),
       installUpdate:async()=>{await update.install();await finishShutdown();},
       getSettings:()=>settings.getSettings(),updateSettings:async input=>{const value=await settings.updateSettings(input);currentLanguage=value.language;tray.setEnabled(value.minimizeToTray===true);await updateScheduler.setEnabled(value.autoCheckUpdates===true);return value;},
       agentApiStatus:async()=>agentApi.status(),

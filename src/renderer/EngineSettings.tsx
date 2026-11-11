@@ -17,6 +17,11 @@ export function EngineSettings({status,busy,onInstall}:{status:EngineStatus;busy
     <span className="engine-warning">{t('engine.older',{min:String(status.supportedMajors?.min??''),max:String(status.supportedMajors?.max??'')})}</span>
     <button type="button" disabled={busy} onClick={onInstall}>{t('engine.update')}</button>
   </>}
+  {status.compatibility!=='older'&&status.latestVersion&&status.latestCompatibility==='supported'&&<>
+    <span className="engine-warning">{t('engine.latest',{version:status.latestVersion})}</span>
+    <button type="button" disabled={busy} onClick={onInstall}>{t('engine.update')}</button>
+  </>}
+  {status.compatibility!=='older'&&status.latestVersion&&status.latestCompatibility!=='supported'&&<span className="engine-warning">{t('engine.latest.untested',{version:status.latestVersion})}</span>}
   {status.compatibility==='newer'&&<span className="engine-warning">{t('engine.newer',{min:String(status.supportedMajors?.min??''),max:String(status.supportedMajors?.max??'')})}</span>}
   </div>;
   return <div className="engine"><div><strong>{t('Browser not installed')}</strong><p>{t('Download Google Chrome once. Profiles run on it; your personal browser is not used.')}</p></div><div className="engine-actions"><button className="primary" disabled={busy} onClick={onInstall}>{t('Download Google Chrome')}</button></div></div>;

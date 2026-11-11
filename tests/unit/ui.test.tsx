@@ -72,6 +72,22 @@ it('only notes, and offers no update, for a Chrome newer than tested or a suppor
   expect(screen.queryByText(/tested with Chrome/)).toBeNull();expect(screen.queryByText(/Newer than tested/)).toBeNull();
   expect(screen.queryByRole('button',{name:'Update Google Chrome'})).toBeNull();
 });
+it('offers a tested newer Chrome, and only mentions an untested one',async()=>{
+  const installEngine=vi.fn<ProfileApi['installEngine']>(async()=>({ok:true,value:undefined}));
+  const base={state:'ready' as const,version:'157.0.8103.39',source:'branded' as const,compatibility:'supported' as const,supportedMajors:{min:156,max:158}};
+  const tested=async()=>({ok:true as const,value:{...base,latestVersion:'157.0.8103.79',latestCompatibility:'supported' as const}});
+  const {unmount}=render(<App api={api({engineStatus:tested,installEngine})}/>);await screen.findByText('Work');
+  expect(await screen.findByText('Google Chrome 157.0.8103.79 is available.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Update Google Chrome'}));
+  expect(installEngine).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button',{name:'Download'}));
+  await waitFor(()=>expect(installEngine).toHaveBeenCalledTimes(1));
+  unmount();
+  const untested=async()=>({ok:true as const,value:{...base,latestVersion:'159.0.1.1',latestCompatibility:'newer' as const}});
+  render(<App api={api({engineStatus:untested})}/>);await screen.findByText('Work');
+  expect(await screen.findByText(/159.0.1.1 is available but has not been tested/)).toBeTruthy();
+  expect(screen.queryByRole('button',{name:'Update Google Chrome'})).toBeNull();
+});
 it('closes language choices with Escape and returns focus to the trigger',async()=>{
   render(<App api={api()}/>);await screen.findByText('Work');
   const trigger=screen.getByRole('button',{name:'Interface language'});

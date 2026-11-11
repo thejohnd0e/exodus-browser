@@ -9,7 +9,8 @@ export const BRANDED_ENGINE_URL='https://dl.google.com/dl/chrome/install/googlec
 const MIN_ARCHIVE_BYTES=50*1024**2;
 const MAX_ARCHIVE_BYTES=400*1024**2;
 
-export type BrandedEngineRecord={version:string;executable:string;sha256:string};
+/** `latestSeen` is the newest stable version known when this engine was installed (see `withLatest`). */
+export type BrandedEngineRecord={version:string;executable:string;sha256:string;latestSeen?:string};
 
 export type BrandedDeps={
   download:(url:string,destination:string,onBytes?:(received:number,total:number|null)=>void)=>Promise<void>;
@@ -17,6 +18,8 @@ export type BrandedDeps={
   run?:(executable:string,args:string[])=>Promise<void>;
   verify?:(executable:string)=>Promise<{trusted:boolean;version:string|null}>;
   onProgress?:(progress:{stage:'download'|'extract'|'verify';received?:number;total?:number|null})=>void;
+  /** Called with the unpacked version before anything is activated; false discards the download. */
+  accept?:(version:string)=>boolean;
 };
 
 async function sha256File(file:string){
@@ -95,6 +98,7 @@ export async function installBrandedEngine(root:string,deps:BrandedDeps):Promise
     if(!trusted)throw Error('ENGINE_UNTRUSTED');
     const resolved=version??versionFromName;
     if(!resolved)throw Error('ENGINE_UNTRUSTED');
+    if(deps.accept&&!deps.accept(resolved))throw Error('ENGINE_UNTESTED');
 
     const destination=join(root,'branded',resolved);
     await rm(destination,{recursive:true,force:true});

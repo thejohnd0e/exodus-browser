@@ -4,7 +4,7 @@ import {basename,join} from 'node:path';
 import {createReadStream} from 'node:fs';
 import {extractArchive} from '../backups/archive';
 import {installBrandedEngine,removeOtherBrandedVersions,type BrandedDeps,type BrandedEngineRecord} from './branded';
-import {engineCompatibility,SUPPORTED_CHROME_MAJORS} from './compat';
+import {canActivateEngine,engineCompatibility,SUPPORTED_CHROME_MAJORS} from './compat';
 import type {EngineStatus} from '../../shared/contracts';
 export type EngineRelease={version:string;url:string;sha256:string};
 export type Download=(url:string,destination:string,onBytes?:(received:number,total:number|null)=>void)=>Promise<void>;
@@ -25,6 +25,8 @@ export class EngineInstaller {
       return record;
     }catch{return null;}
   }
+  /** The newest stable version that was known when the managed engine was installed, if it was recorded. */
+  async offeredAtInstall():Promise<string|null>{return (await this.branded())?.latestSeen??null;}
   async resolveExecutable(){
     const branded=await this.branded();
     if(branded)return branded.executable;
@@ -56,13 +58,15 @@ export class EngineInstaller {
    * the engine directory. Nothing is installed system-wide; the browser is only used by
    * this application, so users do not need Chrome on the machine.
    */
-  async installBranded(sevenZip:string,onProgress?:BrandedDeps['onProgress'],verify?:BrandedDeps['verify']):Promise<BrandedEngineRecord>{
+  async installBranded(sevenZip:string,onProgress?:BrandedDeps['onProgress'],verify?:BrandedDeps['verify'],latestSeen?:string|null):Promise<BrandedEngineRecord>{
     if(this.installing)throw Error('ENGINE_INSTALLING');
     this.installing=true;
     try{
       await mkdir(this.root,{recursive:true});
-      const record=await installBrandedEngine(this.root,{download:this.download,sevenZip,verify,onProgress});
+      const current=await this.status();
+      const record=await installBrandedEngine(this.root,{download:this.download,sevenZip,verify,onProgress,accept:version=>canActivateEngine(current,version)});
       await removeOtherBrandedVersions(this.root,record.version);
+      if(latestSeen){record.latestSeen=latestSeen;await writeFile(this.brandedRecord,JSON.stringify(record));}
       return record;
     }finally{this.installing=false;}
   }

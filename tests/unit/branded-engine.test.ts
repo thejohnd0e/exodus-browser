@@ -87,3 +87,16 @@ it('ignores a branded record whose binary was replaced',async()=>{
     expect((await installer.status()).state).toBe('missing');
   }finally{cleanup(root);}
 },30000);
+
+it('discards an unpacked version that is not accepted and activates nothing',async()=>{
+  const root=tempRoot();
+  try{
+    await mkdir(join(root,'branded','156.0.1.1'),{recursive:true});
+    await writeFile(join(root,'branded.json'),JSON.stringify({version:'156.0.1.1',executable:'x',sha256:'y'}));
+    const accept=vi.fn(()=>false);
+    await expect(installBrandedEngine(root,{download:await fakeDownload(),sevenZip:'7za',run:fakeExtractor(),verify:async()=>({trusted:true,version:'159.0.1.1'}),accept})).rejects.toThrow('ENGINE_UNTESTED');
+    expect(accept).toHaveBeenCalledWith('159.0.1.1');
+    expect(JSON.parse(await readFile(join(root,'branded.json'),'utf8')).version).toBe('156.0.1.1');
+    await expect(stat(join(root,'branded','159.0.1.1'))).rejects.toThrow();
+  }finally{cleanup(root);}
+},30000);

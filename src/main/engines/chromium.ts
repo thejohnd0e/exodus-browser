@@ -12,7 +12,19 @@ import {CdpClient} from '../cdp/client';
 import {waitForDevtools} from './devtools';
 import {installFingerprint,diagnoseFailure} from '../cdp/fingerprint';
 import {SessionTracker} from '../sessions/tracker';
-export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerprint??DEFAULT_FINGERPRINT;return [
+/**
+ * Chrome honours only the last `--disable-features` switch, so every feature to turn off goes into one.
+ * `OutdatedBuildDetector` hides the "Turn on autoupdate" / "Relaunch to update" prompt that a build with
+ * no updater would show once it ages; updates are Exodus's job (DECISIONS #92), not the browser's.
+ */
+export function mergeDisabledFeatures(args:string[],extra:string[]):string[]{
+  const prefix='--disable-features=';
+  const features=new Set<string>(extra);
+  const rest=args.filter(arg=>{if(!arg.startsWith(prefix))return true;for(const name of arg.slice(prefix.length).split(','))if(name)features.add(name);return false;});
+  const at=rest.length-1;// before the start URL
+  return [...rest.slice(0,at),prefix+[...features].join(','),...rest.slice(at)];
+}
+export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerprint??DEFAULT_FINGERPRINT;return mergeDisabledFeatures([
   '--user-data-dir='+input.userDataDir,'--lang='+input.languages[0],'--no-first-run','--no-default-browser-check','--hide-crash-restore-bubble','--remote-debugging-pipe','--disable-blink-features=AutomationControlled','--test-type','--disable-infobars',
   ...(input.proxyUrl?['--proxy-server='+input.proxyUrl,'--proxy-bypass-list=<-loopback>']:[]),
   ...fingerprintArgs(fingerprint,{proxied:Boolean(input.proxyUrl),hostWorkArea:input.hostWorkArea}),
@@ -22,7 +34,7 @@ export function chromiumArgs(input:EngineLaunch){const fingerprint=input.fingerp
   // so the network service dies. Honored only inside vitest, never in the packaged application.
   ...(process.env.VITEST&&process.env.EXODUS_TEST_NO_SANDBOX==='1'?['--no-sandbox']:[]),
   'about:blank'
-];}
+],['OutdatedBuildDetector']);}
 export async function prepareProfilePreferences(input:{userDataDir:string;languages:string[]}){
   const languages=languagesSchema.parse(input.languages);const dir=join(input.userDataDir,'Default');
   try{const info=await lstat(dir);if(info.isSymbolicLink()||!info.isDirectory())throw Error('UNSAFE_PROFILE_FILE');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
