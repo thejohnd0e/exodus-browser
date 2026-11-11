@@ -20,7 +20,7 @@
   "dependencies": {
     "better-sqlite3": "13.0.3",
     "ipaddr.js": "2.2.0",
-    "maxmind": "5.0.7",
+    "maxmind": "5.0.8",
     "proxy-chain": "3.0.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
