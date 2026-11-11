@@ -21,6 +21,8 @@ type Writer = {
   stop(id: string): Promise<void>;
   states(): Record<string, ProfileState>;
   engineVersion(): Promise<string | null>;
+  /** Optional facts about this computer that make a generated fingerprint fit it. */
+  hostHints?(): Promise<{ hostGpuVendors?: readonly string[]; hostGpuModels?: readonly string[]; hostScreen?: { width: number; height: number } }>;
   browser(id: string): EngineBrowser | null;
 };
 

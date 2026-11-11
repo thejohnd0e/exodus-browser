@@ -110,7 +110,7 @@ export async function installFingerprint(client: CdpClient, options: InstallOpti
     : options.engineUserAgent
       ? (options.engineVersion ? uaForOs(fingerprint.os, options.engineVersion) : reduceUserAgent(options.engineUserAgent))
       : '';
-  const metadata = effectiveUa ? metadataFor(fingerprint.userAgent ?? effectiveUa, fingerprint.os, options.engineVersion ?? options.engineUserAgent) : null;
+  const metadata = effectiveUa ? metadataFor(fingerprint.userAgent ?? effectiveUa, fingerprint.os, options.engineVersion ?? options.engineUserAgent, fingerprint.webglInfo.mode === 'manual' ? fingerprint.webglInfo.renderer : undefined) : null;
   // A document that loaded before the overrides existed only needs a reload or an in-place patch
   // when something is overridden. With nothing overridden the real document is already correct,
   // and a reload would send one-shot URLs (magic links, OAuth callbacks) a second time.

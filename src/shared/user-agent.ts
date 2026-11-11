@@ -81,7 +81,11 @@ export function generateBrandVersionList(seed: number, major: string, fullVersio
   return { brands, fullVersionList };
 }
 
-export function metadataFor(ua: string, os: FingerprintOs, engineVersionOrUserAgent?: string): UserAgentMetadata {
+/**
+ * `renderer` is the WebGL renderer the profile reports, when it sets one. On macOS the CPU architecture
+ * follows the graphics card: Apple silicon has an Apple GPU, an Intel Mac an Intel or AMD one.
+ */
+export function metadataFor(ua: string, os: FingerprintOs, engineVersionOrUserAgent?: string, renderer?: string): UserAgentMetadata {
   const engineFull = engineVersionOrUserAgent && (/Chrome\/([\d.]+)/.exec(engineVersionOrUserAgent)?.[1] ?? (/^\d+(\.\d+)+$/.test(engineVersionOrUserAgent) ? engineVersionOrUserAgent : null));
   const engineMajor = engineFull?.split('.')[0] ?? chromeMajorOf(engineVersionOrUserAgent);
   const major = chromeMajorOf(ua) ?? engineMajor ?? '156';
@@ -96,7 +100,7 @@ export function metadataFor(ua: string, os: FingerprintOs, engineVersionOrUserAg
     fullVersion: full,
     platform: platformByOs[os],
     platformVersion: platformVersionByOs[os],
-    architecture: os === 'macos' ? 'arm' : 'x86',
+    architecture: os === 'macos' && (!renderer || /apple/i.test(renderer)) ? 'arm' : 'x86',
     model: '',
     mobile: false,
     bitness: '64',
@@ -105,7 +109,8 @@ export function metadataFor(ua: string, os: FingerprintOs, engineVersionOrUserAg
   };
 }
 
-export interface GpuPreset { vendor: string; renderer: string }
+/** `cores` and `memoryGb` are the hardware that machines with this graphics card really have. */
+export interface GpuPreset { vendor: string; renderer: string; cores?: readonly number[]; memoryGb?: readonly (0.5 | 1 | 2 | 4 | 8)[] }
 
 export const gpuByOs: Record<'windows' | 'macos' | 'linux', readonly GpuPreset[]> = {
   windows: [
@@ -122,8 +127,8 @@ export const gpuByOs: Record<'windows' | 'macos' | 'linux', readonly GpuPreset[]
     { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)' },
   ],
   macos: [
-    { vendor: 'Apple', renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)' },
-    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)' },
+    { vendor: 'Apple', renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)', cores: [8], memoryGb: [8] },
+    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)', cores: [4, 8], memoryGb: [8] },
   ],
   linux: [
     { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CML GT2), OpenGL 4.6 (Core Profile) Mesa 23.0.4)' },
@@ -133,7 +138,9 @@ export const gpuByOs: Record<'windows' | 'macos' | 'linux', readonly GpuPreset[]
 
 export const screensByOs: Record<'windows' | 'macos' | 'linux', readonly (readonly [number, number])[]> = {
   windows: [[1920, 1080], [2560, 1440], [1536, 864], [1680, 1050], [1366, 768]],
-  macos: [[1512, 982], [1728, 1117], [1440, 900], [1920, 1080]],
+  // Laptop panels (1512x982, 1728x1117, 1440x900) exist only at a device pixel ratio of 2; a profile whose
+  // window shows a ratio of 1 would contradict them, so only sizes of external displays are listed.
+  macos: [[1920, 1080], [2560, 1440]],
   linux: [[1920, 1080], [2560, 1440], [1600, 900], [1366, 768]],
 };
 

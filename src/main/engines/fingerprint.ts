@@ -9,10 +9,17 @@ import { reduceUserAgent } from '../../shared/user-agent';
  */
 export const WEBRTC_IP_HANDLING_SWITCH = '--webrtc-ip-handling-policy';
 
-export function fingerprintArgs(fingerprint: Fingerprint, options: { proxied?: boolean } = {}): string[] {
+export function fingerprintArgs(fingerprint: Fingerprint, options: { proxied?: boolean; hostWorkArea?: { width: number; height: number } } = {}): string[] {
   const args: string[] = [];
   if (fingerprint.userAgent) args.push('--user-agent=' + reduceUserAgent(fingerprint.userAgent));
-  if (fingerprint.screen.mode === 'manual') args.push(`--window-size=${fingerprint.screen.width},${fingerprint.screen.height}`);
+  // Chrome does not hold a window to the display: a 3840 px wide window opened on a 2560 px display. The
+  // window is therefore never larger than the host work area, whatever screen the profile reports.
+  if (fingerprint.screen.mode === 'manual') {
+    const area = options.hostWorkArea;
+    const width = area ? Math.min(fingerprint.screen.width, area.width) : fingerprint.screen.width;
+    const height = area ? Math.min(fingerprint.screen.height, area.height) : fingerprint.screen.height;
+    args.push(`--window-size=${width},${height}`);
+  }
   // With a proxy, non-proxied UDP (STUN) would reveal the real IP, so the policy applies even in Real mode.
   if (fingerprint.webRtc !== 'real' || options.proxied) args.push(`${WEBRTC_IP_HANDLING_SWITCH}=disable_non_proxied_udp`);
   // WebGPU Off stops Chrome's WebGPU service, so navigator.gpu stays (as in Chrome on a machine without

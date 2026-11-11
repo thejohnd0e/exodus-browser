@@ -147,3 +147,69 @@ describe('form factors', () => {
       expect(metadataFor(uaForOs(os, '157.0.8103.39'), os, '157.0.8103.39').formFactors).toEqual(['Desktop']);
   });
 });
+
+describe('generated fingerprints fit the host', () => {
+  const generate = (os: 'windows11' | 'macos' | 'linux', hostScreen?: { width: number; height: number }, random = () => 0) =>
+    newFingerprint({ os, chromeVersion: '157.0.8103.39', random, hostScreen });
+
+  it('never reports a screen smaller than the host display', () => {
+    for (const os of ['windows11', 'macos', 'linux'] as const) {
+      for (let step = 0; step < 10; step++) {
+        const fp = generate(os, { width: 2560, height: 1440 }, () => step / 10);
+        if (fp.screen.mode === 'manual') {
+          expect(fp.screen.width).toBeGreaterThanOrEqual(2560);
+          expect(fp.screen.height).toBeGreaterThanOrEqual(1440);
+        }
+      }
+    }
+  });
+
+  it('keeps a smaller catalog entry when the host display is that small', () => {
+    const sizes = new Set<string>();
+    for (let step = 0; step < 20; step++) {
+      const fp = generate('windows11', { width: 1366, height: 768 }, () => step / 20);
+      if (fp.screen.mode === 'manual') sizes.add(`${fp.screen.width}x${fp.screen.height}`);
+    }
+    expect(sizes.has('1366x768')).toBe(true);
+  });
+
+  it('keeps the real screen when no catalog entry covers the host display', () => {
+    expect(generate('windows11', { width: 3840, height: 2160 }).screen).toEqual({ mode: 'real' });
+  });
+
+  it('macOS screens are sizes that exist at a device pixel ratio of 1', () => {
+    const sizes = new Set<string>();
+    for (let step = 0; step < 20; step++) {
+      const fp = generate('macos', undefined, () => step / 20);
+      if (fp.screen.mode === 'manual') sizes.add(`${fp.screen.width}x${fp.screen.height}`);
+    }
+    expect([...sizes].sort()).toEqual(['1920x1080', '2560x1440']);
+  });
+
+  it('hardware follows the graphics preset', () => {
+    const fp = generate('macos', undefined, () => 0);
+    expect(fp.webglInfo).toMatchObject({ mode: 'manual', renderer: expect.stringContaining('Apple M2') });
+    expect(fp.hardware).toEqual({ mode: 'manual', cores: 8, memoryGb: 8 });
+  });
+});
+
+describe('Client Hints architecture follows the graphics card', () => {
+  const ua = uaForOs('macos', '157.0.8103.39');
+  it('Apple GPU means arm, an Intel or AMD GPU means x86, unknown stays arm', () => {
+    expect(metadataFor(ua, 'macos', '157.0.8103.39', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)').architecture).toBe('arm');
+    expect(metadataFor(ua, 'macos', '157.0.8103.39', 'ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)').architecture).toBe('x86');
+    expect(metadataFor(ua, 'macos', '157.0.8103.39').architecture).toBe('arm');
+    expect(metadataFor(uaForOs('windows11', '157.0.8103.39'), 'windows11', '157.0.8103.39', 'ANGLE (NVIDIA, x)').architecture).toBe('x86');
+  });
+});
+
+describe('window size', () => {
+  const manual = { ...DEFAULT_FINGERPRINT, screen: { mode: 'manual' as const, width: 3840, height: 2160 } };
+  it('opens the window at the reported screen size', () => {
+    expect(fingerprintArgs(manual)).toContain('--window-size=3840,2160');
+  });
+  it('never opens a window larger than the host work area', () => {
+    expect(fingerprintArgs(manual, { hostWorkArea: { width: 2560, height: 1400 } })).toContain('--window-size=2560,1400');
+    expect(fingerprintArgs({ ...manual, screen: { mode: 'manual', width: 1366, height: 768 } }, { hostWorkArea: { width: 2560, height: 1400 } })).toContain('--window-size=1366,768');
+  });
+});

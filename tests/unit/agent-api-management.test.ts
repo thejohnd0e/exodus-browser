@@ -131,3 +131,15 @@ it('routes upload and press to the browser controller and maps their failures', 
   await expect(management.dispatch(identity, 'POST', base + 'press', { key: 'Nope' })).rejects.toMatchObject({ status: 409, code: 'OPTION_NOT_FOUND' });
   await expect(management.dispatch(identity, 'POST', '/api/v1/profiles/hidden/tabs/t1/press', { key: 'Enter' })).rejects.toMatchObject({ status: 404 });
 });
+
+it('generates fingerprints that fit the host the manager reports', async () => {
+  const profile = { list: async () => [], listProxies: () => [] };
+  const make = (hostScreen: { width: number; height: number }) => new AgentManagement(profile, {
+    create: async input => input as never, start: async () => undefined, stop: async () => undefined, states: () => ({}),
+    grantProfile: async () => undefined, engineVersion: async () => '157.0.8103.39', hostHints: async () => ({ hostScreen }),
+  });
+  const tall = await make({ width: 3840, height: 2160 }).dispatch(identity, 'POST', '/api/v1/fingerprints', { os: 'windows11' }) as any;
+  expect(tall.screen).toEqual({ mode: 'real' });
+  const fits = await make({ width: 2560, height: 1440 }).dispatch(identity, 'POST', '/api/v1/fingerprints', { os: 'windows11' }) as any;
+  expect(fits.screen).toEqual({ mode: 'manual', width: 2560, height: 1440 });
+});

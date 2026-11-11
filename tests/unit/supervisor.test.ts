@@ -179,3 +179,9 @@ it('counts fingerprint installation failures per run, keeps them after stop and 
     await s.start(p.id);expect(s.protectionIssues()[p.id]).toBeUndefined();await s.stop(p.id);
   }finally{profiles.close();cleanup(root);}
 });
+
+it('tells the engine how large the host work area is',async()=>{
+  const root=tempRoot();const profiles=new ProfileService(root,testSecrets());const f=fixture();const seen:Array<unknown>=[];const base=f.engine.launch;f.engine.launch=async i=>{seen.push(i.hostWorkArea);return base(i);};
+  const s=new Supervisor(profiles,f.engine,{probe:async()=>[],hostWorkArea:()=>({width:2560,height:1400})});
+  try{const a=await profiles.create(valid);await s.start(a.id);expect(seen).toEqual([{width:2560,height:1400}]);}finally{profiles.close();cleanup(root);}
+});

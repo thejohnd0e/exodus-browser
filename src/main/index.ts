@@ -1,4 +1,4 @@
-import {app,ipcMain,dialog,safeStorage,net,clipboard,Tray,Menu,nativeImage} from 'electron';
+import {app,ipcMain,dialog,safeStorage,net,clipboard,Tray,Menu,nativeImage,screen} from 'electron';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createWriteStream,existsSync} from 'node:fs';
@@ -74,7 +74,7 @@ else void app.whenReady().then(async()=>{
   const initialSettings=await settings.getSettings();let currentLanguage=initialSettings.language;
   const tray=new TrayController({win,createTray:()=>new Tray(nativeImage.createFromPath(appIconPath())),buildMenu:items=>Menu.buildFromTemplate(items),labels:()=>({show:nativeMessage('tray.show',currentLanguage),quit:nativeMessage('tray.quit',currentLanguage),tooltip:'Exodus Browser'})});
   tray.setEnabled(initialSettings.minimizeToTray===true);
-  const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions,extensionDirectory:id=>extensions.directoryFor(id),confirmTimezone:async()=>{
+  const supervisor=new Supervisor(profiles,new ChromiumAdapter(()=>installer.resolveExecutable()),{sessions,extensionDirectory:id=>extensions.directoryFor(id),hostWorkArea:()=>screen.getPrimaryDisplay().workAreaSize,confirmTimezone:async()=>{
     if(win.isDestroyed())return false;
     const result=await dialog.showMessageBox(win,{type:'warning',buttons:[nativeMessage('cookie.clear.cancel',currentLanguage),nativeMessage('common.continue',currentLanguage)],defaultId:0,cancelId:0,noLink:true,message:nativeMessage('timezone.launch.title',currentLanguage),detail:nativeMessage('timezone.launch.detail',currentLanguage)});
     return !win.isDestroyed()&&result.response===1;
@@ -85,6 +85,8 @@ else void app.whenReady().then(async()=>{
     stop:id=>supervisor.stop(id),
     states:()=>supervisor.states(),
     engineVersion:async()=>{const status=await installer.status();return status.state==='ready'?(status.version??null):null;},
+    // What the generator needs to make a fingerprint that fits this computer (the interface does the same through the editor).
+    hostHints:async()=>{const gpu=await hostGpuVendors;const size=screen.getPrimaryDisplay().size;return {hostGpuVendors:gpu?.vendors,hostGpuModels:gpu?.models,hostScreen:{width:size.width,height:size.height}};},
     browser:id=>supervisor.browser(id),
   }});
   await agentApi.resume();

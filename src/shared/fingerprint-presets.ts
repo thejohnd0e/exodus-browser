@@ -16,7 +16,7 @@ const cardKey=(renderer:string)=>{
   return modelKey(inner.split(/ direct3d| opengl|, d3d/i)[0]);
 };
 
-export function newFingerprint(input: { os: FingerprintOs; chromeVersion: string; random: () => number; hostGpuVendors?: readonly string[]; hostGpuModels?: readonly string[] }): Fingerprint {
+export function newFingerprint(input: { os: FingerprintOs; chromeVersion: string; random: () => number; hostGpuVendors?: readonly string[]; hostGpuModels?: readonly string[]; hostScreen?: { width: number; height: number } }): Fingerprint {
   const catalog = catalogFor(input.os);
   const presets = gpuByOs[catalog];
   const families = input.hostGpuVendors ?? [];
@@ -27,7 +27,12 @@ export function newFingerprint(input: { os: FingerprintOs; chromeVersion: string
   // Optional opt-in: match the installed card exactly, which sacrifices variety for consistency.
   const exact = models.length ? matching.filter(g => models.includes(cardKey(g.renderer))) : [];
   const gpu = pick(exact.length > 0 ? exact : matching.length > 0 ? matching : presets, input.random);
-  const [width, height] = pick(screensByOs[catalog], input.random);
+  // A window can be as large as the host display, so a smaller reported screen would put the page's inner
+  // size above its screen size. Only sizes that cover the host display are offered; without one, the real
+  // screen stays.
+  const host = input.hostScreen;
+  const sizes = host ? screensByOs[catalog].filter(([w, h]) => w >= host.width && h >= host.height) : screensByOs[catalog];
+  const size = sizes.length ? pick(sizes, input.random) : null;
   return {
     os: input.os,
     userAgent: uaForOs(input.os, input.chromeVersion),
@@ -40,7 +45,7 @@ export function newFingerprint(input: { os: FingerprintOs; chromeVersion: string
     audio: 'real',
     timezone: { mode: 'auto' },
     geolocation: { mode: 'block' },
-    hardware: { mode: 'manual', cores: pick([4, 8, 12, 16], input.random), memoryGb: pick([4, 8], input.random) },
-    screen: { mode: 'manual', width, height },
+    hardware: { mode: 'manual', cores: pick(gpu.cores ?? [4, 8, 12, 16], input.random), memoryGb: pick(gpu.memoryGb ?? [4, 8], input.random) },
+    screen: size ? { mode: 'manual', width: size[0], height: size[1] } : { mode: 'real' },
   };
 }

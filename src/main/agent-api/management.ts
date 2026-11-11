@@ -15,6 +15,8 @@ type ProfileWriter = {
   states(): Record<string, ProfileState>;
   grantProfile(credentialId: string, profileId: string): Promise<void>;
   engineVersion(): Promise<string | null>;
+  /** Optional facts about this computer that make a generated fingerprint fit it. */
+  hostHints?(): Promise<{ hostGpuVendors?: readonly string[]; hostGpuModels?: readonly string[]; hostScreen?: { width: number; height: number } }>;
 };
 
 const createSchema = z.object({
@@ -151,7 +153,7 @@ export class AgentManagement {
     const input = parsed.data;
     if (input.proxyId && !identity.proxyIds.includes(input.proxyId)) throw new AgentApiError(400, 'INVALID_INPUT');
     const version = await writer.engineVersion();
-    const fingerprint = input.fingerprint ?? (version ? newFingerprint({ os: 'windows11', chromeVersion: version, random: () => randomBytes(4).readUInt32BE(0) / 0x100000000 }) : null);
+    const fingerprint = input.fingerprint ?? (version ? newFingerprint({ os: 'windows11', chromeVersion: version, random: () => randomBytes(4).readUInt32BE(0) / 0x100000000, ...(await writer.hostHints?.()) }) : null);
     if (!fingerprint) throw new AgentApiError(409, 'ENGINE_UNAVAILABLE');
     const profile = await writer.create({ ...input, fingerprint, proxyId: input.proxyId });
     await writer.grantProfile(identity.id, profile.id);
@@ -165,7 +167,7 @@ export class AgentManagement {
     if (!parsed.success) throw new AgentApiError(400, 'INVALID_INPUT');
     const version = await writer.engineVersion();
     if (!version) throw new AgentApiError(409, 'ENGINE_UNAVAILABLE');
-    return newFingerprint({ os: parsed.data.os, chromeVersion: version, random: () => randomBytes(4).readUInt32BE(0) / 0x100000000 });
+    return newFingerprint({ os: parsed.data.os, chromeVersion: version, random: () => randomBytes(4).readUInt32BE(0) / 0x100000000, ...(await writer.hostHints?.()) });
   }
 
   private proxyDto(proxy: SavedProxy, identity: AgentIdentity): SavedProxy {

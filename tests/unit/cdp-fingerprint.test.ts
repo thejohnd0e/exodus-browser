@@ -100,6 +100,19 @@ describe('installFingerprint', () => {
     expect(f.calls).not.toContain('Debugger.resume:s1');
     expect(failures).toEqual(['FINGERPRINT_UNAVAILABLE']);
   });
+  it('sends the CPU architecture that belongs to the reported graphics card', async () => {
+    const architectureFor = async (renderer: string) => {
+      const f = fake();
+      await installFingerprint(f.client, {
+        fingerprint: { ...SPOOFED, os: 'macos', userAgent: macUa, webglInfo: { mode: 'manual', vendor: 'v', renderer } },
+        languages: ['en-US'], seed: 1, engineUserAgent: windowsEngine,
+      });
+      await new Promise(r => setTimeout(r, 20));
+      return (f.params['Network.setUserAgentOverride'] as { userAgentMetadata: { architecture: string } }).userAgentMetadata.architecture;
+    };
+    expect(await architectureFor('ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)')).toBe('arm');
+    expect(await architectureFor('ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)')).toBe('x86');
+  });
   it('sets native parameters and a script for each page', async () => {
     const f = fake();
     await installFingerprint(f.client, {

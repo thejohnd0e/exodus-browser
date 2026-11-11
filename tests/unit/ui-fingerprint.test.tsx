@@ -39,18 +39,19 @@ it('generates a fingerprint using the detected host GPU vendor',()=>{
   fireEvent.click(screen.getByRole('button',{name:'New fingerprint'}));expect(onChange.mock.calls[0][0].webglInfo.vendor).toContain('AMD');}finally{vi.restoreAllMocks();}
 });
 
-it('uses the installed card only when the checkbox is enabled',()=>{
+it('uses the installed card unless the checkbox is cleared',()=>{
   const onChange=vi.fn();
   renderWithI18n(<FingerprintPanel value={DEFAULT_FINGERPRINT} disabled={false} chromeVersion="156.0.8078.80" hostGpuVendors={['NVIDIA']} hostGpuModels={['NVIDIA GeForce RTX 3060']} onChange={onChange}/>);
   const box=screen.getByRole('checkbox',{name:'Use the installed graphics card'}) as HTMLInputElement;
-  expect(box.checked).toBe(false);
+  expect(box.checked).toBe(true);
   const generate=()=>{fireEvent.click(screen.getByRole('button',{name:'New fingerprint'}));const info=(onChange.mock.calls.at(-1)![0] as Fingerprint).webglInfo;return info.mode==='manual'?info.renderer:'';};
+  // By default the installed card is matched exactly, so every generation is the same card.
+  for(let i=0;i<5;i++)expect(generate()).toContain('RTX 3060 Direct3D');
+  fireEvent.click(box);
+  expect(box.checked).toBe(false);
   // Without the checkbox the family is sampled, so repeated generations must not all be the same card.
   const randomCards=new Set<string>();for(let i=0;i<20;i++)randomCards.add(generate());
   expect(randomCards.size).toBeGreaterThan(1);
-  fireEvent.click(box);
-  expect(box.checked).toBe(true);
-  for(let i=0;i<5;i++)expect(generate()).toContain('RTX 3060 Direct3D');
 });
 it('requires vendor and renderer for manual WebGL Info',()=>{
    const onSave=vi.fn(async()=>{});renderWithI18n(<ProfileEditor profile={profile} proxies={[]} busy={false} chromeVersion="156.0.8078.80" onSave={onSave} onSaveProxy={async()=>false} onCancel={()=>{}}/>);
@@ -119,4 +120,17 @@ it('omits DPR input from manual screen settings',()=>{
   expect(screen.getByLabelText('Screen width')).toBeTruthy();
   expect(screen.getByLabelText('Screen height')).toBeTruthy();
   expect(screen.queryByLabelText('DPR')).toBeNull();
+});
+
+it('warns when the reported screen is smaller than the host display',()=>{
+  const small:Fingerprint={...DEFAULT_FINGERPRINT,screen:{mode:'manual',width:800,height:600}};
+  const original=Object.getOwnPropertyDescriptor(window,'screen');
+  Object.defineProperty(window,'screen',{value:{width:1920,height:1080},configurable:true});
+  try{
+    const {unmount}=renderWithI18n(<FingerprintPanel value={small} disabled={false} chromeVersion="156.0.8078.80" onChange={()=>{}}/>);
+    expect(screen.getAllByRole('status').map(n=>n.textContent).join(' ')).toContain('smaller than this computer');
+    unmount();
+    renderWithI18n(<FingerprintPanel value={{...DEFAULT_FINGERPRINT,screen:{mode:'manual',width:2560,height:1440}}} disabled={false} chromeVersion="156.0.8078.80" onChange={()=>{}}/>);
+    expect(screen.queryByText(/smaller than this computer/)).toBeNull();
+  }finally{if(original)Object.defineProperty(window,'screen',original);}
 });
