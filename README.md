@@ -129,6 +129,8 @@ Add connections in **Proxies**, then select a saved connection in each profile's
 
 Use **New fingerprint** to generate a preset matching your linked browser version, aligned with your host graphics vendor. Available controls include operating system and User-Agent, Canvas, WebGL, WebGPU, ClientRects, Audio, WebRTC, screen size, CPU and memory, time zone, and location (new profiles block geolocation permission by default; automatic proxy-based time zone resolution is available).
 
+For advice on keeping a fingerprint believable, see [Building a believable fingerprint](docs/fingerprint-guide.md).
+
 The default time zone follows the proxy exit IP (**Auto (by IP)**), including countries with several zones, and your system zone for profiles without a proxy; **Manual** fixes a chosen zone. Extensions that also change the time zone can conflict with these settings.
 
 Enable **Restore tabs from the previous session** when you want a profile to reopen its saved pages instead of its start pages. This restores tab addresses, not unsaved forms or a complete snapshot of a page.
