@@ -19,7 +19,7 @@ const geoOptions:readonly Option<'auto'|'block'|'manual'>[]=[{value:'auto',label
 const timezoneModeOptions:readonly Option<'auto'|'manual'>[]=[{value:'auto',label:'Auto (by IP)'},{value:'manual',label:'Manual'}];
 const onOffOptions:readonly Option<'on'|'off'>[]=[{value:'on',label:'On'},{value:'off',label:'Off'}];
 const memoryOptions=[0.5,1,2,4,8] as const;
-export function FingerprintPanel({value,onChange,disabled,chromeVersion,hostGpuVendors,hostGpuModels}:{value:Fingerprint;onChange:(next:Fingerprint)=>void;disabled:boolean;chromeVersion:string|null;hostGpuVendors?:readonly string[];hostGpuModels?:readonly string[]}){
+export function FingerprintPanel({value,onChange,disabled,chromeVersion,hostGpuVendors,hostGpuModels,onNew}:{onNew?:()=>void;value:Fingerprint;onChange:(next:Fingerprint)=>void;disabled:boolean;chromeVersion:string|null;hostGpuVendors?:readonly string[];hostGpuModels?:readonly string[]}){
    const {t}=useI18n();
   const [matchHostGpu,setMatchHostGpu]=useState(true);
   // The interface runs on the host display, so its screen is the size a profile window can reach.
@@ -30,7 +30,7 @@ export function FingerprintPanel({value,onChange,disabled,chromeVersion,hostGpuV
   const hardware=value.hardware.mode==='manual'?value.hardware:{mode:'manual' as const,cores:8,memoryGb:8 as const};
   const screen=value.screen.mode==='manual'?value.screen:{mode:'manual' as const,width:1920,height:1080};
   return <section className="settings-panel fingerprint-panel" aria-labelledby="fingerprint-title">
-     <header className="fingerprint-head"><h3 id="fingerprint-title">{t('Fingerprint')}</h3><button type="button" className="primary" disabled={disabled||!engineVersion} onClick={()=>onChange({...newFingerprint({os:value.os,chromeVersion:engineVersion!,random:Math.random,hostGpuVendors,hostGpuModels:matchHostGpu?hostGpuModels:undefined,hostScreen}),...(value.strictProtection?{strictProtection:true}:{})})}>{t('New fingerprint')}</button></header>
+     <header className="fingerprint-head"><h3 id="fingerprint-title">{t('Fingerprint')}</h3><button type="button" className="primary" disabled={disabled||!engineVersion} onClick={()=>{onNew?.();onChange({...newFingerprint({os:value.os,chromeVersion:engineVersion!,random:Math.random,hostGpuVendors,hostGpuModels:matchHostGpu?hostGpuModels:undefined,hostScreen}),...(value.strictProtection?{strictProtection:true}:{})});}}>{t('New fingerprint')}</button></header>
      <label className="check fingerprint-host-gpu"><input type="checkbox" checked={matchHostGpu} disabled={disabled} onChange={e=>setMatchHostGpu(e.target.checked)}/>{t('Use the installed graphics card')}</label>
      <p className="settings-hint">{engineVersion?t('New fingerprint sets Chrome/{{version}} with matching screen resolution, memory and graphics card.',{version:engineVersion}):t('Link an engine to generate a fingerprint for its version.')}</p>
     <Choices label="Operating system" value={value.os} options={osOptions} extra={[{label:'Android · Soon'},{label:'iOS · Soon'}]} onChange={os=>set('os',os)} disabled={disabled}/>
